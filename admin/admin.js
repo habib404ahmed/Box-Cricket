@@ -8,6 +8,7 @@ let allTeams = [];
 let activeModalPlayer = null;
 let activePurchasePlayer = null;
 let activeEditBasePlayer = null;
+let activeSquadTeamId = null;
 
 // DOM Elements
 const rosterTableBody = document.getElementById('roster-table-body');
@@ -101,7 +102,7 @@ function renderTeamBalanceHUD() {
     }
 
     teamsHudContainer.innerHTML = allTeams.map(team => {
-        const total = Number(team.total_budget) || 100;
+        const total = Number(team.total_budget) || 1000;
         const spent = Number(team.spent) || 0;
         const leftover = Math.max(0, total - spent);
         const spentPct = Math.min(100, (spent / total) * 100);
@@ -115,9 +116,16 @@ function renderTeamBalanceHUD() {
                 <div>
                     <div class="flex items-center justify-between gap-2 mb-2">
                         <span class="text-xl p-1.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0 group-hover:scale-110 transition-transform">${team.logo || '🏏'}</span>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-900 text-slate-400 border border-slate-800">
-                            ${team.department}
-                        </span>
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-900 text-slate-400 border border-slate-800">
+                                ${team.department}
+                            </span>
+                            <button type="button" onclick="event.stopPropagation(); handleDeleteTeam('${team.id}')"
+                                class="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/15 transition-all cursor-pointer opacity-70 group-hover:opacity-100"
+                                title="Delete ${team.name}">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            </button>
+                        </div>
                     </div>
                     <h4 class="font-black text-white text-sm uppercase truncate group-hover:text-lime-400 transition-colors">${team.name}</h4>
                     <div class="mt-1 flex items-center gap-1.5 text-[11px] truncate">
@@ -958,6 +966,7 @@ function openTeamSquadModal(teamId) {
     const team = allTeams.find(t => t.id === teamId);
     if (!team) return;
 
+    activeSquadTeamId = teamId;
     const modal = document.getElementById('team-squad-modal');
     document.getElementById('team-squad-logo').textContent = team.logo || '🏏';
     document.getElementById('team-squad-name').textContent = team.name;
@@ -1009,7 +1018,44 @@ function closeTeamSquadModal() {
         modal.classList.add('hidden');
         modal.classList.remove('flex');
     }
+    activeSquadTeamId = null;
     document.body.style.overflow = '';
+}
+
+function handleDeleteTeamFromModal() {
+    if (activeSquadTeamId) {
+        handleDeleteTeam(activeSquadTeamId);
+    }
+}
+
+async function handleDeleteTeam(teamId) {
+    const team = allTeams.find(t => t.id === teamId);
+    if (!team) return;
+
+    const squadCount = team.squad_count || (team.squad ? team.squad.length : 0);
+    const squadWarning = squadCount > 0 
+        ? `\n\n⚠️ NOTE: This team currently has ${squadCount} athlete(s) in its squad. Deleting this franchise will automatically release all squad members back to the "Upcoming" auction pool.` 
+        : '';
+
+    if (!confirm(`Are you sure you want to permanently delete the franchise "${team.name}" (${team.department})?${squadWarning}\n\nThis action cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        if (window.UniBoxDb && window.UniBoxDb.deleteTeam) {
+            const res = await window.UniBoxDb.deleteTeam(teamId);
+            if (!res.success) {
+                throw new Error(res.error || 'Failed to delete team');
+            }
+        }
+
+        closeTeamSquadModal();
+        await Promise.all([loadTeamsData(), loadRosterData()]);
+        showToast(`Franchise "${team.name}" was successfully deleted!`, 'success');
+    } catch (err) {
+        console.error('Delete team error:', err);
+        showToast(`Failed to delete team: ${err.message || 'Unknown error'}`, 'error');
+    }
 }
 
 // ==============================================================================
@@ -1209,6 +1255,8 @@ window.handleExecutePurchase = handleExecutePurchase;
 window.handleRevokePurchase = handleRevokePurchase;
 window.openTeamSquadModal = openTeamSquadModal;
 window.closeTeamSquadModal = closeTeamSquadModal;
+window.handleDeleteTeam = handleDeleteTeam;
+window.handleDeleteTeamFromModal = handleDeleteTeamFromModal;
 window.openCertViewerModal = openCertViewerModal;
 window.closeCertViewerModal = closeCertViewerModal;
 window.openCertViewerFromRow = openCertViewerFromRow;

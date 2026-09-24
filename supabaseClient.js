@@ -43,13 +43,13 @@ const DEFAULT_ROLE_BASE_PRICES = {
     'Fielder': 5
 };
 
-// 4. DEFAULT TOURNAMENT TEAMS (Purse: 100 Points each)
+// 4. DEFAULT TOURNAMENT TEAMS (Purse: 1000 Points each)
 const DEFAULT_TEAMS = [
-    { id: 'team-btech', name: 'B.Tech Titans', department: 'B.Tech', logo: '⚡', color: '#38bdf8', total_budget: 100 },
-    { id: 'team-bca', name: 'BCA Blasters', department: 'BCA', logo: '🏏', color: '#a3e635', total_budget: 100 },
-    { id: 'team-bba', name: 'BBA Bulls', department: 'BBA', logo: '🐂', color: '#fbbf24', total_budget: 100 },
-    { id: 'team-mca', name: 'MCA Mavericks', department: 'MCA', logo: '🦅', color: '#34d399', total_budget: 100 },
-    { id: 'team-mba', name: 'MBA Monarchs', department: 'MBA', logo: '👑', color: '#c084fc', total_budget: 100 }
+    { id: 'team-btech', name: 'B.Tech Titans', department: 'B.Tech', logo: '⚡', color: '#38bdf8', total_budget: 1000 },
+    { id: 'team-bca', name: 'BCA Blasters', department: 'BCA', logo: '🏏', color: '#a3e635', total_budget: 1000 },
+    { id: 'team-bba', name: 'BBA Bulls', department: 'BBA', logo: '🐂', color: '#fbbf24', total_budget: 1000 },
+    { id: 'team-mca', name: 'MCA Mavericks', department: 'MCA', logo: '🦅', color: '#34d399', total_budget: 1000 },
+    { id: 'team-mba', name: 'MBA Monarchs', department: 'MBA', logo: '👑', color: '#c084fc', total_budget: 1000 }
 ];
 
 // BroadcastChannel for instant multi-tab zero-latency realtime synchronization
@@ -163,12 +163,28 @@ const UniBoxDb = {
             const storedTeams = localStorage.getItem('unibox_teams');
             if (storedTeams) {
                 teams = JSON.parse(storedTeams);
+                // Migrate existing cached teams from previous default of 100 to 1000
+                if (Array.isArray(teams)) {
+                    let updated = false;
+                    teams.forEach(t => {
+                        if (t.total_budget === 100) {
+                            t.total_budget = 1000;
+                            updated = true;
+                        }
+                    });
+                    if (updated) {
+                        localStorage.setItem('unibox_teams', JSON.stringify(teams));
+                    }
+                }
             }
         } catch (e) {}
 
+        const deletedIds = JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]');
         if (!teams || teams.length === 0) {
-            teams = DEFAULT_TEAMS.map(t => ({ ...t }));
+            teams = DEFAULT_TEAMS.filter(t => !deletedIds.includes(t.id)).map(t => ({ ...t }));
             localStorage.setItem('unibox_teams', JSON.stringify(teams));
+        } else if (deletedIds.length > 0) {
+            teams = teams.filter(t => !deletedIds.includes(t.id));
         }
 
         // Attempt Supabase fetch if available
@@ -180,9 +196,14 @@ const UniBoxDb = {
                     const registry = JSON.parse(localStorage.getItem('unibox_team_owners_registry') || '{}');
                     const session = UniBoxDb.getTeamOwnerSession();
 
-                    teams = data.map(t => {
+                    teams = data
+                        .filter(t => !deletedIds.includes(t.id))
+                        .map(t => {
                         const localMatch = localTeams.find(lt => lt.id === t.id || (lt.name && lt.name.toLowerCase() === t.name.toLowerCase()));
                         const regMatch = registry[t.id] || registry[t.name.toLowerCase()] || (session && (session.teamId === t.id || session.teamName?.toLowerCase() === t.name.toLowerCase()) ? registry[session.email] : null);
+
+                        const rawBudget = Number(t.total_budget);
+                        const budgetVal = (rawBudget === 100 || !rawBudget) ? 1000 : rawBudget;
 
                         return {
                             id: t.id,
@@ -190,7 +211,7 @@ const UniBoxDb = {
                             department: t.department,
                             logo: t.logo || '🏏',
                             color: t.color || '#a3e635',
-                            total_budget: Number(t.total_budget) || 100,
+                            total_budget: budgetVal,
                             owner_name: t.owner_name || localMatch?.owner_name || regMatch?.owner_name || (session && session.teamId === t.id ? session.ownerName : null),
                             owner_email: t.owner_email || localMatch?.owner_email || regMatch?.owner_email || (session && session.teamId === t.id ? session.email : null),
                             owner_phone: t.owner_phone || localMatch?.owner_phone || regMatch?.owner_phone || null,
@@ -201,7 +222,7 @@ const UniBoxDb = {
 
                     // Preserve any local custom teams not yet in Supabase
                     localTeams.forEach(lt => {
-                        if (!teams.some(t => t.id === lt.id)) {
+                        if (!teams.some(t => t.id === lt.id) && !deletedIds.includes(lt.id)) {
                             teams.push(lt);
                         }
                     });
@@ -226,7 +247,8 @@ const UniBoxDb = {
             });
 
             const spent = teamSquad.reduce((sum, p) => sum + (Number(p.sold_price) || 0), 0);
-            const totalBudget = Number(team.total_budget) || 100;
+            const rawBudget = Number(team.total_budget);
+            const totalBudget = (rawBudget === 100 || !rawBudget) ? 1000 : rawBudget;
             const leftover = Math.max(0, totalBudget - spent);
 
             return {
@@ -243,7 +265,7 @@ const UniBoxDb = {
     },
 
     updateTeamBudget: async (teamId, newBudget) => {
-        const budgetNum = Math.max(0, Number(newBudget) || 100);
+        const budgetNum = Math.max(0, Number(newBudget) || 1000);
         let teams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
         const idx = teams.findIndex(t => t.id === teamId);
         if (idx >= 0) {
@@ -259,6 +281,78 @@ const UniBoxDb = {
 
         UniBoxDb.broadcastAuctionEvent({ type: 'TEAM_BUDGET_UPDATED', teamId, totalBudget: budgetNum });
         return { success: true, total_budget: budgetNum };
+    },
+
+    // Delete a specific team / franchise permanently
+    deleteTeam: async (teamId) => {
+        if (!teamId) return { success: false, error: 'Team ID is required.' };
+
+        // 1. Remove from local unibox_teams
+        let teams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
+        const targetTeam = teams.find(t => t.id === teamId);
+        const teamName = targetTeam ? targetTeam.name : null;
+        teams = teams.filter(t => t.id !== teamId);
+        localStorage.setItem('unibox_teams', JSON.stringify(teams));
+
+        // Track in deleted IDs list so DEFAULT_TEAMS doesn't re-seed it
+        const deletedIds = JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]');
+        if (!deletedIds.includes(teamId)) {
+            deletedIds.push(teamId);
+            localStorage.setItem('unibox_deleted_teams', JSON.stringify(deletedIds));
+        }
+
+        // 2. Remove from team owners registry
+        const registry = JSON.parse(localStorage.getItem('unibox_team_owners_registry') || '{}');
+        delete registry[teamId];
+        if (teamName) {
+            delete registry[teamName.toLowerCase()];
+        }
+        localStorage.setItem('unibox_team_owners_registry', JSON.stringify(registry));
+
+        // 3. Release any players assigned to this team
+        const auctionCache = JSON.parse(localStorage.getItem('unibox_auction_players_cache') || '{}');
+        Object.keys(auctionCache).forEach(k => {
+            if (auctionCache[k].sold_to_team_id === teamId || (teamName && auctionCache[k].sold_to_team === teamName)) {
+                delete auctionCache[k].sold_to_team;
+                delete auctionCache[k].sold_to_team_id;
+                delete auctionCache[k].sold_price;
+                auctionCache[k].auction_status = 'Upcoming';
+            }
+        });
+        localStorage.setItem('unibox_auction_players_cache', JSON.stringify(auctionCache));
+
+        let localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+        localPlayers.forEach(p => {
+            if (p.sold_to_team_id === teamId || (teamName && p.sold_to_team === teamName)) {
+                delete p.sold_to_team;
+                delete p.sold_to_team_id;
+                delete p.sold_price;
+                p.auction_status = 'Upcoming';
+            }
+        });
+        localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
+
+        // 4. Delete from Supabase if connected
+        if (UniBoxDb.isReady()) {
+            try {
+                // Delete the team record
+                const { error: delError } = await supabaseClient.from('teams').delete().eq('id', teamId);
+                if (delError) console.warn('Supabase delete team warning:', delError);
+
+                // Release squad players from this team
+                if (teamName) {
+                    await supabaseClient.from('players')
+                        .update({ sold_to_team: null, sold_price: 0, auction_status: 'Upcoming' })
+                        .eq('sold_to_team', teamName);
+                }
+            } catch (err) {
+                console.error('Supabase team delete error:', err);
+            }
+        }
+
+        // 5. Broadcast auction event across tabs/windows
+        UniBoxDb.broadcastAuctionEvent({ type: 'TEAM_DELETED', teamId });
+        return { success: true, teamId };
     },
 
     // --- FRANCHISE TEAM OWNER AUTHENTICATION & PORTAL METHODS ---
@@ -324,7 +418,7 @@ const UniBoxDb = {
                 department: department.trim(),
                 logo: logo || '🏆',
                 color: color || '#a3e635',
-                total_budget: 100,
+                total_budget: 1000,
                 owner_name: ownerName.trim(),
                 owner_email: normalizedEmail,
                 owner_phone: phone ? phone.trim() : null,

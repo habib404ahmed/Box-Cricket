@@ -100,9 +100,12 @@ create table if not exists public.teams (
     department text not null,
     logo text not null,
     color text default '#a3e635' not null,
-    total_budget numeric default 100 not null,
+    total_budget numeric default 1000 not null,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+-- Ensure default column value is updated for existing tables
+alter table public.teams alter column total_budget set default 1000;
 
 -- Enable RLS for teams
 alter table public.teams enable row level security;
@@ -124,19 +127,28 @@ create policy "Allow public insert teams"
     for insert 
     with check (true);
 
--- Seed Default University Department Franchises (Purse: 100 Points each)
+create policy "Allow public delete teams" 
+    on public.teams 
+    for delete 
+    using (true);
+
+-- Seed Default University Department Franchises (Purse: 1000 Points each)
 insert into public.teams (id, name, department, logo, color, total_budget)
 values 
-    ('team-btech', 'B.Tech Titans', 'B.Tech', '⚡', '#38bdf8', 100),
-    ('team-bca', 'BCA Blasters', 'BCA', '🏏', '#a3e635', 100),
-    ('team-bba', 'BBA Bulls', 'BBA', '🐂', '#fbbf24', 100),
-    ('team-mca', 'MCA Mavericks', 'MCA', '🦅', '#34d399', 100),
-    ('team-mba', 'MBA Monarchs', 'MBA', '👑', '#c084fc', 100)
+    ('team-btech', 'B.Tech Titans', 'B.Tech', '⚡', '#38bdf8', 1000),
+    ('team-bca', 'BCA Blasters', 'BCA', '🏏', '#a3e635', 1000),
+    ('team-bba', 'BBA Bulls', 'BBA', '🐂', '#fbbf24', 1000),
+    ('team-mca', 'MCA Mavericks', 'MCA', '🦅', '#34d399', 1000),
+    ('team-mba', 'MBA Monarchs', 'MBA', '👑', '#c084fc', 1000)
 on conflict (id) do update set
     name = excluded.name,
     department = excluded.department,
     logo = excluded.logo,
-    color = excluded.color;
+    color = excluded.color,
+    total_budget = excluded.total_budget;
+
+-- Update existing records that have default 100 to 1000
+update public.teams set total_budget = 1000 where total_budget = 100;
 
 -- Team Owner Columns Migration (Supports Franchise Owner Authentication & Profiles)
 alter table public.teams add column if not exists owner_name text;
