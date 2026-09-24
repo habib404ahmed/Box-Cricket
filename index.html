@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UniBox League 2026 | Premium Box Cricket Tournament</title>
-    <meta name="description" content="Official platform for UniBox League 2026 — University Box Cricket Tournament. Player registration, real-time live auction, franchise management.">
+    <title>ADTU & Sunstone Premier League 2026 | Official Tournament Platform</title>
+    <meta name="description" content="Official platform for ADTU & Sunstone Premier League 2026 — Inter-Department Box Cricket Championship. Player registration, real-time live auction, franchise management.">
     <!-- Favicon & Stylesheet -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏏</text></svg>">
+    <link rel="icon" type="image/png" href="assets/branding/adtu-sunstone-premier-league-2026.png">
     <link href="./dist/output.css" rel="stylesheet">
     <style>
         body {
@@ -64,6 +64,8 @@
 
         <!-- Very Subtle Grid -->
         <div class="absolute inset-0 pitch-grid opacity-25"></div>
+        <!-- Background Tournament Watermark -->
+        <img src="assets/branding/adtu-sunstone-premier-league-2026.png" alt="" class="tournament-watermark" aria-hidden="true">
     </div>
 
     <!-- ===== NAVIGATION HEADER ===== -->
@@ -72,23 +74,20 @@
         <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-amber-400 opacity-60"></div>
 
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[74px] flex items-center justify-between gap-4">
-            <!-- Brand Identity -->
-            <a href="index.html" class="flex items-center gap-3.5 group">
-                <div class="relative">
-                    <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 via-sky-500 to-amber-400 p-[1.5px] shadow-lg shadow-sky-500/20 group-hover:scale-105 transition-transform duration-300">
-                        <div class="w-full h-full bg-[#08111F] rounded-[14px] flex items-center justify-center">
-                            <span class="text-xl">🏏</span>
-                        </div>
-                    </div>
-                    <div class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-400 border-2 border-[#050816] shadow-sm animate-pulse"></div>
+            <!-- Brand Identity with Official Logo -->
+            <a href="index.html" class="flex items-center gap-3 sm:gap-3.5 group min-w-0">
+                <div class="relative shrink-0">
+                    <img src="assets/branding/adtu-sunstone-premier-league-2026.png" 
+                        alt="ADTU & Sunstone Premier League 2026" 
+                        class="h-10 sm:h-12 w-auto object-contain rounded-xl tournament-logo-glow filter drop-shadow-md group-hover:scale-105 transition-transform duration-300">
                 </div>
-                <div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-[10px] font-black uppercase tracking-[0.2em] text-sky-400">UniBox League</span>
-                        <span class="text-[9px] uppercase font-black px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/25 tracking-wider hidden sm:inline-block">2026 Season</span>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-1.5 sm:gap-2">
+                        <span class="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.16em] text-sky-400 truncate">ADTU & Sunstone</span>
+                        <span class="text-[8px] sm:text-[9px] uppercase font-black px-1.5 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/25 tracking-wider hidden sm:inline-block shrink-0">PL 2026</span>
                     </div>
-                    <div class="text-base sm:text-lg font-black tracking-tight text-white uppercase leading-none" style="font-family: 'Space Grotesk', sans-serif;">
-                        The Game <span class="text-amber-400">Begins</span>
+                    <div class="text-xs sm:text-base font-black tracking-tight text-white uppercase leading-none truncate" style="font-family: 'Space Grotesk', sans-serif;">
+                        Premier League <span class="text-amber-400">2026</span>
                     </div>
                 </div>
             </a>
@@ -163,98 +162,131 @@
     </header>
 
     <!-- ===== HERO SECTION ===== -->
-    <main id="hero" class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 sm:pt-20 pb-20 overflow-hidden">
+    <main id="hero" class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 sm:pt-14 pb-16 sm:pb-20 overflow-hidden">
 
         <!-- Background Watermark Year -->
-        <div class="hero-year-watermark absolute -right-4 top-1/2 -translate-y-1/2 hidden lg:block select-none opacity-40">2026</div>
+        <div class="hero-year-watermark absolute -right-4 top-1/2 -translate-y-1/2 hidden xl:block select-none opacity-20">2026</div>
 
-        <!-- Cricket Ball Flight Micro-Animation -->
-        <div class="cricket-ball-track hidden lg:block" style="top: 25%; right: 12%;">
-            <div class="cricket-ball-orb"></div>
-        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center relative z-10">
+            <!-- Left Column: Titles & CTAs -->
+            <div class="lg:col-span-7 space-y-6">
+                <!-- Tournament Pill Badge -->
+                <div class="stagger-1 inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-[#08111F]/90 border border-sky-500/25 shadow-lg shadow-sky-500/5 backdrop-blur-md">
+                    <span class="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping"></span>
+                    <span class="text-[11px] font-black uppercase tracking-[0.16em] text-sky-300">Official Tournament</span>
+                    <span class="text-slate-600">·</span>
+                    <span class="text-[11px] text-amber-400 font-bold uppercase tracking-wider">ADTU & Sunstone Premier League 2026</span>
+                </div>
 
-        <div class="max-w-4xl relative z-10">
-            <!-- Tournament Pill Badge -->
-            <div class="stagger-1 inline-flex items-center gap-2.5 mb-6 px-4 py-2 rounded-full bg-[#08111F]/90 border border-sky-500/25 shadow-lg shadow-sky-500/5 backdrop-blur-md">
-                <span class="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping"></span>
-                <span class="text-[11px] font-black uppercase tracking-[0.16em] text-sky-300">Live Tournament</span>
-                <span class="text-slate-600">·</span>
-                <span class="text-[11px] text-slate-400 font-medium">Inter-Department Box Cricket Championship</span>
+                <!-- Hero Cinematic Titles -->
+                <div class="stagger-2 space-y-2">
+                    <div class="text-xs sm:text-sm font-black uppercase tracking-[0.3em] text-amber-400 flex items-center gap-2">
+                        <span>🏆</span> ASSAM DOWN TOWN UNIVERSITY × SUNSTONE
+                    </div>
+                    <h1 class="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight uppercase leading-[0.95]" style="font-family: 'Space Grotesk', sans-serif;">
+                        <span class="text-white">The Game</span><br>
+                        <span class="gold-shimmer font-black text-amber-400">Begins</span><br>
+                        <span class="bg-gradient-to-r from-sky-400 via-blue-400 to-indigo-300 bg-clip-text text-transparent">Fast & Intense</span>
+                    </h1>
+                </div>
+
+                <!-- Subtitle Philosophy -->
+                <p class="stagger-3 text-xs sm:text-sm font-black tracking-[0.25em] text-slate-300 uppercase flex items-center gap-3">
+                    <span class="text-sky-400">PLAY</span>
+                    <span class="text-slate-600">•</span>
+                    <span class="text-amber-400">COMPETE</span>
+                    <span class="text-slate-600">•</span>
+                    <span class="text-white">CONQUER</span>
+                </p>
+
+                <p class="stagger-3 text-slate-400 text-sm sm:text-base lg:text-lg max-w-xl leading-relaxed">
+                    Welcome to the official arena of <strong class="text-white font-semibold">ADTU & Sunstone Premier League 2026</strong>. Register your athlete profile, earn clearance from match officials, and enter the official player auction pool.
+                </p>
+
+                <!-- Hero CTA Buttons -->
+                <div class="stagger-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2">
+                    <button data-modal-target="auth-modal" data-modal-toggle="auth-modal" data-tab-target="signup"
+                        class="group btn-gold text-sm px-8 py-3.5 w-full sm:w-auto text-center cursor-pointer">
+                        <span class="flex items-center justify-center gap-2">
+                            <span>Register Now</span>
+                            <svg class="w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                        </span>
+                    </button>
+                    <button data-modal-target="rules-modal" data-modal-toggle="rules-modal"
+                        class="btn-secondary text-sm px-7 py-3.5 w-full sm:w-auto text-center cursor-pointer">
+                        Tournament Rules
+                    </button>
+                    <a href="team/login.html"
+                        class="px-6 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider text-sky-400 hover:text-white bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 transition-all text-center flex items-center justify-center gap-2">
+                        <span>👑 Franchises</span>
+                    </a>
+                </div>
+
+                <!-- Hero Tournament Stats Strip (Metallic & Blue Accent) -->
+                <div class="stagger-5 glass-card-static p-4 sm:p-5 rounded-2xl border border-sky-950/80 inline-flex flex-wrap items-center gap-4 sm:gap-6 max-w-full">
+                    <div class="flex flex-col items-center gap-0.5 px-2">
+                        <span class="text-2xl sm:text-3xl font-black text-amber-400 font-mono tracking-tight">32</span>
+                        <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Teams</span>
+                    </div>
+                    <div class="w-px h-8 bg-slate-800 hidden sm:block"></div>
+                    <div class="flex flex-col items-center gap-0.5 px-2">
+                        <span class="text-2xl sm:text-3xl font-black text-sky-400 font-mono tracking-tight">256</span>
+                        <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Athletes</span>
+                    </div>
+                    <div class="w-px h-8 bg-slate-800 hidden sm:block"></div>
+                    <div class="flex flex-col items-center gap-0.5 px-2">
+                        <span class="text-2xl sm:text-3xl font-black text-amber-400 font-mono tracking-tight">01</span>
+                        <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Trophy</span>
+                    </div>
+                    <div class="w-px h-8 bg-slate-800 hidden sm:block"></div>
+                    <div class="flex flex-col items-center gap-0.5 px-2">
+                        <span class="text-2xl sm:text-3xl font-black text-white font-mono tracking-tight">01</span>
+                        <span class="text-[9px] font-black uppercase tracking-widest text-slate-400">Champion</span>
+                    </div>
+                </div>
             </div>
 
-            <!-- Hero Cinematic Titles -->
-            <div class="stagger-2 space-y-2 mb-6">
-                <div class="text-xs sm:text-sm font-black uppercase tracking-[0.3em] text-amber-400 flex items-center gap-2">
-                    <span>🏆</span> UNIBOX LEAGUE 2026
-                </div>
-                <h1 class="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight uppercase leading-[0.95]" style="font-family: 'Space Grotesk', sans-serif;">
-                    <span class="text-white">The Game</span><br>
-                    <span class="gold-shimmer font-black text-amber-400">Begins</span><br>
-                    <span class="bg-gradient-to-r from-sky-400 via-blue-400 to-indigo-300 bg-clip-text text-transparent">Fast & Intense</span>
-                </h1>
-            </div>
+            <!-- Right Column: Official Tournament Logo Emblem Showcase -->
+            <div class="lg:col-span-5 flex justify-center items-center">
+                <div class="relative w-full max-w-[360px] sm:max-w-[420px] p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#0D1B36]/90 via-[#071124]/90 to-[#040915]/95 border border-sky-500/30 shadow-[0_0_60px_rgba(14,165,233,0.18)] backdrop-blur-xl group text-center">
+                    <div class="absolute -inset-1 bg-gradient-to-r from-sky-500/20 via-amber-500/20 to-blue-600/20 rounded-3xl blur-2xl opacity-60 group-hover:opacity-100 transition duration-700 pointer-events-none"></div>
+                    
+                    <!-- Official Logo Image -->
+                    <div class="relative z-10 flex justify-center items-center py-2">
+                        <img src="assets/branding/adtu-sunstone-premier-league-2026.png"
+                             alt="ADTU & Sunstone Premier League 2026 Official Logo"
+                             class="w-full max-h-[300px] object-contain drop-shadow-[0_20px_35px_rgba(0,0,0,0.8)] logo-entrance hover:brightness-105 transition-all duration-300">
+                    </div>
 
-            <!-- Subtitle Philosophy -->
-            <p class="stagger-3 text-xs sm:text-sm font-black tracking-[0.25em] text-slate-300 uppercase mb-4 flex items-center gap-3">
-                <span class="text-sky-400">PLAY</span>
-                <span class="text-slate-600">•</span>
-                <span class="text-amber-400">COMPETE</span>
-                <span class="text-slate-600">•</span>
-                <span class="text-white">CONQUER</span>
-            </p>
-
-            <p class="stagger-3 text-slate-400 text-sm sm:text-base lg:text-lg max-w-xl leading-relaxed mb-10">
-                Step onto the turf. Register your athlete credentials, get cleared by match officials, and enter the live player pool for the 2026 university championship auction.
-            </p>
-
-            <!-- Hero CTA Buttons -->
-            <div class="stagger-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-14">
-                <button data-modal-target="auth-modal" data-modal-toggle="auth-modal" data-tab-target="signup"
-                    class="group btn-gold text-sm px-8 py-3.5 w-full sm:w-auto text-center cursor-pointer">
-                    <span class="flex items-center justify-center gap-2">
-                        <span>Register Now</span>
-                        <svg class="w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                        </svg>
-                    </span>
-                </button>
-                <button data-modal-target="rules-modal" data-modal-toggle="rules-modal"
-                    class="btn-secondary text-sm px-7 py-3.5 w-full sm:w-auto text-center cursor-pointer">
-                    Tournament Rules
-                </button>
-                <a href="team/login.html"
-                    class="px-6 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider text-sky-400 hover:text-white bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 transition-all text-center flex items-center justify-center gap-2">
-                    <span>👑 Franchises</span>
-                </a>
-            </div>
-
-            <!-- Hero Tournament Stats Strip (Metallic & Blue Accent) -->
-            <div class="stagger-5 glass-card-static p-4 sm:p-6 rounded-2xl border border-sky-950/80 inline-flex flex-wrap items-center gap-4 sm:gap-8 max-w-full">
-                <div class="flex flex-col items-center gap-0.5 px-3">
-                    <span class="text-3xl sm:text-4xl font-black text-amber-400 font-mono tracking-tight">32</span>
-                    <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Teams</span>
-                </div>
-                <div class="w-px h-10 bg-slate-800 hidden sm:block"></div>
-                <div class="flex flex-col items-center gap-0.5 px-3">
-                    <span class="text-3xl sm:text-4xl font-black text-sky-400 font-mono tracking-tight">256</span>
-                    <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Athletes</span>
-                </div>
-                <div class="w-px h-10 bg-slate-800 hidden sm:block"></div>
-                <div class="flex flex-col items-center gap-0.5 px-3">
-                    <span class="text-3xl sm:text-4xl font-black text-amber-400 font-mono tracking-tight">01</span>
-                    <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Trophy</span>
-                </div>
-                <div class="w-px h-10 bg-slate-800 hidden sm:block"></div>
-                <div class="flex flex-col items-center gap-0.5 px-3">
-                    <span class="text-3xl sm:text-4xl font-black text-white font-mono tracking-tight">01</span>
-                    <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Champion</span>
+                    <div class="relative z-10 pt-4 mt-2 border-t border-sky-500/20 flex flex-col items-center gap-1">
+                        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/25">
+                            <span class="text-[10px] font-black tracking-[0.2em] uppercase text-amber-400">Official Tournament Emblem</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 font-mono tracking-wide mt-1">Assam down town University × Sunstone</p>
+                    </div>
                 </div>
             </div>
         </div>
     </main>
 
     <!-- ===== PLAYER DASHBOARD PANEL (Hidden until logged in) ===== -->
-    <section id="player-dashboard" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 hidden">
+    <section id="player-dashboard" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 hidden">
+
+        <!-- Tournament Identity Header (Requirement 4) -->
+        <div class="mb-8 p-6 rounded-2xl bg-gradient-to-r from-[#0B172E]/90 via-[#0F2247]/75 to-[#0B172E]/90 border border-sky-500/30 shadow-xl backdrop-blur-md flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
+            <img src="assets/branding/adtu-sunstone-premier-league-2026.png" 
+                 alt="ADTU & Sunstone Premier League 2026" 
+                 class="h-20 sm:h-24 w-auto object-contain logo-entrance tournament-logo-glow flex-shrink-0">
+            <div class="space-y-1">
+                <div class="text-[10px] font-black uppercase tracking-[0.25em] text-amber-400">Official Player Portal</div>
+                <h2 class="text-2xl sm:text-3xl font-black text-white tracking-tight uppercase" style="font-family: 'Space Grotesk', sans-serif;">
+                    ADTU & Sunstone Premier League 2026
+                </h2>
+                <p class="text-xs text-sky-300 font-mono tracking-wider">Tournament Clearance & Player HQ Ledger</p>
+            </div>
+        </div>
 
         <!-- Dashboard Header Bar -->
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-sky-950/80 pb-8 mb-8 gap-4">
@@ -454,11 +486,13 @@
                     </svg>
                 </button>
 
-                <!-- Auth Modal Header -->
-                <div class="p-6 pb-0 text-center border-b border-sky-950/60 pb-5 bg-[#08111F]/40">
-                    <div class="inline-flex w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 via-sky-500 to-amber-400 items-center justify-center text-xl mb-3 shadow-lg shadow-sky-500/20">🏏</div>
-                    <div class="text-[10px] font-black uppercase tracking-[0.2em] text-sky-400 mb-1">UniBox League 2026</div>
-                    <h2 class="text-lg font-black uppercase text-white tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">Athlete Access Portal</h2>
+                <!-- Auth Modal Header (Requirement 3 & 4) -->
+                <div class="p-6 pb-0 text-center border-b border-sky-950/60 pb-5 bg-[#08111F]/40 flex flex-col items-center">
+                    <img src="assets/branding/adtu-sunstone-premier-league-2026.png" 
+                         alt="ADTU & Sunstone Premier League 2026" 
+                         class="h-16 sm:h-20 w-auto object-contain logo-entrance tournament-logo-glow mb-2">
+                    <div class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400 mb-0.5">ADTU & Sunstone Premier League 2026</div>
+                    <h2 class="text-base sm:text-lg font-black uppercase text-white tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">Athlete Access Portal</h2>
                 </div>
 
                 <!-- Tab Switcher -->

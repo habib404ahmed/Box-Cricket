@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Franchise Command Center — UniBox League 2026</title>
-    <meta name="description" content="Franchise team management dashboard for UniBox League 2026 Box Cricket Tournament.">
+    <title>Franchise Command Center — ADTU & Sunstone Premier League 2026</title>
+    <meta name="description" content="Franchise team management dashboard for ADTU & Sunstone Premier League 2026 Box Cricket Tournament.">
     <!-- Favicon & Stylesheet -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏏</text></svg>">
+    <link rel="icon" type="image/png" href="../assets/branding/adtu-sunstone-premier-league-2026.png">
     <link href="../dist/output.css" rel="stylesheet">
     <style>
         body {
@@ -25,6 +25,12 @@
 </head>
 
 <body class="bg-[#050816] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-sky-500 selection:text-slate-950 overflow-x-hidden">
+
+    <!-- Subtle Background Watermark (Requirement 9) -->
+    <img src="../assets/branding/adtu-sunstone-premier-league-2026.png" 
+         alt="" 
+         aria-hidden="true" 
+         class="tournament-watermark">
 
     <!-- ===== CINEMATIC STADIUM ATMOSPHERE BACKGROUND ===== -->
     <div class="fixed inset-0 pointer-events-none -z-10 overflow-hidden stadium-atmosphere">
@@ -44,31 +50,47 @@
         <!-- Top Electric Blue & Gold Accent Line -->
         <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-sky-400 opacity-60 pointer-events-none"></div>
 
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[74px] flex items-center justify-between gap-4">
-            <!-- Left: Franchise Identity -->
-            <div class="flex items-center gap-3.5">
-                <div id="header-team-logo" class="w-12 h-12 rounded-2xl bg-[#08111F] border border-amber-400/30 flex items-center justify-center text-2xl shadow-lg shadow-amber-400/5">
-                    🏏
-                </div>
-                <div>
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <h1 id="header-team-name" class="font-black text-white text-base sm:text-lg tracking-tight uppercase" style="font-family: 'Space Grotesk', sans-serif;">Franchise Portal</h1>
-                        <span id="header-team-dept" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#08111F] text-sky-400 border border-sky-900/60 font-mono">Department</span>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[74px] flex items-center justify-between gap-3 sm:gap-4 overflow-hidden">
+            <!-- Left: Tournament Branding & Franchise Identity (Requirement 6) -->
+            <div class="flex items-center gap-3 sm:gap-4 min-w-0">
+                <!-- Tournament Branding -->
+                <a href="../index.html" class="flex items-center gap-2 group shrink-0" title="Return to Tournament Portal">
+                    <img src="../assets/branding/adtu-sunstone-premier-league-2026.png"
+                         alt="ADTU & Sunstone Premier League 2026"
+                         class="h-10 sm:h-12 w-auto object-contain logo-entrance tournament-logo-glow">
+                    <div class="hidden md:block">
+                        <div class="text-[9px] font-black tracking-[0.14em] text-amber-400 uppercase leading-none">Tournament</div>
+                        <div class="text-xs font-black tracking-tight text-white uppercase mt-0.5 leading-none" style="font-family: 'Space Grotesk', sans-serif;">ADTU & Sunstone PL 2026</div>
                     </div>
-                    <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5 flex-wrap">
-                        <span class="inline-flex items-center gap-1 text-amber-300 font-semibold text-[11px]">
-                            👑 Owner: <span id="header-owner-name" class="text-white font-black">---</span>
-                        </span>
-                        <span class="text-slate-600">•</span>
-                        <span class="flex items-center gap-1.5 text-sky-400 font-medium text-[11px]">
-                            <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> Live Auction Connected
-                        </span>
+                </a>
+
+                <div class="w-px h-8 bg-sky-950/80 hidden sm:block shrink-0"></div>
+
+                <!-- Team Franchise Identity -->
+                <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                    <div id="header-team-logo" class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-[#08111F] border border-amber-400/30 flex items-center justify-center text-xl sm:text-2xl shadow-lg shadow-amber-400/5 shrink-0">
+                        🏏
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h1 id="header-team-name" class="font-black text-white text-xs sm:text-base tracking-tight uppercase truncate" style="font-family: 'Space Grotesk', sans-serif;">Franchise Portal</h1>
+                            <span id="header-team-dept" class="px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold bg-[#08111F] text-sky-400 border border-sky-900/60 font-mono shrink-0">Department</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5 truncate">
+                            <span class="inline-flex items-center gap-1 text-amber-300 font-semibold text-[10px] sm:text-[11px] truncate">
+                                👑 Owner: <span id="header-owner-name" class="text-white font-black truncate">---</span>
+                            </span>
+                            <span class="text-slate-600 hidden sm:inline">•</span>
+                            <span class="hidden sm:flex items-center gap-1.5 text-sky-400 font-medium text-[11px] shrink-0">
+                                <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> Live Auction
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Right: Actions -->
-            <div class="flex items-center gap-2 sm:gap-3">
+            <div class="flex items-center gap-2 sm:gap-3 shrink-0">
                 <a href="../index.html" class="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white bg-[#08111F] hover:bg-slate-800 border border-sky-900/60 transition-all">
                     <span>🏟️ Public Portal</span>
                 </a>
@@ -82,6 +104,26 @@
 
     <!-- ===== MAIN COMMAND BODY ===== -->
     <main class="relative z-10 flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-6">
+
+        <!-- Tournament Identity Section (Requirement 6) -->
+        <div class="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-[#0B172E]/90 via-[#0F2247]/75 to-[#0B172E]/90 border border-sky-500/25 shadow-xl backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+                <img src="../assets/branding/adtu-sunstone-premier-league-2026.png" 
+                     alt="ADTU & Sunstone Premier League 2026" 
+                     class="h-12 sm:h-14 w-auto object-contain logo-entrance tournament-logo-glow shrink-0">
+                <div>
+                    <div class="text-[9px] font-black uppercase tracking-[0.2em] text-amber-400">Official Tournament Hierarchy</div>
+                    <div class="text-sm sm:text-base font-black text-white uppercase tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">
+                        ADTU & Sunstone Premier League 2026
+                    </div>
+                    <div class="text-[11px] text-sky-300 font-mono">Franchise Command Center & Live Squad Roster</div>
+                </div>
+            </div>
+            <div class="text-right hidden md:block">
+                <div class="text-[10px] uppercase font-bold text-slate-400">Venue & Season</div>
+                <div class="text-xs font-mono font-bold text-slate-200">Campus Turf · 2026 Edition</div>
+            </div>
+        </div>
 
         <!-- ===== 1. LIVE PURSE & SQUAD OVERVIEW HUD ===== -->
         <section class="grid grid-cols-1 md:grid-cols-4 gap-4">

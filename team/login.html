@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Franchise Owner Portal — UniBox League 2026</title>
-    <meta name="description" content="Franchise owner sign-in and registration for UniBox League 2026 Box Cricket Tournament.">
+    <title>Franchise Owner Portal — ADTU & Sunstone Premier League 2026</title>
+    <meta name="description" content="Franchise owner sign-in and registration for ADTU & Sunstone Premier League 2026 Box Cricket Tournament.">
     <!-- Favicon & Stylesheet -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏏</text></svg>">
+    <link rel="icon" type="image/png" href="../assets/branding/adtu-sunstone-premier-league-2026.png">
     <link href="../dist/output.css" rel="stylesheet">
     <style>
         body {
@@ -32,6 +32,12 @@
 
 <body class="bg-[#050816] text-slate-100 min-h-screen flex items-center justify-center p-4 relative antialiased overflow-x-hidden">
 
+    <!-- Subtle Background Watermark (Requirement 9) -->
+    <img src="../assets/branding/adtu-sunstone-premier-league-2026.png" 
+         alt="" 
+         aria-hidden="true" 
+         class="tournament-watermark">
+
     <!-- ===== CINEMATIC STADIUM ATMOSPHERE BACKGROUND ===== -->
     <div class="fixed inset-0 pointer-events-none -z-10 stadium-atmosphere">
         <!-- Franchise Gold & Royal Blue Atmospheric Glow -->
@@ -49,11 +55,14 @@
     <!-- ===== MAIN CARD WRAPPER ===== -->
     <div class="relative z-10 w-full max-w-lg">
 
-        <!-- Badge above card -->
-        <div class="text-center mb-6">
-            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#08111F]/90 border border-amber-400/25 text-[11px] font-bold uppercase tracking-wider text-slate-300 backdrop-blur-sm shadow-lg shadow-amber-400/5">
+        <!-- Prominent Tournament Branding Above Login Card (Requirement 3) -->
+        <div class="text-center mb-6 flex flex-col items-center">
+            <img src="../assets/branding/adtu-sunstone-premier-league-2026.png"
+                 alt="ADTU & Sunstone Premier League 2026 Official Logo"
+                 class="h-24 sm:h-28 w-auto object-contain logo-entrance tournament-logo-glow mb-3">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#08111F]/90 border border-amber-400/25 text-[10px] font-black uppercase tracking-[0.18em] text-amber-400 backdrop-blur-md shadow-lg shadow-amber-400/5">
                 <span class="text-amber-400">👑</span>
-                Franchise Owner Portal
+                Franchise Owner HQ
                 <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
             </div>
         </div>
@@ -66,14 +75,7 @@
             <div class="p-8 sm:p-10">
                 <!-- Brand Header -->
                 <div class="text-center mb-7">
-                    <div class="inline-flex mb-4">
-                        <div class="login-logo-ring" style="background: linear-gradient(135deg, #F5C542, #38BDF8, #1677FF);">
-                            <div class="w-16 h-16 rounded-2xl bg-[#050816] flex items-center justify-center text-3xl border border-sky-900/60">
-                                👑
-                            </div>
-                        </div>
-                    </div>
-                    <div class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400 mb-1">UniBox League 2026</div>
+                    <div class="text-[10px] font-black uppercase tracking-[0.2em] text-sky-400 mb-1">ADTU & Sunstone Premier League 2026</div>
                     <h1 class="text-2xl sm:text-3xl font-black uppercase text-white tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">
                         Franchise Owner HQ
                     </h1>

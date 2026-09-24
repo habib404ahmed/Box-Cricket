@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Command Center — UniBox League 2026</title>
-    <meta name="description" content="Tournament operations control room for UniBox League 2026. Manage athletes, clearances, base prices, and live franchise auction.">
+    <title>Admin Command Center — ADTU & Sunstone Premier League 2026</title>
+    <meta name="description" content="Tournament operations control room for ADTU & Sunstone Premier League 2026. Manage athletes, clearances, base prices, and live franchise auction.">
     <!-- Favicon & Stylesheet -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏏</text></svg>">
+    <link rel="icon" type="image/png" href="../assets/branding/adtu-sunstone-premier-league-2026.png">
     <link href="../dist/output.css" rel="stylesheet">
     <style>
         body {
@@ -69,6 +69,12 @@
 
 <body class="bg-[#050816] text-slate-100 min-h-screen selection:bg-sky-500 selection:text-slate-950 relative antialiased overflow-x-hidden">
 
+    <!-- Subtle Background Watermark (Requirement 9) -->
+    <img src="../assets/branding/adtu-sunstone-premier-league-2026.png" 
+         alt="" 
+         aria-hidden="true" 
+         class="tournament-watermark">
+
     <!-- ===== CINEMATIC STADIUM ATMOSPHERE BACKGROUND ===== -->
     <div class="fixed inset-0 pointer-events-none overflow-hidden -z-10 no-print stadium-atmosphere">
         <div class="absolute -top-40 left-1/4 w-[650px] h-[650px] bg-blue-600/[0.1] rounded-full blur-[160px]"></div>
@@ -88,20 +94,18 @@
         <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-amber-400 opacity-60"></div>
 
         <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-[70px] sm:h-[74px] flex items-center justify-between gap-2 sm:gap-4 overflow-hidden">
-            <!-- Brand & Badge -->
+            <!-- Brand & Badge (Requirement 5) -->
             <div class="flex items-center gap-2 sm:gap-4 min-w-0">
-                <a href="../index.html" class="flex items-center gap-2.5 sm:gap-3.5 group min-w-0">
-                    <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-600 via-sky-500 to-amber-400 p-[1.5px] shadow-lg shadow-sky-500/20 group-hover:scale-105 transition-transform duration-300 shrink-0">
-                        <div class="w-full h-full bg-[#08111F] rounded-[10px] sm:rounded-[14px] flex items-center justify-center text-lg sm:text-xl">
-                            🏏
-                        </div>
-                    </div>
+                <a href="../index.html" class="flex items-center gap-2.5 sm:gap-3 group min-w-0" title="Return to Public Portal">
+                    <img src="../assets/branding/adtu-sunstone-premier-league-2026.png"
+                         alt="ADTU & Sunstone Premier League 2026"
+                         class="h-10 sm:h-12 w-auto object-contain logo-entrance tournament-logo-glow shrink-0">
                     <div class="min-w-0">
                         <div class="flex items-center gap-1.5 sm:gap-2">
-                            <span class="text-[9px] sm:text-[10px] font-black tracking-[0.15em] text-sky-400 uppercase truncate">UniBox</span>
+                            <span class="text-[9px] sm:text-[10px] font-black tracking-[0.12em] text-amber-400 uppercase truncate">ADTU & Sunstone PL 2026</span>
                             <span class="text-[8px] sm:text-[9px] uppercase font-black px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/25 tracking-wider shrink-0">Admin</span>
                         </div>
-                        <h1 class="text-xs sm:text-base font-black tracking-tight text-white uppercase leading-none truncate" style="font-family: 'Space Grotesk', sans-serif;">Tournament HQ</h1>
+                        <h1 class="text-xs sm:text-sm md:text-base font-black tracking-tight text-white uppercase leading-none truncate" style="font-family: 'Space Grotesk', sans-serif;">Tournament Control HQ</h1>
                     </div>
                 </a>
             </div>

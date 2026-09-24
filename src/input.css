@@ -792,8 +792,34 @@ body {
   75% { transform: translateX(4px); }
 }
 
-.animate-shake {
-  animation: shake-sm 0.3s ease-in-out;
+@keyframes logo-entrance-anim {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.logo-entrance {
+  animation: logo-entrance-anim 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.tournament-logo-glow {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), filter 0.3s ease;
+}
+
+.tournament-logo-glow:hover {
+  filter: drop-shadow(0 0 25px rgba(245, 197, 66, 0.45)) drop-shadow(0 0 12px rgba(56, 189, 248, 0.35));
+}
+
+.tournament-watermark {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(85vw, 750px);
+  height: auto;
+  opacity: 0.035;
+  pointer-events: none;
+  z-index: 0;
+  user-select: none;
 }
 
 /* ============================================================
