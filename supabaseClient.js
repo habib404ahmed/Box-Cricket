@@ -835,6 +835,7 @@ const UniBoxDb = {
             const payload = {
                 full_name: playerData.name,
                 enrollment_no: playerData.enrollment_no,
+                phone: playerData.phone || null,
                 department: playerData.department,
                 email: playerData.email,
                 gender: playerData.gender,
@@ -891,6 +892,10 @@ const UniBoxDb = {
                     }
 
                     // Fallback to removing optional columns in order of likelihood
+                    if (payload.phone !== undefined) {
+                        delete payload.phone;
+                        continue;
+                    }
                     if (payload.auction_status !== undefined) {
                         delete payload.auction_status;
                         continue;

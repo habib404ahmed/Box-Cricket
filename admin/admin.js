@@ -38,6 +38,7 @@ const modalPhotoPlaceholder = document.getElementById('modal-photo-placeholder')
 const modalName = document.getElementById('modal-name');
 const modalEmail = document.getElementById('modal-email');
 const modalEnrollment = document.getElementById('modal-enrollment');
+const modalPhone = document.getElementById('modal-phone');
 const modalDept = document.getElementById('modal-dept');
 const modalGender = document.getElementById('modal-gender');
 const modalRole = document.getElementById('modal-role');
@@ -606,6 +607,7 @@ function openAthleteModal(playerId) {
     modalName.textContent = player.full_name || player.name || '---';
     modalEmail.textContent = player.email || '---';
     modalEnrollment.textContent = player.enrollment_no || '---';
+    if (modalPhone) modalPhone.textContent = player.phone || '---';
     modalDept.textContent = player.department || '---';
     modalGender.textContent = player.gender || '---';
     modalRole.textContent = player.player_role || '---';
@@ -1139,11 +1141,12 @@ function exportRosterToCsv() {
     }
 
     const dataToExport = filteredPlayers.length ? filteredPlayers : allPlayers;
-    const headers = ['Full Name', 'Enrollment No', 'Department', 'Email', 'Gender', 'Role', 'Base Points', 'Auction Status', 'Sold To Team', 'Purchase Points', 'Clearance Status', 'Registration Date'];
+    const headers = ['Full Name', 'Enrollment No', 'Phone', 'Department', 'Email', 'Gender', 'Role', 'Base Points', 'Auction Status', 'Sold To Team', 'Purchase Points', 'Clearance Status', 'Registration Date'];
 
     const rows = dataToExport.map(p => [
         `"${(p.full_name || p.name || '').replace(/"/g, '""')}"`,
         `"${(p.enrollment_no || '').replace(/"/g, '""')}"`,
+        `"${(p.phone || '').replace(/"/g, '""')}"`,
         `"${(p.department || '').replace(/"/g, '""')}"`,
         `"${(p.email || '').replace(/"/g, '""')}"`,
         `"${(p.gender || '').replace(/"/g, '""')}"`,

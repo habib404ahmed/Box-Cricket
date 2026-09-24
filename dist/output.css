@@ -259,6 +259,12 @@
   .pointer-events-none {
     pointer-events: none;
   }
+  .visible {
+    visibility: visible;
+  }
+  .visible\! {
+    visibility: visible !important;
+  }
   .absolute {
     position: absolute;
   }
@@ -1095,6 +1101,9 @@
       border-color: color-mix(in oklab, var(--color-rose-400) 20%, transparent);
     }
   }
+  .border-rose-500 {
+    border-color: var(--color-rose-500);
+  }
   .border-rose-500\/20 {
     border-color: color-mix(in srgb, oklch(64.5% 0.246 16.439) 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -1133,6 +1142,9 @@
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-sky-400) 40%, transparent);
     }
+  }
+  .border-sky-500 {
+    border-color: var(--color-sky-500);
   }
   .border-sky-500\/20 {
     border-color: color-mix(in srgb, oklch(68.5% 0.169 237.323) 20%, transparent);
@@ -2412,6 +2424,9 @@
       --tw-brightness: brightness(105%);
       filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,);
     }
+  }
+  .focus\:border-rose-500:focus {
+    border-color: var(--color-rose-500);
   }
   .focus\:border-sky-400:focus {
     border-color: var(--color-sky-400);

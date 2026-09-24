@@ -392,15 +392,212 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Certificate Upload Display & Data URL Conversion
+    // ==============================================================================
+    // Password Visibility Toggles
+    // ==============================================================================
+    function setupPasswordToggle(inputId, buttonId, iconId) {
+        const input = document.getElementById(inputId);
+        const button = document.getElementById(buttonId);
+        const icon = document.getElementById(iconId);
+        if (!input || !button) return;
+
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            const isPassword = input.type === 'password';
+            input.type = isPassword ? 'text' : 'password';
+
+            if (icon) {
+                if (isPassword) {
+                    // Show "Eye Off / Slash" icon
+                    icon.innerHTML = `
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                    `;
+                    icon.classList.add('text-sky-400');
+                    icon.classList.remove('text-slate-400');
+                } else {
+                    // Show standard "Eye" icon
+                    icon.innerHTML = `
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    `;
+                    icon.classList.remove('text-sky-400');
+                    icon.classList.add('text-slate-400');
+                }
+            }
+        });
+    }
+
+    setupPasswordToggle('login-password', 'toggle-login-password', 'toggle-login-password-icon');
+    setupPasswordToggle('signup-password', 'toggle-signup-password', 'toggle-signup-password-icon');
+
+    // ==============================================================================
+    // Athlete Signup Validation & Real-time Sanitizers
+    // ==============================================================================
+    const nameInput = document.getElementById('signup-name');
+    const enrollmentInput = document.getElementById('signup-enrollment');
+    const phoneInput = document.getElementById('signup-phone');
+    const deptInput = document.getElementById('signup-department');
+    const emailInput = document.getElementById('signup-email');
+    const passwordInput = document.getElementById('signup-password');
+    const photoInputSignup = document.getElementById('signup-photo');
+    const certInput = document.getElementById('signup-certificate');
+
+    // Inline error helpers
+    const showFieldError = (inputId, errorId, message) => {
+        const input = document.getElementById(inputId);
+        const errorEl = document.getElementById(errorId);
+        if (input) {
+            input.classList.add('border-rose-500', 'focus:border-rose-500');
+            input.classList.remove('border-sky-950', 'border-sky-500');
+        }
+        if (errorEl) {
+            if (message) errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        }
+    };
+
+    const clearFieldError = (inputId, errorId) => {
+        const input = document.getElementById(inputId);
+        const errorEl = document.getElementById(errorId);
+        if (input) {
+            input.classList.remove('border-rose-500', 'focus:border-rose-500');
+        }
+        if (errorEl) {
+            errorEl.classList.add('hidden');
+        }
+    };
+
+    // Realtime field sanitizers & listeners
+    if (nameInput) {
+        nameInput.addEventListener('input', () => {
+            clearFieldError('signup-name', 'signup-name-error');
+        });
+    }
+
+    if (enrollmentInput) {
+        enrollmentInput.addEventListener('input', (e) => {
+            e.target.value = e.target.value.toUpperCase();
+            clearFieldError('signup-enrollment', 'signup-enrollment-error');
+        });
+    }
+
+    if (phoneInput) {
+        phoneInput.addEventListener('input', (e) => {
+            // Strictly enforce digits only and maximum 10 digits
+            e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+            clearFieldError('signup-phone', 'signup-phone-error');
+        });
+    }
+
+    if (deptInput) {
+        deptInput.addEventListener('change', () => {
+            clearFieldError('signup-department', 'signup-department-error');
+        });
+    }
+
+    if (emailInput) {
+        emailInput.addEventListener('input', () => {
+            clearFieldError('signup-email', 'signup-email-error');
+        });
+    }
+
+    if (passwordInput) {
+        passwordInput.addEventListener('input', () => {
+            clearFieldError('signup-password', 'signup-password-error');
+        });
+    }
+
+    // Athlete Photo Upload in Signup with Live Preview
+    let pendingSignupPhotoData = null;
+    if (photoInputSignup) {
+        const previewImg = document.getElementById('signup-photo-preview');
+        const placeholder = document.getElementById('signup-photo-placeholder');
+        const filenameLabel = document.getElementById('signup-photo-filename');
+
+        photoInputSignup.addEventListener('change', () => {
+            clearFieldError('signup-photo', 'signup-photo-error');
+            if (photoInputSignup.files && photoInputSignup.files.length > 0) {
+                const file = photoInputSignup.files[0];
+                const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+                if (!validTypes.includes(file.type)) {
+                    showFieldError('signup-photo', 'signup-photo-error', 'Unsupported image format. Please select JPG, PNG, or WEBP.');
+                    photoInputSignup.value = '';
+                    pendingSignupPhotoData = null;
+                    if (previewImg) previewImg.classList.add('hidden');
+                    if (placeholder) placeholder.classList.remove('hidden');
+                    if (filenameLabel) filenameLabel.textContent = 'Choose Athlete Photo...';
+                    return;
+                }
+
+                if (file.size > 2 * 1024 * 1024) {
+                    showFieldError('signup-photo', 'signup-photo-error', 'Photo exceeds 2MB limit. Please upload a smaller image.');
+                    photoInputSignup.value = '';
+                    pendingSignupPhotoData = null;
+                    if (previewImg) previewImg.classList.add('hidden');
+                    if (placeholder) placeholder.classList.remove('hidden');
+                    if (filenameLabel) filenameLabel.textContent = 'Choose Athlete Photo...';
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    pendingSignupPhotoData = e.target.result;
+                    if (previewImg) {
+                        previewImg.src = e.target.result;
+                        previewImg.classList.remove('hidden');
+                    }
+                    if (placeholder) placeholder.classList.add('hidden');
+                    if (filenameLabel) {
+                        const sizeKb = (file.size / 1024).toFixed(0);
+                        filenameLabel.textContent = `📷 ${file.name} (${sizeKb} KB)`;
+                        filenameLabel.classList.add('text-sky-400');
+                    }
+                };
+                reader.readAsDataURL(file);
+            } else {
+                pendingSignupPhotoData = null;
+                if (previewImg) previewImg.classList.add('hidden');
+                if (placeholder) placeholder.classList.remove('hidden');
+                if (filenameLabel) {
+                    filenameLabel.textContent = 'Choose Athlete Photo...';
+                    filenameLabel.classList.remove('text-sky-400');
+                }
+            }
+        });
+    }
+
+    // Certificate Upload Display & Data URL Conversion with Strict MIME & Size Validation
     let pendingCertData = null;
     let pendingCertName = null;
-    const certInput = document.getElementById('signup-certificate');
     const certFileName = document.getElementById('certificate-filename');
     if (certInput && certFileName) {
         certInput.addEventListener('change', () => {
+            clearFieldError('signup-certificate', 'signup-cert-error');
             if (certInput.files && certInput.files.length > 0) {
                 const file = certInput.files[0];
+                const validMimes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+                const isPdfOrImage = validMimes.includes(file.type) || file.name.match(/\.(pdf|jpe?g|png|webp)$/i);
+
+                if (!isPdfOrImage) {
+                    showFieldError('signup-certificate', 'signup-cert-error', 'Unsupported file type. Please upload a PDF, JPG, PNG, or WEBP.');
+                    certInput.value = '';
+                    pendingCertData = null;
+                    pendingCertName = null;
+                    certFileName.textContent = 'Upload Certificate / Proof';
+                    certFileName.classList.remove('text-lime-400', 'text-sky-400');
+                    return;
+                }
+
+                if (file.size > 5 * 1024 * 1024) {
+                    showFieldError('signup-certificate', 'signup-cert-error', 'File size exceeds 5MB limit. Please upload a smaller document.');
+                    certInput.value = '';
+                    pendingCertData = null;
+                    pendingCertName = null;
+                    certFileName.textContent = 'Upload Certificate / Proof';
+                    certFileName.classList.remove('text-lime-400', 'text-sky-400');
+                    return;
+                }
+
                 const sizeKb = (file.size / 1024).toFixed(1);
                 pendingCertName = file.name;
                 certFileName.textContent = `📎 ${file.name} (${sizeKb} KB)`;
@@ -420,7 +617,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Dynamic Profile Registration Router Handler
+    // Dynamic Profile Registration Router Handler with Strict Validation
     const signupForm = document.getElementById('signup-form');
     if (signupForm) {
         signupForm.addEventListener('submit', async function(e) {
@@ -430,13 +627,108 @@ document.addEventListener('DOMContentLoaded', () => {
             const signupErrorText = document.getElementById('signup-error-text');
             if (signupErrorBox) signupErrorBox.classList.add('hidden');
 
-            // 1. Gather profile data attributes from the input fields
-            const deptSelect = document.getElementById('signup-department');
-            const deptText = deptSelect ? (deptSelect.options[deptSelect.selectedIndex]?.text || deptSelect.value || '') : '';
-            const rawPassword = document.getElementById('signup-password')?.value || '';
-            const passwordHash = window.UniBoxDb ? await window.UniBoxDb.hashPassword(rawPassword) : rawPassword;
+            // Reset previous field errors
+            ['signup-name', 'signup-enrollment', 'signup-phone', 'signup-department', 'signup-email', 'signup-password', 'signup-photo', 'signup-certificate'].forEach(id => {
+                const errId = id === 'signup-certificate' ? 'signup-cert-error' : `${id}-error`;
+                clearFieldError(id, errId);
+            });
 
-            // Ensure certificate file is read asynchronously if user submits immediately
+            // 1. Full Name Validation: Text only (letters, spaces, hyphens, apostrophes), 2-100 chars
+            const rawName = document.getElementById('signup-name')?.value || '';
+            const trimmedName = rawName.trim().replace(/\s+/g, ' ');
+            const nameRegex = /^[A-Za-z]+([ A-Za-z'-]*[A-Za-z]+)*$/;
+
+            if (!trimmedName || trimmedName.length < 2) {
+                showFieldError('signup-name', 'signup-name-error', 'Full Name is required (minimum 2 characters).');
+                document.getElementById('signup-name')?.focus();
+                return;
+            }
+            if (trimmedName.length > 100) {
+                showFieldError('signup-name', 'signup-name-error', 'Full Name must not exceed 100 characters.');
+                document.getElementById('signup-name')?.focus();
+                return;
+            }
+            if (!nameRegex.test(trimmedName)) {
+                showFieldError('signup-name', 'signup-name-error', 'Full Name can only contain letters, spaces, hyphens and apostrophes (no numbers or special characters).');
+                document.getElementById('signup-name')?.focus();
+                return;
+            }
+
+            // 2. Enrollment Number Validation: Alphanumeric, hyphens/slashes, 4-25 chars
+            const rawEnrollment = document.getElementById('signup-enrollment')?.value || '';
+            const cleanEnrollment = rawEnrollment.trim().toUpperCase();
+            const enrollmentRegex = /^[A-Z0-9\/-]{4,25}$/;
+
+            if (!cleanEnrollment || !enrollmentRegex.test(cleanEnrollment)) {
+                showFieldError('signup-enrollment', 'signup-enrollment-error', 'Enrollment Number must be 4–25 alphanumeric characters (letters, numbers, hyphens or slashes only).');
+                document.getElementById('signup-enrollment')?.focus();
+                return;
+            }
+
+            // 3. Phone Number Validation: Exactly 10 digits for Indian mobile numbers
+            const rawPhone = document.getElementById('signup-phone')?.value || '';
+            const cleanPhone = rawPhone.replace(/\D/g, '');
+
+            if (!cleanPhone || cleanPhone.length !== 10) {
+                showFieldError('signup-phone', 'signup-phone-error', 'Please enter a valid 10-digit mobile number (digits only, no spaces or special characters).');
+                document.getElementById('signup-phone')?.focus();
+                return;
+            }
+
+            // 4. Branch / Department Validation: Must match authorized tournament branches
+            const deptSelect = document.getElementById('signup-department');
+            const deptText = deptSelect ? (deptSelect.options[deptSelect.selectedIndex]?.value || '') : '';
+            const VALID_BRANCHES = ['B.Tech', 'BCA', 'BBA', 'MCA', 'MBA'];
+
+            if (!deptText || !VALID_BRANCHES.includes(deptText)) {
+                showFieldError('signup-department', 'signup-department-error', 'Please select an authorized branch from the dropdown.');
+                deptSelect?.focus();
+                return;
+            }
+
+            // 5. Email ID Validation: Valid standard email format
+            const rawEmail = document.getElementById('signup-email')?.value || '';
+            const cleanEmail = rawEmail.trim().toLowerCase();
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+            if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+                showFieldError('signup-email', 'signup-email-error', 'Please enter a valid email address (e.g., student@university.edu).');
+                document.getElementById('signup-email')?.focus();
+                return;
+            }
+
+            // 6. Password Validation: Minimum 8 characters
+            const rawPassword = document.getElementById('signup-password')?.value || '';
+            if (!rawPassword || rawPassword.length < 8) {
+                showFieldError('signup-password', 'signup-password-error', 'Password must be at least 8 characters long.');
+                document.getElementById('signup-password')?.focus();
+                return;
+            }
+
+            // 7. Gender Validation: Controlled radio options
+            const genderVal = signupForm.querySelector('input[name="gender"]:checked')?.value || 'Male';
+            const VALID_GENDERS = ['Male', 'Female', 'Other'];
+            if (!VALID_GENDERS.includes(genderVal)) {
+                if (signupErrorBox && signupErrorText) {
+                    signupErrorText.textContent = 'Please select a valid gender option.';
+                    signupErrorBox.classList.remove('hidden');
+                }
+                return;
+            }
+
+            // 8. Role Validation: Controlled radio options
+            const selectedRole = signupForm.querySelector('input[name="player_role"]:checked')?.value || 'All-Rounder';
+            const VALID_ROLES = ['All-Rounder', 'Batter', 'Bowler', 'Keeper', 'Wicketkeeper', 'Fielder'];
+            if (!VALID_ROLES.includes(selectedRole)) {
+                if (signupErrorBox && signupErrorText) {
+                    signupErrorText.textContent = 'Please select a valid playing role.';
+                    signupErrorBox.classList.remove('hidden');
+                }
+                return;
+            }
+            const normalizedRole = selectedRole === 'Keeper' ? 'Wicketkeeper' : selectedRole;
+
+            // 9. Read certificate file asynchronously if submitted right after selection
             const certFile = certInput?.files?.[0];
             if (certFile && !pendingCertData) {
                 pendingCertData = await new Promise((resolve) => {
@@ -448,33 +740,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 pendingCertName = certFile.name;
             }
 
-            const selectedRole = signupForm.querySelector('input[name="player_role"]:checked')?.value || document.getElementById('signup-role')?.value || 'All-Rounder';
-            const defaultBase = window.UniBoxDb ? window.UniBoxDb.getDefaultBasePriceForRole(selectedRole) : 15;
+            // Hash password securely (never logged to console)
+            const passwordHash = window.UniBoxDb ? await window.UniBoxDb.hashPassword(rawPassword) : rawPassword;
+            const defaultBase = window.UniBoxDb ? window.UniBoxDb.getDefaultBasePriceForRole(normalizedRole) : 15;
             const certDisplayStr = pendingCertName ? `📎 ${pendingCertName}` : 'None attached';
+
             const playerData = {
-                name: document.getElementById('signup-name')?.value?.trim() || '',
-                enrollment_no: document.getElementById('signup-enrollment')?.value?.trim() || '',
+                name: trimmedName,
+                enrollment_no: cleanEnrollment,
+                phone: cleanPhone,
                 department: deptText,
-                email: document.getElementById('signup-email')?.value?.trim() || '',
-                gender: signupForm.querySelector('input[name="gender"]:checked')?.value || document.getElementById('signup-gender')?.value || 'Not specified',
-                player_role: selectedRole,
+                email: cleanEmail,
+                gender: genderVal,
+                player_role: normalizedRole,
                 base_price: defaultBase,
                 auction_status: 'Upcoming',
                 certificate: certDisplayStr,
                 certificate_name: certDisplayStr,
                 certificate_data: pendingCertData,
+                photo_data: pendingSignupPhotoData,
                 password_hash: passwordHash,
                 status: 'Registered'
             };
 
-            // 2. Persist to Database (Supabase / local fallback)
+            // 10. Persist to Database (Supabase / local fallback)
             sessionStorage.setItem('unibox_active_email', playerData.email);
             let finalProfile = playerData;
             if (window.UniBoxDb) {
                 const dbResult = await window.UniBoxDb.savePlayer(playerData);
                 if (dbResult.error) {
                     if (signupErrorBox && signupErrorText) {
-                        signupErrorText.textContent = (dbResult.error.code === '23505' || dbResult.error.message?.includes('unique'))
+                        signupErrorText.textContent = (dbResult.error.code === '23505' || dbResult.error.message?.includes('unique') || dbResult.error.message?.includes('duplicate key'))
                             ? 'An athlete with this email or enrollment number already exists.'
                             : (dbResult.error.message || 'Registration failed.');
                         signupErrorBox.classList.remove('hidden');
@@ -484,29 +780,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (dbResult.data) {
                     finalProfile = { ...playerData, ...dbResult.data };
                 }
-                console.log('Player registration persisted:', dbResult);
             }
 
-            // 3. Populate all profile and auction fields on the dashboard
+            // 11. Populate all profile and auction fields on the dashboard
             applyProfileToUI(finalProfile);
 
-            // 4. Switch to dashboard view & hide header login button
+            // 12. Switch to dashboard view & hide header login button
             enterDashboard(finalProfile);
             updateCertViewerButton(playerData.certificate, playerData.certificate_data);
-
-            console.log('Successfully initialized arena profile node.', playerData);
 
             signupForm.reset();
             pendingCertData = null;
             pendingCertName = null;
+            pendingSignupPhotoData = null;
             if (certFileName) {
                 certFileName.textContent = 'Upload Certificate / Proof';
                 certFileName.classList.remove('text-lime-400');
             }
+            const previewImg = document.getElementById('signup-photo-preview');
+            const placeholder = document.getElementById('signup-photo-placeholder');
+            const filenameLabel = document.getElementById('signup-photo-filename');
+            if (previewImg) previewImg.classList.add('hidden');
+            if (placeholder) placeholder.classList.remove('hidden');
+            if (filenameLabel) {
+                filenameLabel.textContent = 'Choose Athlete Photo...';
+                filenameLabel.classList.remove('text-sky-400');
+            }
         });
     }
 
-    // Dashboard Player Photo Upload Handler
+    // Dashboard Player Photo Upload Handler with Inline Notification
     const photoInput = document.getElementById('dash-photo-input');
     const playerPhoto = document.getElementById('dash-player-photo');
     const photoPlaceholder = document.getElementById('dash-photo-placeholder');
@@ -517,8 +820,23 @@ document.addEventListener('DOMContentLoaded', () => {
         photoInput.addEventListener('change', () => {
             if (photoInput.files && photoInput.files.length > 0) {
                 const file = photoInput.files[0];
-                if (!file.type.startsWith('image/')) {
-                    alert('Please select a valid image file (JPG, PNG, or WEBP).');
+                const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+                if (!validTypes.includes(file.type)) {
+                    if (photoBtnText) {
+                        const orig = photoBtnText.textContent;
+                        photoBtnText.textContent = '⚠️ Invalid file type';
+                        setTimeout(() => { photoBtnText.textContent = orig; }, 3000);
+                    }
+                    return;
+                }
+
+                if (file.size > 2 * 1024 * 1024) {
+                    if (photoBtnText) {
+                        const orig = photoBtnText.textContent;
+                        photoBtnText.textContent = '⚠️ Max 2MB allowed';
+                        setTimeout(() => { photoBtnText.textContent = orig; }, 3000);
+                    }
                     return;
                 }
 
@@ -558,6 +876,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setInnerText('dash-player-name', profile.name || profile.full_name);
         setInnerText('dash-player-name-full', profile.name || profile.full_name);
         setInnerText('dash-player-email', profile.email);
+        setInnerText('dash-player-phone', profile.phone || '---');
         setInnerText('dash-player-roll', profile.enrollment_no);
         setInnerText('dash-player-roll-detail', profile.enrollment_no);
         setInnerText('dash-player-dept', profile.department);

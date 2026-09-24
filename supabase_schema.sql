@@ -13,6 +13,7 @@ create table if not exists public.players (
     email text not null unique,
     gender text not null,
     player_role text not null,
+    phone text,
     certificate_name text,
     certificate_data text,
     photo_data text,
@@ -21,6 +22,7 @@ create table if not exists public.players (
 );
 
 -- Migration for existing tables:
+alter table public.players add column if not exists phone text;
 alter table public.players add column if not exists password_hash text;
 alter table public.players add column if not exists certificate_data text;
 
