@@ -142,7 +142,8 @@
                             <label for="reg-owner-name" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                                 Owner Full Name *
                             </label>
-                            <input type="text" id="reg-owner-name" placeholder="Vikram Singh"
+                            <input type="text" id="reg-owner-name" placeholder="Vikram Singh" maxlength="100" autocomplete="name"
+                                pattern="^[A-Za-zÀ-ÿ' -]{2,100}$"
                                 class="input-premium text-sm" required>
                         </div>
                         <div>
@@ -281,6 +282,30 @@
                 hideAlert();
             });
 
+            // Owner Full Name Strict Input Sanitization
+            const regOwnerNameInput = document.getElementById('reg-owner-name');
+            if (regOwnerNameInput) {
+                regOwnerNameInput.addEventListener('beforeinput', (e) => {
+                    if (e.data && /[^A-Za-zÀ-ÿ' -]/.test(e.data)) {
+                        e.preventDefault();
+                    }
+                });
+                regOwnerNameInput.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey || e.altKey || e.metaKey || e.key.length > 1) return;
+                    if (!/^[A-Za-zÀ-ÿ' -]$/.test(e.key)) {
+                        e.preventDefault();
+                    }
+                });
+                regOwnerNameInput.addEventListener('input', () => {
+                    regOwnerNameInput.value = regOwnerNameInput.value
+                        .replace(/[^A-Za-zÀ-ÿ' -]/g, '')
+                        .replace(/\s{2,}/g, ' ');
+                });
+                regOwnerNameInput.addEventListener('blur', () => {
+                    regOwnerNameInput.value = regOwnerNameInput.value.trim().replace(/\s{2,}/g, ' ');
+                });
+            }
+
             // Login Form Submission
             formLogin?.addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -340,6 +365,21 @@
 
                 if (!ownerName || !customTeamName || !department || !email || !password) {
                     showAlert('Please complete all required fields.');
+                    return;
+                }
+
+                if (/[0-9]/.test(ownerName)) {
+                    showAlert('Owner Full Name cannot contain numbers.');
+                    return;
+                }
+
+                if (/[^A-Za-zÀ-ÿ' -]/.test(ownerName)) {
+                    showAlert('Owner Full Name can only contain letters, spaces, hyphens and apostrophes.');
+                    return;
+                }
+
+                if (ownerName.length < 2) {
+                    showAlert('Owner Full Name must be at least 2 characters long.');
                     return;
                 }
 

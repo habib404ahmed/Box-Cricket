@@ -469,8 +469,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Realtime field sanitizers & listeners
     if (nameInput) {
+        // Intercept invalid characters before insertion where supported
+        nameInput.addEventListener('beforeinput', (e) => {
+            if (e.data && /[^A-Za-zÀ-ÿ' -]/.test(e.data)) {
+                e.preventDefault();
+                showFieldError('signup-name', 'signup-name-error', 'Full Name can only contain letters, spaces, hyphens and apostrophes (no numbers or special characters).');
+            }
+        });
+
+        // Intercept keys directly (prevent numbers, emojis, symbols from ever appearing)
+        nameInput.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.altKey || e.metaKey || e.key.length > 1) return;
+            if (/[0-9]/.test(e.key)) {
+                e.preventDefault();
+                showFieldError('signup-name', 'signup-name-error', 'Numbers are strictly not allowed in Full Name.');
+                return;
+            }
+            if (!/^[A-Za-zÀ-ÿ' -]$/.test(e.key)) {
+                e.preventDefault();
+                showFieldError('signup-name', 'signup-name-error', 'Special characters, numbers, and emojis are not allowed in Full Name.');
+                return;
+            }
+        });
+
+        // Input-level filtering while typing & pasting
         nameInput.addEventListener('input', () => {
-            clearFieldError('signup-name', 'signup-name-error');
+            const raw = nameInput.value;
+            const hadDisallowed = /[^A-Za-zÀ-ÿ' -]/.test(raw);
+            const filtered = raw
+                .replace(/[^A-Za-zÀ-ÿ' -]/g, '')
+                .replace(/\s{2,}/g, ' ');
+
+            if (raw !== filtered) {
+                nameInput.value = filtered;
+            }
+
+            if (hadDisallowed) {
+                showFieldError('signup-name', 'signup-name-error', 'Numbers and special characters were removed from Full Name.');
+            } else if (filtered.trim().length >= 2) {
+                clearFieldError('signup-name', 'signup-name-error');
+            }
+        });
+
+        nameInput.addEventListener('paste', (e) => {
+            const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+            if (/[^A-Za-zÀ-ÿ' -]/.test(text)) {
+                showFieldError('signup-name', 'signup-name-error', 'Numbers and special characters in pasted text were automatically removed.');
+            }
+        });
+
+        nameInput.addEventListener('blur', () => {
+            nameInput.value = nameInput.value.trim().replace(/\s{2,}/g, ' ');
+            if (nameInput.value.length >= 2) {
+                clearFieldError('signup-name', 'signup-name-error');
+            }
         });
     }
 
@@ -635,21 +687,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 1. Full Name Validation: Text only (letters, spaces, hyphens, apostrophes), 2-100 chars
             const rawName = document.getElementById('signup-name')?.value || '';
-            const trimmedName = rawName.trim().replace(/\s+/g, ' ');
-            const nameRegex = /^[A-Za-z]+([ A-Za-z'-]*[A-Za-z]+)*$/;
+            const sanitizedName = rawName
+                .replace(/[^A-Za-zÀ-ÿ' -]/g, '')
+                .replace(/\s{2,}/g, ' ');
+            const trimmedName = sanitizedName.trim();
+
+            if (/[0-9]/.test(rawName)) {
+                showFieldError('signup-name', 'signup-name-error', 'Full Name cannot contain numbers. Numbers are strictly disallowed.');
+                document.getElementById('signup-name')?.focus();
+                return;
+            }
+
+            if (/[^A-Za-zÀ-ÿ' -]/.test(rawName)) {
+                showFieldError('signup-name', 'signup-name-error', 'Full Name can only contain letters, spaces, hyphens and apostrophes (no numbers or special characters).');
+                document.getElementById('signup-name')?.focus();
+                return;
+            }
 
             if (!trimmedName || trimmedName.length < 2) {
                 showFieldError('signup-name', 'signup-name-error', 'Full Name is required (minimum 2 characters).');
                 document.getElementById('signup-name')?.focus();
                 return;
             }
+
             if (trimmedName.length > 100) {
                 showFieldError('signup-name', 'signup-name-error', 'Full Name must not exceed 100 characters.');
                 document.getElementById('signup-name')?.focus();
                 return;
             }
+
+            const nameRegex = /^[A-Za-zÀ-ÿ]+([ A-Za-zÀ-ÿ'-]*[A-Za-zÀ-ÿ]+)*$/;
             if (!nameRegex.test(trimmedName)) {
-                showFieldError('signup-name', 'signup-name-error', 'Full Name can only contain letters, spaces, hyphens and apostrophes (no numbers or special characters).');
+                showFieldError('signup-name', 'signup-name-error', 'Please enter a valid full name (letters, spaces, hyphens and apostrophes only).');
                 document.getElementById('signup-name')?.focus();
                 return;
             }

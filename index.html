@@ -560,6 +560,7 @@
                                 Full Name <span class="text-amber-400">*</span>
                             </label>
                             <input type="text" id="signup-name" name="name" placeholder="E.g., Alex Mercer" maxlength="100" autocomplete="name"
+                                pattern="^[A-Za-zÀ-ÿ' -]{2,100}$"
                                 class="input-premium" required>
                             <p id="signup-name-error" class="hidden text-[11px] text-rose-400 font-medium mt-1">Please enter a valid full name (letters, spaces, hyphens and apostrophes only, max 100 characters).</p>
                         </div>
