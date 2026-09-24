@@ -227,6 +227,13 @@ const UniBoxDb = {
                         }
                     });
 
+                    // Ensure default league franchises are present unless explicitly deleted
+                    DEFAULT_TEAMS.forEach(dt => {
+                        if (!teams.some(t => t.id === dt.id || (t.name && t.name.toLowerCase() === dt.name.toLowerCase())) && !deletedIds.includes(dt.id)) {
+                            teams.push({ ...dt, spent: 0, leftover_balance: dt.total_budget, squad: [] });
+                        }
+                    });
+
                     localStorage.setItem('unibox_teams', JSON.stringify(teams));
                 }
             } catch (err) {}
@@ -412,13 +419,17 @@ const UniBoxDb = {
             const slug = customTeamName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-');
             const customId = `team-${slug}-${Date.now().toString().slice(-4)}`;
 
+            const initialBudget = Number(ownerData.budget) || 1000;
             targetTeam = {
                 id: customId,
                 name: customTeamName.trim(),
                 department: department.trim(),
                 logo: logo || '🏆',
                 color: color || '#a3e635',
-                total_budget: 1000,
+                total_budget: initialBudget,
+                spent: 0,
+                leftover_balance: initialBudget,
+                squad: [],
                 owner_name: ownerName.trim(),
                 owner_email: normalizedEmail,
                 owner_phone: phone ? phone.trim() : null,
@@ -976,6 +987,16 @@ const UniBoxDb = {
                 console.error('Failed to fetch all players from Supabase:', error);
                 players = JSON.parse(localStorage.getItem('unibox_players') || '[]');
             }
+
+            // Merge local players not yet reflected in Supabase
+            const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+            localPlayers.forEach(lp => {
+                const lpEmail = (lp.email || '').toLowerCase();
+                const lpEnr = (lp.enrollment_no || '').toLowerCase();
+                if (!players.some(p => (p.email && p.email.toLowerCase() === lpEmail) || (p.enrollment_no && p.enrollment_no.toLowerCase() === lpEnr))) {
+                    players.push(lp);
+                }
+            });
         }
 
         // Overlay auction cache (base_price, sold_price, sold_to_team, auction_status)

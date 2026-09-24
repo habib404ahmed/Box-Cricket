@@ -4,27 +4,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Command Center - UniBox League 2026</title>
+    <title>Admin Command Center — UniBox League 2026</title>
+    <meta name="description" content="Tournament operations control room for UniBox League 2026. Manage athletes, clearances, base prices, and live franchise auction.">
+    <!-- Favicon & Stylesheet -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏏</text></svg>">
     <link href="../dist/output.css" rel="stylesheet">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #050816;
+            color: #F8FAFC;
         }
+
+        /* Select Options in Midnight */
+        select option {
+            background: #08111F;
+            color: #F8FAFC;
+        }
+
         @media print {
-            .no-print {
-                display: none !important;
-            }
-            body {
-                background: white !important;
-                color: black !important;
-            }
-            .print-clean {
-                border: 1px solid #ddd !important;
-                box-shadow: none !important;
-            }
+            .no-print { display: none !important; }
+            body { background: white !important; color: black !important; }
+            .print-clean { border: 1px solid #ddd !important; box-shadow: none !important; }
         }
     </style>
     <!-- Instant Route Guard: Redirect to login if unauthenticated -->
@@ -35,58 +36,70 @@
     </script>
 </head>
 
-<body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-lime-400 selection:text-slate-950 relative antialiased">
-    <!-- Ambient Stadium Lighting Effect -->
-    <div class="fixed inset-0 pointer-events-none overflow-hidden z-0 no-print">
-        <div class="absolute -top-40 left-1/4 w-[600px] h-[600px] bg-lime-500/10 rounded-full blur-[140px]"></div>
-        <div class="absolute top-1/3 right-10 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[160px]"></div>
-        <div class="absolute bottom-10 left-10 w-[500px] h-[500px] bg-teal-500/5 rounded-full blur-[140px]"></div>
+<body class="bg-[#050816] text-slate-100 min-h-screen selection:bg-sky-500 selection:text-slate-950 relative antialiased overflow-x-hidden">
+
+    <!-- ===== CINEMATIC STADIUM ATMOSPHERE BACKGROUND ===== -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden -z-10 no-print stadium-atmosphere">
+        <div class="absolute -top-40 left-1/4 w-[650px] h-[650px] bg-blue-600/[0.1] rounded-full blur-[160px]"></div>
+        <div class="absolute top-1/3 right-10 w-[550px] h-[550px] bg-sky-500/[0.06] rounded-full blur-[160px]"></div>
+        <div class="absolute bottom-10 left-10 w-[500px] h-[500px] bg-indigo-900/[0.18] rounded-full blur-[150px]"></div>
+        <!-- Light Beams -->
+        <div class="stadium-beam beam-left hidden md:block"></div>
+        <div class="stadium-beam beam-right hidden md:block"></div>
+        <!-- Pitch Crease Geometry & Grid -->
+        <div class="pitch-crease-geometry opacity-35"></div>
+        <div class="absolute inset-0 pitch-grid opacity-25"></div>
     </div>
 
-    <!-- Top Admin Header -->
-    <header class="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 no-print">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+    <!-- ===== ADMIN COMMAND HEADER ===== -->
+    <header class="sticky top-0 z-40 bg-[#050816]/92 backdrop-blur-xl border-b border-sky-950/70 no-print transition-all">
+        <!-- Top Electric Blue & Gold Accent Line -->
+        <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-amber-400 opacity-60"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[74px] flex items-center justify-between gap-4">
             <!-- Brand & Badge -->
             <div class="flex items-center gap-4">
-                <a href="../index.html" class="flex items-center gap-3 group">
-                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-lime-400 to-emerald-500 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-lime-400/20 group-hover:scale-105 transition-transform">
-                        🏏
+                <a href="../index.html" class="flex items-center gap-3.5 group">
+                    <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 via-sky-500 to-amber-400 p-[1.5px] shadow-lg shadow-sky-500/20 group-hover:scale-105 transition-transform duration-300">
+                        <div class="w-full h-full bg-[#08111F] rounded-[14px] flex items-center justify-center text-xl">
+                            🏏
+                        </div>
                     </div>
                     <div>
                         <div class="flex items-center gap-2">
-                            <span class="text-xs font-black tracking-widest text-lime-400 uppercase">UniBox League</span>
-                            <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">Admin Area</span>
+                            <span class="text-[10px] font-black tracking-[0.2em] text-sky-400 uppercase">UniBox League 2026</span>
+                            <span class="text-[9px] uppercase font-black px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/25 tracking-wider">Admin</span>
                         </div>
-                        <h1 class="text-lg font-black tracking-tight text-white uppercase">Tournament HQ Control</h1>
+                        <h1 class="text-base font-black tracking-tight text-white uppercase leading-none" style="font-family: 'Space Grotesk', sans-serif;">Tournament Control HQ</h1>
                     </div>
                 </a>
             </div>
 
             <!-- Header Actions -->
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2 sm:gap-3">
                 <!-- Live DB Status -->
-                <div id="db-status-badge" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <div id="db-status-badge" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#08111F] border border-sky-900/60 text-[11px] font-bold text-sky-400">
+                    <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
                     <span id="db-status-text">Supabase Live</span>
                 </div>
 
                 <!-- Refresh Button -->
-                <button id="refresh-btn" type="button" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer" title="Refresh Live Data">
+                <button id="refresh-btn" type="button" class="p-2.5 rounded-xl border border-sky-900/60 bg-[#08111F] hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer" title="Refresh Live Data">
                     <svg id="refresh-icon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                 </button>
 
                 <!-- Return to Public Portal -->
-                <a href="../index.html" class="text-xs font-bold text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-800 px-4 py-2.5 rounded-xl transition-all flex items-center gap-2">
-                    <svg class="w-4 h-4 text-lime-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <a href="../index.html" class="hidden sm:flex text-xs font-bold text-slate-300 hover:text-white bg-[#08111F] hover:bg-slate-800 border border-sky-900/60 px-4 py-2.5 rounded-xl transition-all items-center gap-2">
+                    <svg class="w-3.5 h-3.5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                     </svg>
-                    <span>Public Portal</span>
+                    <span>Player Portal</span>
                 </a>
 
-                <!-- Coordinator Log Out -->
-                <button onclick="adminLogout()" type="button" class="text-xs font-bold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5" title="Exit Admin Session">
+                <!-- Log Out -->
+                <button onclick="adminLogout()" type="button" class="text-xs font-bold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5" title="Exit Admin Session">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
                     <span>Log Out</span>
                 </button>
@@ -94,90 +107,92 @@
         </div>
     </header>
 
-    <!-- Main Admin Container -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 relative z-10 space-y-8">
-        <!-- KPI Metrics Strip -->
-        <section class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+    <!-- ===== MAIN ADMIN CONTAINER ===== -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10 space-y-6">
+
+        <!-- ===== KPI METRICS STRIP (Cinematic Midnight Cards) ===== -->
+        <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <!-- Metric 1: Total Athletes -->
-            <div class="p-5 rounded-2xl bg-slate-900/50 border border-slate-800 backdrop-blur-sm relative overflow-hidden">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Total Athletes</span>
-                    <span class="p-2 rounded-lg bg-slate-800/80 text-lime-400">👥</span>
+            <div class="metric-card" style="--metric-color: #38BDF8;">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Registered</div>
+                    <div class="w-9 h-9 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 text-base">👥</div>
                 </div>
-                <div class="flex items-baseline gap-2">
-                    <h3 id="stat-total" class="text-3xl sm:text-4xl font-black text-white">0</h3>
-                    <span class="text-xs text-slate-500 font-semibold">Registered</span>
+                <div class="flex items-baseline gap-2 mb-1">
+                    <h3 id="stat-total" class="text-4xl sm:text-5xl font-black text-white" style="font-family: 'JetBrains Mono', monospace; letter-spacing: -0.05em;">0</h3>
                 </div>
-                <div class="w-full bg-slate-800/50 h-1.5 rounded-full mt-3 overflow-hidden">
-                    <div class="bg-lime-400 h-full w-full"></div>
-                </div>
-            </div>
-
-            <!-- Metric 2: Approved / Cleared -->
-            <div class="p-5 rounded-2xl bg-slate-900/50 border border-slate-800 backdrop-blur-sm relative overflow-hidden">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Verified & Approved</span>
-                    <span class="p-2 rounded-lg bg-slate-800/80 text-emerald-400">✅</span>
-                </div>
-                <div class="flex items-baseline gap-2">
-                    <h3 id="stat-approved" class="text-3xl sm:text-4xl font-black text-emerald-400">0</h3>
-                    <span class="text-xs text-slate-500 font-semibold">Matchday Ready</span>
-                </div>
-                <div class="w-full bg-slate-800/50 h-1.5 rounded-full mt-3 overflow-hidden">
-                    <div id="stat-approved-bar" class="bg-emerald-400 h-full w-0 transition-all duration-500"></div>
+                <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Athletes</div>
+                <div class="progress-track">
+                    <div class="progress-fill" style="width: 100%;"></div>
                 </div>
             </div>
 
-            <!-- Metric 3: Pending Review -->
-            <div class="p-5 rounded-2xl bg-slate-900/50 border border-slate-800 backdrop-blur-sm relative overflow-hidden">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Pending Clearance</span>
-                    <span class="p-2 rounded-lg bg-slate-800/80 text-amber-400">⏳</span>
+            <!-- Metric 2: Approved -->
+            <div class="metric-card" style="--metric-color: #22C55E;">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Verified</div>
+                    <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-base">✅</div>
                 </div>
-                <div class="flex items-baseline gap-2">
-                    <h3 id="stat-pending" class="text-3xl sm:text-4xl font-black text-amber-400">0</h3>
-                    <span class="text-xs text-slate-500 font-semibold">Needs Review</span>
+                <div class="flex items-baseline gap-2 mb-1">
+                    <h3 id="stat-approved" class="text-4xl sm:text-5xl font-black text-emerald-400" style="font-family: 'JetBrains Mono', monospace; letter-spacing: -0.05em;">0</h3>
                 </div>
-                <div class="w-full bg-slate-800/50 h-1.5 rounded-full mt-3 overflow-hidden">
-                    <div id="stat-pending-bar" class="bg-amber-400 h-full w-0 transition-all duration-500"></div>
+                <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Matchday Cleared</div>
+                <div class="progress-track">
+                    <div id="stat-approved-bar" class="progress-fill" style="width: 0%; transition: width 0.7s ease;"></div>
                 </div>
             </div>
 
-            <!-- Metric 4: Departments Active -->
-            <div class="p-5 rounded-2xl bg-slate-900/50 border border-slate-800 backdrop-blur-sm relative overflow-hidden">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Departments</span>
-                    <span class="p-2 rounded-lg bg-slate-800/80 text-teal-400">🏫</span>
+            <!-- Metric 3: Pending Review (Gold Theme) -->
+            <div class="metric-card" style="--metric-color: #F5C542;">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Pending</div>
+                    <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-base">⏳</div>
                 </div>
-                <div class="flex items-baseline gap-2">
-                    <h3 id="stat-depts" class="text-3xl sm:text-4xl font-black text-teal-400">0</h3>
-                    <span class="text-xs text-slate-500 font-semibold">Branches Competing</span>
+                <div class="flex items-baseline gap-2 mb-1">
+                    <h3 id="stat-pending" class="text-4xl sm:text-5xl font-black text-amber-400" style="font-family: 'JetBrains Mono', monospace; letter-spacing: -0.05em;">0</h3>
                 </div>
-                <div class="w-full bg-slate-800/50 h-1.5 rounded-full mt-3 overflow-hidden">
-                    <div class="bg-teal-400 h-full w-full"></div>
+                <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Needs Review</div>
+                <div class="progress-track">
+                    <div id="stat-pending-bar" class="progress-fill-amber" style="height:100%;border-radius:100px;width:0%;transition:width 0.7s ease;"></div>
+                </div>
+            </div>
+
+            <!-- Metric 4: Departments -->
+            <div class="metric-card" style="--metric-color: #1677FF;">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Branches</div>
+                    <div class="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 text-base">🏫</div>
+                </div>
+                <div class="flex items-baseline gap-2 mb-1">
+                    <h3 id="stat-depts" class="text-4xl sm:text-5xl font-black text-sky-300" style="font-family: 'JetBrains Mono', monospace; letter-spacing: -0.05em;">0</h3>
+                </div>
+                <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Competing Franchises</div>
+                <div class="progress-track">
+                    <div class="h-full rounded-full bg-gradient-to-r from-blue-500 to-sky-400" style="width: 100%;"></div>
                 </div>
             </div>
         </section>
 
-        <!-- Live Tournament Franchises & Realtime Balance Reflection HUD -->
-        <section class="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 sm:p-7 backdrop-blur-sm shadow-xl space-y-5">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+        <!-- ===== FRANCHISE PURSE & LIVE AUCTION HUD ===== -->
+        <section class="glass-card-static p-6 sm:p-7 space-y-5 rounded-2xl border border-sky-950/80">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-sky-950/80">
                 <div>
-                    <div class="flex items-center gap-2">
-                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-lime-400/10 text-lime-400 border border-lime-400/20">
-                            <span class="w-1.5 h-1.5 rounded-full bg-lime-400 animate-ping"></span> Live Auction Hub
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="badge-live">
+                            <span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping"></span>
+                            Live Auction Hub
                         </span>
-                        <span class="text-xs text-slate-500 font-mono">5 Competing Department Franchises</span>
+                        <span class="text-[11px] text-slate-400 font-mono">Competing Department Franchises</span>
                     </div>
-                    <h2 class="text-xl sm:text-2xl font-black text-white uppercase tracking-tight mt-1">
-                        Franchise Purse &amp; <span class="bg-gradient-to-r from-lime-400 via-emerald-400 to-teal-400 bg-clip-text text-transparent">Leftover Balance</span>
+                    <h2 class="text-xl sm:text-2xl font-black text-white uppercase tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">
+                        Franchise Purse & <span class="bg-gradient-to-r from-sky-400 via-blue-500 to-amber-400 bg-clip-text text-transparent">Live Balances</span>
                     </h2>
-                    <p class="text-xs text-slate-400 mt-0.5">Realtime budget deductions after purchasing players. Click any franchise to view current squad.</p>
+                    <p class="text-xs text-slate-400 mt-0.5">Realtime budget deductions after purchasing players. Click any franchise to inspect its squad roster.</p>
                 </div>
                 <div class="flex items-center gap-2.5">
                     <button id="btn-config-base-prices" type="button" onclick="openBasePriceModal()"
-                        class="text-xs font-bold text-lime-400 hover:text-slate-950 bg-lime-400/10 hover:bg-lime-400 border border-lime-400/30 px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm">
-                        <span>⚙️ Base Prices (Role Defaults)</span>
+                        class="text-xs font-bold text-amber-300 hover:text-slate-950 bg-amber-400/10 hover:bg-amber-400 border border-amber-400/25 px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm">
+                        <span>⚙️ Base Price Defaults</span>
                     </button>
                 </div>
             </div>
@@ -185,126 +200,115 @@
             <!-- Dynamic Team Cards Container -->
             <div id="teams-hud-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div class="col-span-full py-8 text-center text-slate-500 text-xs">
-                    <div class="w-6 h-6 border-2 border-lime-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                    Loading tournament team balances...
+                    <div class="w-6 h-6 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                    Loading tournament franchise balances...
                 </div>
             </div>
         </section>
 
-        <!-- Master Roster Management Panel -->
-        <section class="bg-slate-900/50 border border-slate-800 rounded-3xl overflow-hidden backdrop-blur-sm shadow-2xl">
+        <!-- ===== MASTER ROSTER PANEL ===== -->
+        <section class="glass-card-static overflow-hidden rounded-2xl border border-sky-950/80">
             <!-- Header & Filter Bar -->
-            <div class="p-6 sm:p-8 border-b border-slate-800/80 space-y-6 no-print">
+            <div class="p-6 sm:p-8 border-b border-sky-950/80 space-y-5 no-print bg-[#08111F]/30">
                 <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div>
-                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-lime-400/10 text-lime-400 border border-lime-400/20 mb-2">
-                            <span>Official Clearance &amp; Auction Ledger</span>
+                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 mb-2 uppercase tracking-wider">
+                            Official Clearance & Auction Ledger
                         </div>
-                        <h2 class="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">
-                            Registered Athlete <span class="bg-gradient-to-r from-lime-400 via-emerald-400 to-teal-400 bg-clip-text text-transparent">Roster</span>
+                        <h2 class="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">
+                            Registered Athlete <span class="bg-gradient-to-r from-sky-400 via-blue-500 to-amber-400 bg-clip-text text-transparent">Roster</span>
                         </h2>
-                        <p class="text-xs sm:text-sm text-slate-400 mt-1">Review athlete credentials, set player base prices, and purchase athletes for teams.</p>
+                        <p class="text-xs sm:text-sm text-slate-400 mt-1">Review credentials, set base prices, and purchase athletes for franchises.</p>
                     </div>
 
                     <!-- Action Buttons -->
-                    <div class="flex items-center gap-3 w-full md:w-auto justify-end flex-wrap">
-                        <button type="button" onclick="openBasePriceModal()" class="text-xs font-bold text-lime-400 hover:text-slate-950 bg-lime-400/10 hover:bg-lime-400 border border-lime-400/30 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5">
-                            <span>🏷️ Base Price Config</span>
+                    <div class="flex items-center gap-2.5 w-full md:w-auto justify-end flex-wrap">
+                        <button type="button" onclick="openBasePriceModal()" class="text-xs font-bold text-amber-300 hover:text-slate-950 bg-amber-400/10 hover:bg-amber-400 border border-amber-400/25 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5">
+                            🏷️ Base Prices
                         </button>
-                        <button id="export-csv-btn" type="button" class="text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2">
-                            <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <button id="export-csv-btn" type="button" class="text-xs font-bold text-slate-300 hover:text-white bg-[#08111F] hover:bg-slate-800 border border-slate-800 px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
-                            <span>Export CSV</span>
+                            Export CSV
                         </button>
-                        <button onclick="window.print()" type="button" class="text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2">
-                            <svg class="w-4 h-4 text-lime-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <button onclick="window.print()" type="button" class="text-xs font-bold text-slate-300 hover:text-white bg-[#08111F] hover:bg-slate-800 border border-slate-800 px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                             </svg>
-                            <span>Print Sheet</span>
+                            Print
                         </button>
                     </div>
                 </div>
 
-                <!-- Multi-Criteria Filter Controls -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2">
-                    <!-- Search Input -->
-                    <div class="relative">
-                        <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-500">
+                <!-- Filter Controls -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <!-- Search -->
+                    <div class="relative lg:col-span-2">
+                        <span class="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-slate-500">
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                             </svg>
                         </span>
-                        <input id="filter-search" type="text" placeholder="Search name, enrollment, email..."
-                            class="bg-slate-950 border border-slate-800 text-white text-xs rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full pl-9 pr-3 py-3 placeholder-slate-500 outline-none transition-all">
+                        <input id="filter-search" type="text" placeholder="Search player name, enrollment, email..."
+                            class="input-premium pl-10 text-xs">
                     </div>
-
                     <!-- Department Filter -->
-                    <div>
-                        <select id="filter-dept" class="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full px-3 py-3 outline-none transition-all">
-                            <option value="ALL">All Departments</option>
-                            <option value="B.Tech">B.Tech</option>
-                            <option value="BCA">BCA</option>
-                            <option value="BBA">BBA</option>
-                            <option value="MCA">MCA</option>
-                            <option value="MBA">MBA</option>
-                        </select>
-                    </div>
-
+                    <select id="filter-dept" class="input-premium text-xs">
+                        <option value="ALL">All Departments</option>
+                        <option value="B.Tech">B.Tech</option>
+                        <option value="BCA">BCA</option>
+                        <option value="BBA">BBA</option>
+                        <option value="MCA">MCA</option>
+                        <option value="MBA">MBA</option>
+                    </select>
                     <!-- Role Filter -->
-                    <div>
-                        <select id="filter-role" class="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full px-3 py-3 outline-none transition-all">
-                            <option value="ALL">All Playing Roles</option>
-                            <option value="All-Rounder">All-Rounder</option>
-                            <option value="Batter">Batter</option>
-                            <option value="Bowler">Bowler</option>
-                            <option value="Wicketkeeper">Wicketkeeper</option>
-                            <option value="Fielder">Fielder</option>
-                        </select>
-                    </div>
-
+                    <select id="filter-role" class="input-premium text-xs">
+                        <option value="ALL">All Roles</option>
+                        <option value="All-Rounder">All-Rounder</option>
+                        <option value="Batter">Batter</option>
+                        <option value="Bowler">Bowler</option>
+                        <option value="Wicketkeeper">Wicketkeeper</option>
+                        <option value="Fielder">Fielder</option>
+                    </select>
                     <!-- Status Filter -->
-                    <div>
-                        <select id="filter-status" class="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full px-3 py-3 outline-none transition-all">
-                            <option value="ALL">All Clearance Statuses</option>
-                            <option value="Registered">Registered (Pending)</option>
-                            <option value="Approved">Approved / Cleared</option>
-                            <option value="Rejected">Rejected</option>
-                        </select>
-                    </div>
-
-                    <!-- Auction Filter -->
-                    <div>
-                        <select id="filter-auction" class="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full px-3 py-3 outline-none transition-all">
-                            <option value="ALL">All Auction Statuses</option>
-                            <option value="Upcoming">Available / Unsold</option>
-                            <option value="Sold">Sold / Purchased</option>
-                        </select>
-                    </div>
+                    <select id="filter-status" class="input-premium text-xs">
+                        <option value="ALL">All Statuses</option>
+                        <option value="Registered">Registered (Pending)</option>
+                        <option value="Approved">Approved / Cleared</option>
+                        <option value="Rejected">Rejected</option>
+                    </select>
+                </div>
+                <!-- Auction filter row -->
+                <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 -mt-2">
+                    <select id="filter-auction" class="input-premium text-xs sm:col-start-5">
+                        <option value="ALL">All Auction Statuses</option>
+                        <option value="Upcoming">Available / Unsold</option>
+                        <option value="Sold">Sold / Purchased</option>
+                    </select>
                 </div>
             </div>
 
-            <!-- Roster Table Container -->
+            <!-- ===== ROSTER TABLE ===== -->
             <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm border-collapse">
+                <table class="premium-table">
                     <thead>
-                        <tr class="border-b border-slate-800 bg-slate-950/80 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                            <th scope="col" class="py-4 px-6">Athlete Profile</th>
-                            <th scope="col" class="py-4 px-3">Enrollment</th>
-                            <th scope="col" class="py-4 px-3">Branch</th>
-                            <th scope="col" class="py-4 px-3">Playing Role</th>
-                            <th scope="col" class="py-4 px-3">Base Price</th>
-                            <th scope="col" class="py-4 px-3">Clearance</th>
-                            <th scope="col" class="py-4 px-4">Auction Status</th>
-                            <th scope="col" class="py-4 px-6 text-right no-print">Actions</th>
+                        <tr>
+                            <th class="py-4 px-5">Athlete Profile</th>
+                            <th class="py-4 px-3">Enrollment</th>
+                            <th class="py-4 px-3">Branch</th>
+                            <th class="py-4 px-3">Playing Role</th>
+                            <th class="py-4 px-3">Base Price</th>
+                            <th class="py-4 px-3">Clearance</th>
+                            <th class="py-4 px-4">Auction</th>
+                            <th class="py-4 px-5 text-right no-print">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="roster-table-body" class="divide-y divide-slate-800/60 font-medium text-slate-300">
-                        <!-- Dynamic Player Rows rendered via admin.js -->
+                    <tbody id="roster-table-body" class="divide-y divide-sky-950/60">
                         <tr>
                             <td colspan="8" class="py-12 text-center text-slate-500">
                                 <div class="flex flex-col items-center justify-center gap-3">
-                                    <div class="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin"></div>
+                                    <div class="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
                                     <p class="text-xs">Connecting to Supabase and retrieving athletes...</p>
                                 </div>
                             </td>
@@ -313,108 +317,105 @@
                 </table>
             </div>
 
-            <!-- Table Footer Summary -->
-            <div class="p-4 sm:px-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 bg-slate-950/40">
+            <!-- Table Footer -->
+            <div class="p-4 sm:px-6 border-t border-sky-950/70 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400 bg-[#08111F]/30">
                 <p id="table-summary-count">Showing 0 athletes</p>
-                <p class="text-[11px]">UniBox League 2026 • Official Admin Ledger</p>
+                <p class="text-[11px] font-mono text-slate-500">UniBox League 2026 · Official Admin Ledger</p>
             </div>
         </section>
     </main>
 
-    <!-- Athlete Detail / Inspection Modal -->
+    <!-- ===== ATHLETE INSPECTION MODAL ===== -->
     <div id="athlete-modal" tabindex="-1" aria-hidden="true"
-        class="hidden overflow-y-auto overflow-x-hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-slate-950/80 backdrop-blur-sm p-4">
+        class="hidden overflow-y-auto overflow-x-hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-[#050816]/90 backdrop-blur-xl p-4">
         <div class="relative w-full max-w-lg max-h-full">
-            <div class="relative bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden">
+            <div class="modal-content overflow-hidden border border-sky-900/60 shadow-2xl">
                 <!-- Close Button -->
                 <button type="button" onclick="closeAthleteModal()"
-                    class="absolute top-4 right-4 text-slate-500 hover:text-white rounded-lg text-sm w-8 h-8 inline-flex justify-center items-center cursor-pointer hover:bg-slate-800">
+                    class="absolute top-4 right-4 text-slate-400 hover:text-white rounded-xl text-sm w-8 h-8 inline-flex justify-center items-center cursor-pointer hover:bg-slate-800 z-10">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 14 14">
                         <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6" />
                     </svg>
                 </button>
 
-                <!-- Modal Content -->
-                <div class="p-6 sm:p-8 space-y-6">
+                <div class="p-6 sm:p-7 space-y-5">
+                    <!-- Player Profile Header -->
                     <div class="flex items-center gap-5">
-                        <!-- Headshot Preview -->
-                        <div class="w-24 h-24 rounded-2xl bg-gradient-to-tr from-lime-400 to-emerald-500 p-0.5 shadow-lg overflow-hidden shrink-0">
-                            <div class="w-full h-full bg-slate-950 rounded-2xl overflow-hidden flex items-center justify-center">
+                        <!-- Headshot Frame -->
+                        <div class="player-avatar-ring w-24 h-24 shrink-0">
+                            <div class="w-full h-full bg-[#050816] rounded-[14px] overflow-hidden flex items-center justify-center border border-sky-900/60">
                                 <img id="modal-photo" src="" alt="Athlete Photo" class="w-full h-full object-cover hidden">
-                                <span id="modal-photo-placeholder" class="text-3xl text-slate-600">🏏</span>
+                                <span id="modal-photo-placeholder" class="text-3xl text-slate-500">🏏</span>
                             </div>
                         </div>
-
                         <div>
-                            <span id="modal-status-badge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-300 mb-1">
-                                Pending
-                            </span>
-                            <h3 id="modal-name" class="text-xl font-black text-white uppercase">Athlete Name</h3>
-                            <p id="modal-email" class="text-xs text-slate-400 font-mono">student@university.edu</p>
+                            <span id="modal-status-badge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#08111F] text-slate-300 mb-1.5 border border-slate-800">Pending</span>
+                            <h3 id="modal-name" class="text-xl font-black text-white uppercase tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">Athlete Name</h3>
+                            <p id="modal-email" class="text-xs text-slate-400 font-mono mt-0.5">student@university.edu</p>
                         </div>
                     </div>
 
                     <!-- Credential Grid -->
-                    <div class="grid grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs">
+                    <div class="grid grid-cols-2 gap-3 p-4 rounded-2xl bg-[#08111F]/70 border border-sky-950/70 text-xs">
                         <div>
-                            <p class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Enrollment Number</p>
+                            <p class="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Enrollment Number</p>
                             <p id="modal-enrollment" class="text-slate-200 font-mono font-bold mt-0.5">---</p>
                         </div>
                         <div>
-                            <p class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Department</p>
+                            <p class="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Department</p>
                             <p id="modal-dept" class="text-slate-200 font-bold mt-0.5">---</p>
                         </div>
                         <div>
-                            <p class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Gender</p>
+                            <p class="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Gender</p>
                             <p id="modal-gender" class="text-slate-200 mt-0.5">---</p>
                         </div>
                         <div>
-                            <p class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Playing Role</p>
-                            <p id="modal-role" class="text-lime-400 font-bold mt-0.5">---</p>
+                            <p class="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Playing Role</p>
+                            <p id="modal-role" class="text-sky-400 font-bold mt-0.5">---</p>
                         </div>
                         <div>
-                            <p class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Base Price</p>
+                            <p class="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Base Price</p>
                             <div class="flex items-center gap-2 mt-0.5">
-                                <span id="modal-base-price" class="text-white font-mono font-bold">20.0 Pts</span>
-                                <button type="button" id="modal-edit-price-btn" class="text-[11px] text-lime-400 hover:text-white font-semibold underline cursor-pointer">Edit</button>
+                                <span id="modal-base-price" class="text-amber-400 font-mono font-bold">20.0 Pts</span>
+                                <button type="button" id="modal-edit-price-btn" class="text-[11px] text-sky-400 hover:text-white font-semibold underline cursor-pointer">Edit</button>
                             </div>
                         </div>
-                        <div class="col-span-2 pt-2 border-t border-slate-900 flex items-center justify-between">
+                        <div class="col-span-2 pt-3 border-t border-sky-950/80 flex items-center justify-between">
                             <div>
-                                <p class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Auction Clearance &amp; Team</p>
+                                <p class="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Auction Clearance & Team</p>
                                 <p id="modal-auction-status" class="text-slate-200 font-semibold mt-0.5 text-xs">Upcoming / Available</p>
                             </div>
                             <div id="modal-sold-badge-container"></div>
                         </div>
-                        <div class="col-span-2 pt-2 border-t border-slate-900 flex items-center justify-between gap-3">
+                        <div class="col-span-2 pt-3 border-t border-sky-950/80 flex items-center justify-between gap-3">
                             <div class="overflow-hidden">
-                                <p class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Sports Certificate</p>
+                                <p class="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Sports Certificate</p>
                                 <p id="modal-cert" class="text-slate-300 mt-0.5 font-medium truncate">None attached</p>
                             </div>
-                            <button id="modal-view-cert-btn" type="button" class="hidden shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold bg-lime-400/10 text-lime-400 hover:bg-lime-400 hover:text-slate-950 border border-lime-400/20 transition-all cursor-pointer flex items-center gap-1.5">
-                                👁️ <span>View Document</span>
+                            <button id="modal-view-cert-btn" type="button" class="hidden shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-500/10 text-sky-400 hover:bg-sky-500 hover:text-slate-950 border border-sky-500/25 transition-all cursor-pointer inline-flex items-center gap-1.5">
+                                👁️ <span>View</span>
                             </button>
                         </div>
-                        <div class="col-span-2 pt-2 border-t border-slate-900">
-                            <p class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Registration Timestamp</p>
+                        <div class="col-span-2 pt-3 border-t border-sky-950/80">
+                            <p class="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Registration Timestamp</p>
                             <p id="modal-created" class="text-slate-400 text-[11px] mt-0.5 font-mono">---</p>
                         </div>
                     </div>
 
                     <!-- Modal Actions -->
-                    <div class="flex items-center justify-between gap-3 pt-2 flex-wrap">
-                        <button id="modal-delete-btn" type="button" class="text-xs font-bold text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-4 py-3 rounded-xl transition-all cursor-pointer">
-                            Delete Entry
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <button id="modal-delete-btn" type="button" class="btn-danger text-xs px-4 py-2.5 rounded-xl">
+                            🗑️ Delete Entry
                         </button>
                         <div class="flex items-center gap-2 flex-wrap">
-                            <button id="modal-purchase-btn" type="button" class="hidden text-xs font-bold text-slate-950 bg-gradient-to-r from-lime-400 to-emerald-400 hover:from-lime-500 hover:to-emerald-500 px-4 py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-lime-400/20 flex items-center gap-1.5">
-                                <span>🔨 Purchase Athlete</span>
+                            <button id="modal-purchase-btn" type="button" class="hidden text-xs font-black text-slate-950 bg-gradient-to-r from-sky-400 to-amber-400 hover:from-sky-300 hover:to-amber-300 px-4 py-2.5 rounded-xl transition-all cursor-pointer shadow-lg shadow-sky-400/20 flex items-center gap-1.5">
+                                🔨 Purchase Athlete
                             </button>
-                            <button id="modal-reject-btn" type="button" class="text-xs font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 px-4 py-3 rounded-xl transition-all cursor-pointer">
+                            <button id="modal-reject-btn" type="button" class="text-xs font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 px-4 py-2.5 rounded-xl transition-all cursor-pointer">
                                 Reject
                             </button>
-                            <button id="modal-approve-btn" type="button" class="text-xs font-bold text-slate-950 bg-lime-400 hover:bg-lime-500 px-5 py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-lime-400/20">
-                                Approve Player
+                            <button id="modal-approve-btn" type="button" class="btn-primary text-xs font-black px-5 py-2.5 rounded-xl cursor-pointer">
+                                ✓ Approve Player
                             </button>
                         </div>
                     </div>
@@ -423,38 +424,34 @@
         </div>
     </div>
 
-    <!-- Toast Notification Banner -->
-    <div id="toast-banner" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl border pointer-events-none">
+    <!-- ===== TOAST NOTIFICATION ===== -->
+    <div id="toast-banner" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl bg-[#08111F] border border-sky-400/40 text-sky-400 pointer-events-none">
         <span id="toast-icon" class="text-base">✓</span>
         <span id="toast-message" class="text-xs font-bold">Action completed successfully</span>
     </div>
 
-    <!-- Sports Certificate Viewer Modal -->
-    <div id="cert-viewer-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-slate-950/85 backdrop-blur-md p-4 overflow-y-auto">
+    <!-- ===== CERTIFICATE VIEWER MODAL ===== -->
+    <div id="cert-viewer-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-[#050816]/90 backdrop-blur-xl p-4 overflow-y-auto">
         <div class="relative p-4 w-full max-w-3xl max-h-[90vh] flex flex-col">
-            <div class="relative bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 flex flex-col overflow-hidden max-h-[85vh]">
-                <!-- Modal Header -->
-                <div class="flex items-center justify-between p-5 border-b border-slate-800 bg-slate-950/50">
+            <div class="modal-content flex flex-col overflow-hidden max-h-[85vh] border border-sky-900/60">
+                <div class="flex items-center justify-between p-5 border-b border-sky-950/60 bg-[#08111F]/40">
                     <div class="flex items-center gap-3">
-                        <div class="p-2 rounded-xl bg-lime-400/10 text-lime-400 text-lg">📜</div>
+                        <div class="p-2 rounded-xl bg-sky-500/10 text-sky-400 text-lg">📜</div>
                         <div>
-                            <h3 id="cert-viewer-title" class="text-base font-bold text-white">Sports Certificate</h3>
+                            <h3 id="cert-viewer-title" class="text-sm font-bold text-white">Sports Certificate</h3>
                             <p id="cert-viewer-sub" class="text-xs text-slate-400 truncate max-w-xs sm:max-w-md">Athlete Verification Document</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <a id="cert-download-link" href="#" target="_blank" download="sports_certificate" class="text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 border border-slate-700">
-                            <span>⬇️ Open / Download</span>
+                        <a id="cert-download-link" href="#" target="_blank" download="sports_certificate" class="text-xs font-bold text-slate-300 hover:text-white bg-[#08111F] hover:bg-slate-800 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 border border-slate-800">
+                            ⬇️ Open / Download
                         </a>
-                        <button type="button" onclick="closeCertViewerModal()" class="text-slate-400 hover:text-white rounded-xl text-sm w-8 h-8 inline-flex justify-center items-center hover:bg-slate-800 cursor-pointer">
-                            ✕
-                        </button>
+                        <button type="button" onclick="closeCertViewerModal()" class="text-slate-400 hover:text-white rounded-xl w-8 h-8 inline-flex justify-center items-center hover:bg-slate-800 cursor-pointer">✕</button>
                     </div>
                 </div>
-                <!-- Modal Body -->
-                <div class="p-4 overflow-y-auto flex-1 flex items-center justify-center bg-slate-950/40 min-h-[320px]">
-                    <img id="cert-viewer-img" src="" alt="Sports Certificate" class="hidden max-h-[65vh] w-auto object-contain rounded-xl border border-slate-800 shadow-lg">
-                    <iframe id="cert-viewer-pdf" src="" class="hidden w-full h-[65vh] rounded-xl border border-slate-800"></iframe>
+                <div class="p-4 overflow-y-auto flex-1 flex items-center justify-center bg-[#050816]/50 min-h-[320px]">
+                    <img id="cert-viewer-img" src="" alt="Sports Certificate" class="hidden max-h-[65vh] w-auto object-contain rounded-xl border border-sky-950 shadow-lg">
+                    <iframe id="cert-viewer-pdf" src="" class="hidden w-full h-[65vh] rounded-xl border border-sky-950"></iframe>
                     <div id="cert-viewer-empty" class="hidden text-center p-8 text-slate-500">
                         <p class="text-3xl mb-2">📄</p>
                         <p class="text-sm font-semibold">No certificate document preview available.</p>
@@ -464,203 +461,180 @@
         </div>
     </div>
 
-    <!-- 1. Role Base Price Configuration Modal -->
-    <div id="base-price-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto">
+    <!-- ===== BASE PRICE CONFIGURATION MODAL ===== -->
+    <div id="base-price-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-[#050816]/90 backdrop-blur-xl p-4 overflow-y-auto">
         <div class="relative w-full max-w-lg">
-            <div class="relative bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden">
-                <!-- Modal Header -->
-                <div class="p-6 border-b border-slate-800/80 flex items-center justify-between bg-slate-950/40">
+            <div class="modal-content overflow-hidden border border-sky-900/60 shadow-2xl">
+                <!-- Header -->
+                <div class="p-6 border-b border-sky-950/60 flex items-center justify-between bg-[#08111F]/40">
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-2xl bg-lime-400/10 text-lime-400 border border-lime-400/20 flex items-center justify-center font-bold text-lg">
-                            💰
-                        </div>
+                        <div class="w-10 h-10 rounded-2xl bg-amber-400/10 text-amber-400 border border-amber-400/20 flex items-center justify-center text-lg">💰</div>
                         <div>
-                            <h3 class="text-lg font-black text-white uppercase tracking-tight">Role Base Price Settings</h3>
+                            <h3 class="text-base font-black text-white uppercase tracking-tight">Role Base Price Settings</h3>
                             <p class="text-xs text-slate-400">Configure starting auction base price per player role.</p>
                         </div>
                     </div>
-                    <button type="button" onclick="closeBasePriceModal()" class="text-slate-400 hover:text-white rounded-xl text-sm w-8 h-8 inline-flex justify-center items-center hover:bg-slate-800 cursor-pointer">
-                        ✕
-                    </button>
+                    <button type="button" onclick="closeBasePriceModal()" class="text-slate-400 hover:text-white rounded-xl w-8 h-8 inline-flex justify-center items-center hover:bg-slate-800 cursor-pointer">✕</button>
                 </div>
-
-                <!-- Form Body -->
-                <form id="base-price-form" onsubmit="handleSaveBasePrices(event)" class="p-6 space-y-4">
-                    <div class="space-y-3 text-xs">
-                        <!-- Batter / Batsman -->
-                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+                <!-- Form -->
+                <form id="base-price-form" onsubmit="handleSaveBasePrices(event)" class="p-6 space-y-3">
+                    <div class="space-y-2.5 text-xs">
+                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
                             <div>
                                 <span class="font-bold text-sky-400">🏏 Batter / Batsman</span>
-                                <p class="text-[11px] text-slate-500">Top-order and middle-order specialist</p>
+                                <p class="text-[11px] text-slate-400 mt-0.5">Top-order and middle-order specialist</p>
                             </div>
                             <div class="flex items-center gap-2">
                                 <input id="price-batter" type="number" min="0" step="0.5" value="20" required
-                                    class="w-20 bg-slate-900 border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-lime-400 focus:border-lime-400 outline-none">
+                                    class="w-20 bg-[#050816] border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none">
                                 <span class="text-slate-400 font-bold">Pts</span>
                             </div>
                         </div>
-
-                        <!-- Bowler -->
-                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
                             <div>
                                 <span class="font-bold text-teal-400">🎯 Bowler</span>
-                                <p class="text-[11px] text-slate-500">Fast, pace, and spin specialist</p>
+                                <p class="text-[11px] text-slate-400 mt-0.5">Fast, pace, and spin specialist</p>
                             </div>
                             <div class="flex items-center gap-2">
                                 <input id="price-bowler" type="number" min="0" step="0.5" value="5" required
-                                    class="w-20 bg-slate-900 border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-lime-400 focus:border-lime-400 outline-none">
+                                    class="w-20 bg-[#050816] border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none">
                                 <span class="text-slate-400 font-bold">Pts</span>
                             </div>
                         </div>
-
-                        <!-- All-Rounder -->
-                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
                             <div>
-                                <span class="font-bold text-lime-400">⚡ All-Rounder</span>
-                                <p class="text-[11px] text-slate-500">Batting and bowling capability</p>
+                                <span class="font-bold text-amber-400">⚡ All-Rounder</span>
+                                <p class="text-[11px] text-slate-400 mt-0.5">Batting and bowling capability</p>
                             </div>
                             <div class="flex items-center gap-2">
                                 <input id="price-allrounder" type="number" min="0" step="0.5" value="15" required
-                                    class="w-20 bg-slate-900 border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-lime-400 focus:border-lime-400 outline-none">
+                                    class="w-20 bg-[#050816] border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none">
                                 <span class="text-slate-400 font-bold">Pts</span>
                             </div>
                         </div>
-
-                        <!-- Wicketkeeper -->
-                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
                             <div>
-                                <span class="font-bold text-amber-400">🧤 Wicketkeeper</span>
-                                <p class="text-[11px] text-slate-500">Keeper and top gloveman</p>
+                                <span class="font-bold text-indigo-400">🧤 Wicketkeeper</span>
+                                <p class="text-[11px] text-slate-400 mt-0.5">Keeper and top gloveman</p>
                             </div>
                             <div class="flex items-center gap-2">
                                 <input id="price-wicketkeeper" type="number" min="0" step="0.5" value="10" required
-                                    class="w-20 bg-slate-900 border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-lime-400 focus:border-lime-400 outline-none">
+                                    class="w-20 bg-[#050816] border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none">
                                 <span class="text-slate-400 font-bold">Pts</span>
                             </div>
                         </div>
-
-                        <!-- Fielder -->
-                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950 border border-slate-800">
+                        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
                             <div>
                                 <span class="font-bold text-emerald-400">🛡️ Fielder</span>
-                                <p class="text-[11px] text-slate-500">Outfield and athletic cover</p>
+                                <p class="text-[11px] text-slate-400 mt-0.5">Outfield and athletic cover</p>
                             </div>
                             <div class="flex items-center gap-2">
                                 <input id="price-fielder" type="number" min="0" step="0.5" value="5" required
-                                    class="w-20 bg-slate-900 border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-lime-400 focus:border-lime-400 outline-none">
+                                    class="w-20 bg-[#050816] border border-slate-700 text-white font-bold rounded-xl px-2.5 py-1.5 text-center text-xs focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none">
                                 <span class="text-slate-400 font-bold">Pts</span>
                             </div>
                         </div>
                     </div>
 
-                    <div class="p-3 bg-slate-950/60 rounded-xl border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                    <div class="p-3 bg-[#050816]/70 rounded-xl border border-sky-950/60 text-[11px] text-slate-400 flex items-center justify-between">
                         <span>💡 Example: Batsman 20 Pts, Bowler 5 Pts</span>
-                        <button type="button" onclick="applyRolePricesToAllPlayers()" class="text-lime-400 hover:underline font-bold">Apply to All Roster</button>
+                        <button type="button" onclick="applyRolePricesToAllPlayers()" class="text-sky-400 hover:underline font-bold">Apply to All Roster</button>
                     </div>
 
-                    <div class="flex items-center justify-end gap-3 pt-2">
-                        <button type="button" onclick="closeBasePriceModal()" class="text-xs font-bold text-slate-400 hover:text-white px-4 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800 cursor-pointer">
-                            Cancel
-                        </button>
-                        <button type="submit" class="text-xs font-bold text-slate-950 bg-lime-400 hover:bg-lime-500 px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-lg shadow-lime-400/20">
-                            Save Base Price Defaults
-                        </button>
+                    <div class="flex items-center justify-end gap-3 pt-1">
+                        <button type="button" onclick="closeBasePriceModal()" class="text-xs font-bold text-slate-400 hover:text-white px-4 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800 cursor-pointer">Cancel</button>
+                        <button type="submit" class="btn-primary text-xs py-2.5 px-5">Save Base Price Defaults</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- 2. Player Purchase Modal (Live Bidding / Sale to Team) -->
-    <div id="purchase-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto">
+    <!-- ===== PLAYER PURCHASE MODAL ===== -->
+    <div id="purchase-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-[#050816]/90 backdrop-blur-xl p-4 overflow-y-auto">
         <div class="relative w-full max-w-lg">
-            <div class="relative bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden">
-                <!-- Modal Header -->
-                <div class="p-6 border-b border-slate-800/80 flex items-center justify-between bg-slate-950/40">
+            <div class="modal-content overflow-hidden border border-sky-900/60 shadow-2xl">
+                <!-- Header -->
+                <div class="p-6 border-b border-sky-950/60 flex items-center justify-between bg-[#08111F]/40">
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-lime-400 to-emerald-500 flex items-center justify-center text-slate-950 font-black text-xl shadow-lg shadow-lime-400/20">
-                            🔨
+                        <div class="live-indicator">
+                            <span class="live-pulse-dot"></span>
+                            LIVE AUCTION
                         </div>
                         <div>
-                            <h3 class="text-lg font-black text-white uppercase tracking-tight">Purchase Athlete</h3>
-                            <p class="text-xs text-slate-400">Deduct from team leftover balance in real time.</p>
+                            <h3 class="text-base font-black text-white uppercase tracking-tight">Purchase Athlete</h3>
+                            <p class="text-xs text-slate-400">Deduct from team purse in real time.</p>
                         </div>
                     </div>
-                    <button type="button" onclick="closePurchaseModal()" class="text-slate-400 hover:text-white rounded-xl text-sm w-8 h-8 inline-flex justify-center items-center hover:bg-slate-800 cursor-pointer">
-                        ✕
-                    </button>
+                    <button type="button" onclick="closePurchaseModal()" class="text-slate-400 hover:text-white rounded-xl w-8 h-8 inline-flex justify-center items-center hover:bg-slate-800 cursor-pointer">✕</button>
                 </div>
 
-                <!-- Form Content -->
                 <form id="purchase-form" onsubmit="handleExecutePurchase(event)" class="p-6 space-y-5">
-                    <!-- Athlete Summary Strip -->
-                    <div class="flex items-center gap-4 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+                    <!-- Athlete Summary -->
+                    <div class="bid-card flex items-center gap-4">
                         <img id="purchase-player-photo" src="" alt="Photo" class="w-14 h-14 rounded-2xl object-cover border border-slate-800 shrink-0 hidden">
-                        <div id="purchase-player-avatar" class="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-white text-lg shrink-0">🏏</div>
+                        <div id="purchase-player-avatar" class="w-14 h-14 rounded-2xl bg-[#050816] border border-sky-950 flex items-center justify-center font-bold text-white text-lg shrink-0">🏏</div>
                         <div class="overflow-hidden flex-1">
                             <h4 id="purchase-player-name" class="text-base font-black text-white uppercase truncate">Athlete Name</h4>
                             <div class="flex items-center gap-2 mt-1 flex-wrap text-xs">
                                 <span id="purchase-player-dept" class="text-slate-400 font-semibold">Department</span>
                                 <span class="text-slate-600">•</span>
-                                <span id="purchase-player-role" class="text-lime-400 font-bold">Role</span>
+                                <span id="purchase-player-role" class="text-sky-400 font-bold">Role</span>
                             </div>
                         </div>
                         <div class="text-right shrink-0">
-                            <p class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Base Price</p>
-                            <p id="purchase-player-base" class="text-sm font-black text-lime-400 font-mono">20.0 Pts</p>
+                            <p class="text-[9px] uppercase font-black text-slate-400 tracking-wider">Base Price</p>
+                            <p id="purchase-player-base" class="text-sm font-black text-amber-400 font-mono">20.0 Pts</p>
                         </div>
                     </div>
 
-                    <!-- Target Team Selector -->
+                    <!-- Team Selector -->
                     <div>
-                        <label for="purchase-team-select" class="block mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                        <label for="purchase-team-select" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                             Purchasing Franchise
                         </label>
-                        <select id="purchase-team-select" onchange="updatePurchaseBalancePreview()" required
-                            class="bg-slate-950 border border-slate-800 text-white text-xs rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full px-3 py-3.5 outline-none transition-all cursor-pointer">
+                        <select id="purchase-team-select" onchange="updatePurchaseBalancePreview()" required class="input-premium text-xs">
                             <option value="" disabled selected>Choose a franchise...</option>
                         </select>
                     </div>
 
-                    <!-- Final Sold / Purchase Price Input -->
+                    <!-- Purchase Price Input -->
                     <div>
-                        <div class="flex items-center justify-between mb-2">
-                            <label for="purchase-price-input" class="text-xs font-bold uppercase tracking-wider text-slate-400">
-                                Purchase Price (in Points)
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label for="purchase-price-input" class="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                Purchase Price (Points)
                             </label>
-                            <span class="text-[11px] text-slate-500">Min: Player Base Price</span>
+                            <span class="text-[10px] text-slate-500">Min: Player Base Price</span>
                         </div>
                         <div class="relative">
                             <input id="purchase-price-input" type="number" min="1" step="0.5" oninput="updatePurchaseBalancePreview()" required
-                                class="bg-slate-950 border border-slate-800 text-white text-sm font-bold rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full px-4 py-3.5 outline-none transition-all">
-                            <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-slate-400 text-xs font-bold">Pts</span>
+                                class="input-premium font-bold text-lg pr-12">
+                            <span class="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none text-slate-400 text-xs font-bold">Pts</span>
                         </div>
                     </div>
 
-                    <!-- Realtime Balance Reflection Preview Box -->
-                    <div id="purchase-preview-card" class="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-2.5 text-xs">
+                    <!-- Balance Preview -->
+                    <div id="purchase-preview-card" class="p-4 rounded-2xl bg-[#08111F]/80 border border-sky-950/70 space-y-2.5 text-xs">
                         <div class="flex items-center justify-between text-slate-400">
-                            <span>Current Team Leftover Balance:</span>
+                            <span>Current Team Balance:</span>
                             <span id="preview-current-balance" class="font-bold text-white font-mono">1000.0 Points</span>
                         </div>
                         <div class="flex items-center justify-between text-slate-400">
                             <span>Purchase Deduction:</span>
                             <span id="preview-deduction" class="font-bold text-rose-400 font-mono">- 20.0 Points</span>
                         </div>
-                        <div class="border-t border-slate-800 pt-2 flex items-center justify-between font-bold">
+                        <div class="border-t border-sky-950/70 pt-2 flex items-center justify-between font-bold">
                             <span>Balance After Purchase:</span>
                             <span id="preview-new-balance" class="text-emerald-400 text-sm font-black font-mono">980.0 Points</span>
                         </div>
                         <p id="purchase-error-msg" class="hidden text-rose-400 font-semibold text-[11px] pt-1">⚠️ Error message</p>
                     </div>
 
-                    <!-- Submit Actions -->
-                    <div class="flex items-center justify-end gap-3 pt-2">
-                        <button type="button" onclick="closePurchaseModal()" class="text-xs font-bold text-slate-400 hover:text-white px-4 py-3 rounded-xl border border-slate-800 hover:bg-slate-800 cursor-pointer">
-                            Cancel
-                        </button>
-                        <button id="purchase-submit-btn" type="submit" class="text-xs font-black text-slate-950 bg-lime-400 hover:bg-lime-500 px-6 py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-lime-400/20 flex items-center gap-2">
-                            <span>Confirm Purchase &amp; Deduct Purse</span>
+                    <!-- Submit -->
+                    <div class="flex items-center justify-end gap-3 pt-1">
+                        <button type="button" onclick="closePurchaseModal()" class="text-xs font-bold text-slate-400 hover:text-white px-4 py-3 rounded-xl border border-slate-800 hover:bg-slate-800 cursor-pointer">Cancel</button>
+                        <button id="purchase-submit-btn" type="submit" class="btn-primary text-xs py-3 px-6">
+                            🔨 Confirm Purchase & Deduct Purse
                         </button>
                     </div>
                 </form>
@@ -668,76 +642,74 @@
         </div>
     </div>
 
-    <!-- 3. Quick Edit Individual Athlete Base Price Modal -->
-    <div id="edit-base-price-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-slate-950/80 backdrop-blur-sm p-4">
+    <!-- ===== QUICK EDIT BASE PRICE MODAL ===== -->
+    <div id="edit-base-price-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-[#050816]/90 backdrop-blur-xl p-4">
         <div class="relative w-full max-w-sm">
-            <div class="relative bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 p-6 space-y-4">
+            <div class="modal-content p-6 space-y-4 border border-sky-900/60 shadow-2xl">
                 <div class="flex items-center justify-between">
-                    <h3 class="text-base font-black text-white uppercase">Set Athlete Base Price</h3>
-                    <button type="button" onclick="closeEditBasePriceModal()" class="text-slate-400 hover:text-white text-sm">✕</button>
+                    <h3 class="text-sm font-black text-white uppercase">Set Athlete Base Price</h3>
+                    <button type="button" onclick="closeEditBasePriceModal()" class="text-slate-400 hover:text-white text-sm w-7 h-7 inline-flex justify-center items-center rounded-lg hover:bg-slate-800 cursor-pointer">✕</button>
                 </div>
                 <p id="edit-base-player-name" class="text-xs text-slate-400 font-semibold truncate">Athlete Name</p>
                 <form id="edit-base-price-form" onsubmit="handleSavePlayerBasePrice(event)" class="space-y-4">
                     <div class="relative">
                         <input id="edit-base-price-input" type="number" min="0" step="0.5" required
-                            class="bg-slate-950 border border-slate-800 text-white text-sm font-bold rounded-xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 block w-full px-4 py-3 outline-none">
-                        <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-slate-400 text-xs font-bold">Pts</span>
+                            class="input-premium font-bold text-lg pr-12">
+                        <span class="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none text-slate-400 text-xs font-bold">Pts</span>
                     </div>
                     <div class="flex items-center justify-end gap-2">
-                        <button type="button" onclick="closeEditBasePriceModal()" class="text-xs font-bold text-slate-400 px-3 py-2 rounded-xl border border-slate-800 hover:bg-slate-800">Cancel</button>
-                        <button type="submit" class="text-xs font-bold text-slate-950 bg-lime-400 hover:bg-lime-500 px-4 py-2 rounded-xl shadow-md shadow-lime-400/20">Save Price</button>
+                        <button type="button" onclick="closeEditBasePriceModal()" class="text-xs font-bold text-slate-400 px-3 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800 cursor-pointer">Cancel</button>
+                        <button type="submit" class="btn-primary text-xs py-2.5 px-5">Save Price</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- 4. Team Squad Inspection Modal -->
-    <div id="team-squad-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-slate-950/85 backdrop-blur-md p-4 overflow-y-auto">
+    <!-- ===== TEAM SQUAD INSPECTION MODAL ===== -->
+    <div id="team-squad-modal" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-[#050816]/90 backdrop-blur-xl p-4 overflow-y-auto">
         <div class="relative w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div class="relative bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 flex flex-col overflow-hidden max-h-[85vh]">
+            <div class="modal-content flex flex-col overflow-hidden max-h-[85vh] border border-sky-900/60 shadow-2xl">
                 <!-- Header -->
-                <div class="p-6 border-b border-slate-800/80 bg-slate-950/50 flex items-center justify-between">
+                <div class="p-6 border-b border-sky-950/60 bg-[#08111F]/40 flex items-center justify-between">
                     <div class="flex items-center gap-3">
-                        <span id="team-squad-logo" class="text-3xl p-2 rounded-2xl bg-slate-800 border border-slate-700">🏏</span>
+                        <span id="team-squad-logo" class="text-3xl p-2 rounded-2xl bg-[#050816] border border-sky-950">🏏</span>
                         <div>
-                            <h3 id="team-squad-name" class="text-lg font-black text-white uppercase">Franchise Squad</h3>
-                            <p id="team-squad-meta" class="text-xs text-slate-400">Purse: 1000 Pts • Spent: 0 Pts • Leftover: 1000 Pts</p>
+                            <h3 id="team-squad-name" class="text-lg font-black text-white uppercase" style="font-family: 'Space Grotesk', sans-serif;">Franchise Squad</h3>
+                            <p id="team-squad-meta" class="text-xs text-slate-400 mt-0.5">Purse: 1000 Pts • Spent: 0 Pts • Leftover: 1000 Pts</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
                         <button type="button" id="team-modal-delete-btn" onclick="handleDeleteTeamFromModal()"
-                            class="text-xs font-bold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500 border border-rose-500/20 px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                            class="text-xs font-bold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500 border border-rose-500/20 px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
                             title="Delete this Franchise">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                            <span>Delete Team</span>
+                            Delete Team
                         </button>
-                        <button type="button" onclick="closeTeamSquadModal()" class="text-slate-400 hover:text-white rounded-xl text-sm w-8 h-8 inline-flex justify-center items-center hover:bg-slate-800 cursor-pointer">
-                            ✕
-                        </button>
+                        <button type="button" onclick="closeTeamSquadModal()" class="text-slate-400 hover:text-white rounded-xl w-8 h-8 inline-flex justify-center items-center hover:bg-slate-800 cursor-pointer">✕</button>
                     </div>
                 </div>
 
-                <!-- Squad List -->
+                <!-- Squad Content -->
                 <div class="p-6 overflow-y-auto flex-1 space-y-4">
                     <div class="grid grid-cols-3 gap-3 text-center text-xs">
-                        <div class="p-3 rounded-2xl bg-slate-950 border border-slate-800">
-                            <p class="text-slate-500 uppercase font-bold text-[10px]">Total Purse</p>
-                            <p id="team-stat-purse" class="text-base font-black text-white mt-0.5">1000.0 Pts</p>
+                        <div class="p-3 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
+                            <p class="text-slate-400 uppercase font-black text-[9px] tracking-wider">Total Purse</p>
+                            <p id="team-stat-purse" class="text-base font-black text-white mt-0.5 font-mono">1000.0 Pts</p>
                         </div>
-                        <div class="p-3 rounded-2xl bg-slate-950 border border-slate-800">
-                            <p class="text-slate-500 uppercase font-bold text-[10px]">Spent</p>
-                            <p id="team-stat-spent" class="text-base font-black text-rose-400 mt-0.5">0.0 Pts</p>
+                        <div class="p-3 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
+                            <p class="text-slate-400 uppercase font-black text-[9px] tracking-wider">Spent</p>
+                            <p id="team-stat-spent" class="text-base font-black text-rose-400 mt-0.5 font-mono">0.0 Pts</p>
                         </div>
-                        <div class="p-3 rounded-2xl bg-slate-950 border border-slate-800">
-                            <p class="text-slate-500 uppercase font-bold text-[10px]">Leftover Balance</p>
-                            <p id="team-stat-balance" class="text-base font-black text-emerald-400 mt-0.5">1000.0 Pts</p>
+                        <div class="p-3 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
+                            <p class="text-slate-400 uppercase font-black text-[9px] tracking-wider">Balance</p>
+                            <p id="team-stat-balance" class="text-base font-black text-emerald-400 mt-0.5 font-mono">1000.0 Pts</p>
                         </div>
                     </div>
 
-                    <div class="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/40">
-                        <table class="w-full text-left text-xs">
-                            <thead class="bg-slate-950 border-b border-slate-800 text-[10px] text-slate-500 uppercase tracking-wider">
+                    <div class="overflow-x-auto rounded-2xl border border-sky-950/70 bg-[#08111F]/30">
+                        <table class="premium-table">
+                            <thead>
                                 <tr>
                                     <th class="py-3 px-4">Player</th>
                                     <th class="py-3 px-3">Role</th>
@@ -746,9 +718,9 @@
                                     <th class="py-3 px-4 text-right">Action</th>
                                 </tr>
                             </thead>
-                            <tbody id="team-squad-table-body" class="divide-y divide-slate-800/60 font-medium text-slate-300">
+                            <tbody id="team-squad-table-body" class="divide-y divide-sky-950/60">
                                 <tr>
-                                    <td colspan="5" class="py-8 text-center text-slate-500">No players acquired yet.</td>
+                                    <td colspan="5" class="py-8 text-center text-slate-500 text-xs">No players acquired yet.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -765,4 +737,3 @@
 </body>
 
 </html>
-

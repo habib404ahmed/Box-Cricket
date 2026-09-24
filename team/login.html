@@ -4,14 +4,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Franchise Owner Portal - UniBox League 2026</title>
+    <title>Franchise Owner Portal — UniBox League 2026</title>
+    <meta name="description" content="Franchise owner sign-in and registration for UniBox League 2026 Box Cricket Tournament.">
+    <!-- Favicon & Stylesheet -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏏</text></svg>">
     <link href="../dist/output.css" rel="stylesheet">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #050816;
+            color: #F8FAFC;
+        }
+
+        /* Select Options in Midnight */
+        select option {
+            background: #08111F;
+            color: #F8FAFC;
         }
     </style>
     <!-- Instant Redirect if Already Logged In -->
@@ -22,202 +30,205 @@
     </script>
 </head>
 
-<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4 relative antialiased overflow-x-hidden">
-    <!-- Ambient Stadium Lighting Background -->
-    <div class="fixed inset-0 pointer-events-none z-0">
-        <div class="absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-amber-500/10 rounded-full blur-[140px]"></div>
-        <div class="absolute bottom-10 right-10 w-[450px] h-[450px] bg-lime-500/10 rounded-full blur-[160px]"></div>
+<body class="bg-[#050816] text-slate-100 min-h-screen flex items-center justify-center p-4 relative antialiased overflow-x-hidden">
+
+    <!-- ===== CINEMATIC STADIUM ATMOSPHERE BACKGROUND ===== -->
+    <div class="fixed inset-0 pointer-events-none -z-10 stadium-atmosphere">
+        <!-- Franchise Gold & Royal Blue Atmospheric Glow -->
+        <div class="absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[700px] bg-blue-600/[0.12] rounded-full blur-[160px]"></div>
+        <div class="absolute bottom-0 right-10 w-[550px] h-[550px] bg-amber-500/[0.08] rounded-full blur-[160px]"></div>
+        <div class="absolute top-1/3 left-0 w-[450px] h-[450px] bg-sky-500/[0.06] rounded-full blur-[140px]"></div>
+        <!-- Stadium light beams -->
+        <div class="stadium-beam beam-left hidden md:block"></div>
+        <div class="stadium-beam beam-right hidden md:block"></div>
+        <!-- Pitch lines & Grid -->
+        <div class="pitch-crease-geometry opacity-35"></div>
+        <div class="absolute inset-0 pitch-grid opacity-25"></div>
     </div>
 
-    <!-- Container Card -->
+    <!-- ===== MAIN CARD WRAPPER ===== -->
     <div class="relative z-10 w-full max-w-lg">
-        <div class="bg-slate-900/95 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl backdrop-blur-md">
-            <!-- Header Brand -->
-            <div class="text-center space-y-2 mb-8">
-                <div class="inline-flex w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-400 via-lime-400 to-emerald-500 items-center justify-center text-slate-950 text-3xl shadow-xl shadow-amber-400/20 mb-2">
-                    👑
-                </div>
-                
-                <h1 class="text-2xl sm:text-3xl font-black uppercase text-white tracking-tight">Team Owner Portal</h1>
-                
+
+        <!-- Badge above card -->
+        <div class="text-center mb-6">
+            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#08111F]/90 border border-amber-400/25 text-[11px] font-bold uppercase tracking-wider text-slate-300 backdrop-blur-sm shadow-lg shadow-amber-400/5">
+                <span class="text-amber-400">👑</span>
+                Franchise Owner Portal
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
             </div>
+        </div>
 
-            <!-- Tab Buttons: Login / Register -->
-            <div class="flex p-1.5 bg-slate-950 border border-slate-800 rounded-2xl mb-6">
-                <button type="button" id="tab-btn-login" class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all bg-lime-400 text-slate-950 shadow-md">
-                    Sign In
-                </button>
-                <button type="button" id="tab-btn-register" class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-white">
-                    Register Franchise
-                </button>
-            </div>
+        <!-- ===== LOGIN CARD ===== -->
+        <div class="login-card relative overflow-hidden border border-sky-900/60 shadow-2xl rounded-3xl bg-[#08111F]/90 backdrop-blur-2xl">
+            <!-- Card top accent -->
+            <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-80 pointer-events-none"></div>
 
-            <!-- Error / Success Alert Box -->
-            <div id="auth-alert-box" class="hidden mb-6 p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5">
-                <span id="auth-alert-icon" class="text-base">⚠️</span>
-                <span id="auth-alert-text">Error message here.</span>
-            </div>
-
-            <!-- TAB 1: LOGIN FORM -->
-            <form id="owner-login-form" class="space-y-4">
-                <div>
-                    <label for="login-email" class="block mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Franchise Owner Email
-                    </label>
-                    <input type="email" id="login-email" placeholder="owner@franchise.com" autocomplete="email"
-                        class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-3.5 placeholder-slate-600 outline-none transition-all"
-                        required>
-                </div>
-
-                <div>
-                    <label for="login-password" class="block mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Password
-                    </label>
-                    <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password"
-                        class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-3.5 placeholder-slate-600 outline-none transition-all"
-                        required>
-                </div>
-
-                <button type="submit" id="login-submit-btn"
-                    class="w-full text-slate-950 bg-lime-400 hover:bg-lime-500 font-black rounded-xl text-sm px-5 py-3.5 text-center transition-all cursor-pointer shadow-lg shadow-lime-400/20 mt-6 flex items-center justify-center gap-2">
-                    <span>Login</span>
-                    <svg id="login-spinner" class="hidden w-4 h-4 text-slate-950 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                    </svg>
-                </button>
-            </form>
-
-            <!-- TAB 2: REGISTER FRANCHISE FORM -->
-            <form id="owner-register-form" class="hidden space-y-4">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label for="reg-owner-name" class="block mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-                            Owner Full Name *
-                        </label>
-                        <input type="text" id="reg-owner-name" placeholder="Vikram Singh"
-                            class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-3 placeholder-slate-600 outline-none transition-all"
-                            required>
-                    </div>
-
-                    <div>
-                        <label for="reg-owner-phone" class="block mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-                            Phone / WhatsApp
-                        </label>
-                        <input type="tel" id="reg-owner-phone" placeholder="+91 98765 43210"
-                            class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-3 placeholder-slate-600 outline-none transition-all">
-                    </div>
-                </div>
-
-                <div>
-                    <label for="reg-owner-email" class="block mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Official Owner Email *
-                    </label>
-                    <input type="email" id="reg-owner-email" placeholder="vikram@titans.com"
-                        class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-3 placeholder-slate-600 outline-none transition-all"
-                        required>
-                </div>
-
-                <div>
-                    <label for="reg-owner-password" class="block mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Create Password *
-                    </label>
-                    <input type="password" id="reg-owner-password" placeholder="Minimum 6 characters" minlength="6"
-                        class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-3 placeholder-slate-600 outline-none transition-all"
-                        required>
-                </div>
-
-                <!-- Franchise Selection Mode -->
-                <div class="pt-2 border-t border-slate-800">
-                    <label class="block mb-2 text-xs font-bold uppercase tracking-wider text-amber-400">
-                        Franchise Setup Option
-                    </label>
-                    <div class="grid grid-cols-2 gap-3 mb-3">
-                        <label class="flex items-center gap-2 p-3 rounded-xl border border-slate-800 bg-slate-950 cursor-pointer hover:border-slate-700 transition-all text-xs font-semibold text-slate-300 has-[:checked]:border-lime-400 has-[:checked]:text-lime-400 has-[:checked]:bg-lime-400/10">
-                            <input type="radio" name="team_mode" value="claim" checked class="w-4 h-4 text-lime-400 bg-slate-900 border-slate-700 focus:ring-lime-400">
-                            <span>Claim Official Team</span>
-                        </label>
-                        <label class="flex items-center gap-2 p-3 rounded-xl border border-slate-800 bg-slate-950 cursor-pointer hover:border-slate-700 transition-all text-xs font-semibold text-slate-300 has-[:checked]:border-lime-400 has-[:checked]:text-lime-400 has-[:checked]:bg-lime-400/10">
-                            <input type="radio" name="team_mode" value="custom" class="w-4 h-4 text-lime-400 bg-slate-900 border-slate-700 focus:ring-lime-400">
-                            <span>Create New Team</span>
-                        </label>
-                    </div>
-
-                    <!-- Mode A: Claim Existing Team -->
-                    <div id="mode-claim-container" class="space-y-2">
-                        <label for="claim-team-select" class="block text-xs font-semibold text-slate-400">
-                            Select Official Department Franchise:
-                        </label>
-                        <select id="claim-team-select" class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-3 outline-none transition-all">
-                            <!-- Populated dynamically via JS -->
-                        </select>
-                    </div>
-
-                    <!-- Mode B: Custom Franchise Creation -->
-                    <div id="mode-custom-container" class="hidden space-y-3">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <label for="custom-team-name" class="block text-xs font-semibold text-slate-400 mb-1">Team Name *</label>
-                                <input type="text" id="custom-team-name" placeholder="e.g. Cyber Strikers"
-                                    class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-2.5 outline-none">
-                            </div>
-                            <div>
-                                <label for="custom-team-dept" class="block text-xs font-semibold text-slate-400 mb-1">Department / Wing *</label>
-                                <input type="text" id="custom-team-dept" placeholder="e.g. AI & Data Science"
-                                    class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-2.5 outline-none">
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label for="custom-team-logo" class="block text-xs font-semibold text-slate-400 mb-1">Logo Icon / Emoji</label>
-                                <select id="custom-team-logo" class="bg-slate-950 border border-slate-800 text-white text-sm rounded-xl focus:ring-2 focus:ring-lime-400/20 focus:border-lime-400 block w-full p-2.5 outline-none">
-                                    <option value="⚡">⚡ Lightning</option>
-                                    <option value="🏏">🏏 Cricket</option>
-                                    <option value="🦁">🦁 Lion</option>
-                                    <option value="🦅">🦅 Eagle</option>
-                                    <option value="👑">👑 Crown</option>
-                                    <option value="🐂">🐂 Bull</option>
-                                    <option value="🚀">🚀 Rocket</option>
-                                    <option value="🔥">🔥 Fire</option>
-                                    <option value="🛡️">🛡️ Shield</option>
-                                    <option value="⚔️">⚔️ Warriors</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label for="custom-team-color" class="block text-xs font-semibold text-slate-400 mb-1">Primary Color</label>
-                                <div class="flex items-center gap-2">
-                                    <input type="color" id="custom-team-color" value="#a3e635"
-                                        class="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer p-1">
-                                    <span class="text-xs font-mono text-slate-400" id="color-hex-label">#a3e635</span>
-                                </div>
+            <div class="p-8 sm:p-10">
+                <!-- Brand Header -->
+                <div class="text-center mb-7">
+                    <div class="inline-flex mb-4">
+                        <div class="login-logo-ring" style="background: linear-gradient(135deg, #F5C542, #38BDF8, #1677FF);">
+                            <div class="w-16 h-16 rounded-2xl bg-[#050816] flex items-center justify-center text-3xl border border-sky-900/60">
+                                👑
                             </div>
                         </div>
                     </div>
+                    <div class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400 mb-1">UniBox League 2026</div>
+                    <h1 class="text-2xl sm:text-3xl font-black uppercase text-white tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">
+                        Franchise Owner HQ
+                    </h1>
+                    <p class="text-xs text-slate-400 mt-1.5 max-w-xs mx-auto">
+                        Sign in or register your team franchise to participate in the live auction and manage your squad ledger.
+                    </p>
                 </div>
 
-                <!-- Starting Purse Notice -->
-                <div class="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs">
-                    <span class="text-slate-400">Allotted Tournament Purse:</span>
-                    <span class="font-mono font-black text-lime-400">100 Points</span>
+                <!-- Tab Switcher -->
+                <div class="flex p-1 bg-[#050816]/80 border border-sky-950/80 rounded-xl mb-6">
+                    <button type="button" id="tab-btn-login"
+                        class="flex-1 py-2.5 rounded-lg text-xs font-black transition-all bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md cursor-pointer">
+                        Sign In
+                    </button>
+                    <button type="button" id="tab-btn-register"
+                        class="flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 cursor-pointer">
+                        Register Franchise
+                    </button>
                 </div>
 
-                <button type="submit" id="reg-submit-btn"
-                    class="w-full text-slate-950 bg-gradient-to-r from-amber-400 to-lime-400 hover:from-amber-300 hover:to-lime-300 font-black rounded-xl text-sm px-5 py-3.5 text-center transition-all cursor-pointer shadow-lg shadow-lime-400/20 mt-4 flex items-center justify-center gap-2">
-                    <span>Register</span>
-                    <svg id="reg-spinner" class="hidden w-4 h-4 text-slate-950 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                    </svg>
-                </button>
-            </form>
+                <!-- Error / Success Alert Box -->
+                <div id="auth-alert-box" class="hidden mb-5 p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5">
+                    <span id="auth-alert-icon" class="text-base">⚠️</span>
+                    <span id="auth-alert-text">Error message here.</span>
+                </div>
 
-            <!-- Bottom Navigation Link -->
-            <div class="mt-8 pt-6 border-t border-slate-800/80 text-center space-y-2">
-                <a href="../index.html" class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors">
-                    ← Back to Tournament Public Portal
-                </a>
+                <!-- ===== TAB 1: LOGIN FORM ===== -->
+                <form id="owner-login-form" class="space-y-4">
+                    <div>
+                        <label for="login-email" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                            Franchise Owner Email
+                        </label>
+                        <input type="email" id="login-email" placeholder="owner@franchise.com" autocomplete="email"
+                            class="input-premium" required>
+                    </div>
+                    <div>
+                        <label for="login-password" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                            Password
+                        </label>
+                        <div class="relative">
+                            <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password"
+                                class="input-premium pr-10" required>
+                            <button type="button" class="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-200 transition-colors"
+                                onclick="const i=document.getElementById('login-password');i.type=i.type==='password'?'text':'password'">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" id="login-submit-btn"
+                        class="btn-gold w-full mt-2 text-sm gap-2">
+                        <span>Enter Franchise Hub</span>
+                        <svg id="login-spinner" class="hidden w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                    </button>
+                </form>
+
+                <!-- ===== TAB 2: REGISTER FRANCHISE FORM ===== -->
+                <form id="owner-register-form" class="hidden space-y-3">
+                    <!-- Owner Name + Team Name Row -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label for="reg-owner-name" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                Owner Full Name *
+                            </label>
+                            <input type="text" id="reg-owner-name" placeholder="Vikram Singh"
+                                class="input-premium text-sm" required>
+                        </div>
+                        <div>
+                            <label for="reg-team-name" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                Franchise Name *
+                            </label>
+                            <input type="text" id="reg-team-name" placeholder="Tech Titans"
+                                class="input-premium text-sm" required>
+                        </div>
+                    </div>
+
+                    <!-- Department + Team Logo -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label for="reg-dept" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                Department *
+                            </label>
+                            <select id="reg-dept" class="input-premium text-sm" required>
+                                <option value="" disabled selected>Select Branch</option>
+                                <option value="B.Tech">B.Tech</option>
+                                <option value="BCA">BCA</option>
+                                <option value="BBA">BBA</option>
+                                <option value="MCA">MCA</option>
+                                <option value="MBA">MBA</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="reg-logo" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                Team Emoji Logo *
+                            </label>
+                            <input type="text" id="reg-logo" placeholder="e.g. 🦅 or ⚡" maxlength="4"
+                                class="input-premium text-sm text-center text-2xl" required>
+                        </div>
+                    </div>
+
+                    <!-- Email + Password Row -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label for="reg-email" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                Email *
+                            </label>
+                            <input type="email" id="reg-email" placeholder="owner@team.com" autocomplete="email"
+                                class="input-premium text-sm" required>
+                        </div>
+                        <div>
+                            <label for="reg-password" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                Password *
+                            </label>
+                            <input type="password" id="reg-password" placeholder="••••••••" minlength="6" autocomplete="new-password"
+                                class="input-premium text-sm" required>
+                        </div>
+                    </div>
+
+                    <!-- Initial Purse -->
+                    <div>
+                        <label for="reg-budget" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                            Initial Franchise Purse (Points) *
+                        </label>
+                        <div class="relative">
+                            <input type="number" id="reg-budget" placeholder="e.g. 1000" min="100" step="50"
+                                class="input-premium text-sm pr-12 font-bold" required>
+                            <span class="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none text-slate-400 text-xs font-bold">Pts</span>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="register-submit-btn"
+                        class="btn-gold w-full mt-2 text-sm gap-2">
+                        <span>Register Franchise</span>
+                        <svg id="register-spinner" class="hidden w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                    </button>
+                </form>
+
+                <!-- Bottom Links -->
+                <div class="mt-7 pt-6 border-t border-sky-950/80 text-center">
+                    <a href="../index.html" class="text-xs text-slate-400 hover:text-sky-400 transition-colors flex items-center justify-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        Back to Tournament Public Portal
+                    </a>
+                </div>
             </div>
+        </div>
+
+        <!-- Bottom label -->
+        <div class="text-center mt-6">
+            <p class="text-[10px] text-slate-600 uppercase tracking-widest font-bold">UniBox League 2026 · Franchise Management</p>
         </div>
     </div>
 
@@ -225,99 +236,51 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../supabaseClient.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', async () => {
+        document.addEventListener('DOMContentLoaded', () => {
             const tabBtnLogin = document.getElementById('tab-btn-login');
             const tabBtnRegister = document.getElementById('tab-btn-register');
             const formLogin = document.getElementById('owner-login-form');
             const formRegister = document.getElementById('owner-register-form');
             const alertBox = document.getElementById('auth-alert-box');
-            const alertText = document.getElementById('auth-alert-text');
             const alertIcon = document.getElementById('auth-alert-icon');
-            const claimSelect = document.getElementById('claim-team-select');
-            const modeRadios = document.querySelectorAll('input[name="team_mode"]');
-            const modeClaimContainer = document.getElementById('mode-claim-container');
-            const modeCustomContainer = document.getElementById('mode-custom-container');
-            const colorInput = document.getElementById('custom-team-color');
-            const colorHexLabel = document.getElementById('color-hex-label');
-
-            // Tab Switching
-            tabBtnLogin.addEventListener('click', () => {
-                tabBtnLogin.className = 'flex-1 py-2.5 rounded-xl text-xs font-bold transition-all bg-lime-400 text-slate-950 shadow-md';
-                tabBtnRegister.className = 'flex-1 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-white';
-                formLogin.classList.remove('hidden');
-                formRegister.classList.add('hidden');
-                hideAlert();
-            });
-
-            tabBtnRegister.addEventListener('click', () => {
-                tabBtnRegister.className = 'flex-1 py-2.5 rounded-xl text-xs font-bold transition-all bg-lime-400 text-slate-950 shadow-md';
-                tabBtnLogin.className = 'flex-1 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-white';
-                formRegister.classList.remove('hidden');
-                formLogin.classList.add('hidden');
-                hideAlert();
-                populateClaimDropdown();
-            });
-
-            // Franchise Setup Option Radio
-            modeRadios.forEach(radio => {
-                radio.addEventListener('change', () => {
-                    if (radio.value === 'claim') {
-                        modeClaimContainer.classList.remove('hidden');
-                        modeCustomContainer.classList.add('hidden');
-                    } else {
-                        modeClaimContainer.classList.add('hidden');
-                        modeCustomContainer.classList.remove('hidden');
-                    }
-                });
-            });
-
-            colorInput?.addEventListener('input', (e) => {
-                if (colorHexLabel) colorHexLabel.textContent = e.target.value;
-            });
-
-            // Check existing session
-            const existingSession = window.UniBoxDb ? window.UniBoxDb.getTeamOwnerSession() : null;
-            if (existingSession && existingSession.email) {
-                showAlert(`Signed in as ${existingSession.ownerName || 'Owner'} (${existingSession.teamName || 'Franchise'}). <a href="index.html" class="underline font-bold text-lime-400 ml-1">Go to Dashboard →</a>`, true);
-            }
-
-            // Populate Claim Dropdown
-            async function populateClaimDropdown() {
-                if (!window.UniBoxDb) return;
-                try {
-                    const { data: teams } = await window.UniBoxDb.getAllTeams();
-                    if (!claimSelect) return;
-                    claimSelect.innerHTML = (teams || []).map(t => {
-                        const isClaimed = Boolean(t.owner_email);
-                        const label = `${t.logo || '🏏'} ${t.name} (${t.department}) ${isClaimed ? '— [Already Claimed]' : '— [Available]'}`;
-                        return `<option value="${t.id}" ${isClaimed ? 'disabled class="text-slate-600 bg-slate-950"' : 'class="text-white bg-slate-900"'}>${label}</option>`;
-                    }).join('');
-                } catch (e) {
-                    console.warn('Failed to load teams for claim dropdown:', e);
-                }
-            }
-
-            // Initial load for claim dropdown
-            populateClaimDropdown();
+            const alertText = document.getElementById('auth-alert-text');
 
             function showAlert(msg, isSuccess = false) {
+                if (!alertBox || !alertText) return;
                 alertBox.classList.remove('hidden', 'bg-rose-500/10', 'border-rose-500/20', 'text-rose-400', 'bg-emerald-500/10', 'border-emerald-500/20', 'text-emerald-400');
                 if (isSuccess) {
                     alertBox.classList.add('bg-emerald-500/10', 'border-emerald-500/20', 'text-emerald-400');
-                    alertIcon.textContent = '✓';
+                    if (alertIcon) alertIcon.textContent = '✓';
                 } else {
                     alertBox.classList.add('bg-rose-500/10', 'border-rose-500/20', 'text-rose-400');
-                    alertIcon.textContent = '⚠️';
+                    if (alertIcon) alertIcon.textContent = '⚠️';
                 }
                 alertText.textContent = msg;
             }
 
             function hideAlert() {
-                alertBox.classList.add('hidden');
+                if (alertBox) alertBox.classList.add('hidden');
             }
 
-            // LOGIN SUBMISSION
-            formLogin.addEventListener('submit', async (e) => {
+            // Tab Switchers (Midnight Gold Accent)
+            tabBtnLogin?.addEventListener('click', () => {
+                tabBtnLogin.className = 'flex-1 py-2.5 rounded-lg text-xs font-black transition-all bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md cursor-pointer';
+                tabBtnRegister.className = 'flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 cursor-pointer';
+                formLogin?.classList.remove('hidden');
+                formRegister?.classList.add('hidden');
+                hideAlert();
+            });
+
+            tabBtnRegister?.addEventListener('click', () => {
+                tabBtnRegister.className = 'flex-1 py-2.5 rounded-lg text-xs font-black transition-all bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md cursor-pointer';
+                tabBtnLogin.className = 'flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 cursor-pointer';
+                formRegister?.classList.remove('hidden');
+                formLogin?.classList.add('hidden');
+                hideAlert();
+            });
+
+            // Login Form Submission
+            formLogin?.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 hideAlert();
 
@@ -335,50 +298,46 @@
                 if (btn) btn.disabled = true;
 
                 try {
-                    const res = await window.UniBoxDb.loginTeamOwner(email, password);
-                    if (!res.success) {
-                        showAlert(res.error || 'Authentication failed.');
-                        return;
-                    }
+                    if (window.UniBoxDb) {
+                        const res = await window.UniBoxDb.loginTeamOwner(email, password);
+                        if (!res.success) {
+                            showAlert(res.error || 'Authentication failed. Please verify credentials.');
+                            return;
+                        }
 
-                    showAlert(`Authenticated as ${res.team.name} Owner! Redirecting...`, true);
-                    setTimeout(() => {
-                        window.location.replace('index.html');
-                    }, 500);
+                        showAlert(`Authenticated as ${res.team.name} Owner! Redirecting...`, true);
+                        setTimeout(() => {
+                            window.location.replace('index.html');
+                        }, 500);
+                    } else {
+                        showAlert('Database service is not ready. Please refresh the page.');
+                    }
                 } catch (err) {
-                    console.error('Login error:', err);
-                    showAlert(err.message || 'Login failed. Check server connection.');
+                    console.error('Owner login error:', err);
+                    showAlert(err.message || 'Login failed. Please try again.');
                 } finally {
                     if (spinner) spinner.classList.add('hidden');
                     if (btn) btn.disabled = false;
                 }
             });
 
-            // REGISTER SUBMISSION
-            formRegister.addEventListener('submit', async (e) => {
+            // Registration Form Submission
+            formRegister?.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 hideAlert();
 
                 const ownerName = document.getElementById('reg-owner-name')?.value?.trim();
-                const phone = document.getElementById('reg-owner-phone')?.value?.trim();
-                const email = document.getElementById('reg-owner-email')?.value?.trim();
-                const password = document.getElementById('reg-owner-password')?.value;
-                const teamMode = formRegister.querySelector('input[name="team_mode"]:checked')?.value || 'claim';
-                const existingTeamId = claimSelect?.value;
-                const customTeamName = document.getElementById('custom-team-name')?.value?.trim();
-                const customTeamDept = document.getElementById('custom-team-dept')?.value?.trim();
-                const customLogo = document.getElementById('custom-team-logo')?.value;
-                const customColor = document.getElementById('custom-team-color')?.value;
-                const spinner = document.getElementById('reg-spinner');
-                const btn = document.getElementById('reg-submit-btn');
+                const customTeamName = document.getElementById('reg-team-name')?.value?.trim();
+                const department = document.getElementById('reg-dept')?.value;
+                const logo = document.getElementById('reg-logo')?.value?.trim() || '🏏';
+                const email = document.getElementById('reg-email')?.value?.trim();
+                const password = document.getElementById('reg-password')?.value;
+                const budget = Number(document.getElementById('reg-budget')?.value) || 1000;
+                const spinner = document.getElementById('register-spinner');
+                const btn = document.getElementById('register-submit-btn');
 
-                if (!ownerName || !email || !password) {
+                if (!ownerName || !customTeamName || !department || !email || !password) {
                     showAlert('Please complete all required fields.');
-                    return;
-                }
-
-                if (teamMode === 'custom' && (!customTeamName || !customTeamDept)) {
-                    showAlert('Please enter both Team Name and Department.');
                     return;
                 }
 
@@ -386,31 +345,34 @@
                 if (btn) btn.disabled = true;
 
                 try {
-                    const res = await window.UniBoxDb.registerTeamOwner({
-                        ownerName,
-                        email,
-                        password,
-                        phone,
-                        teamMode,
-                        existingTeamId,
-                        customTeamName,
-                        department: customTeamDept,
-                        logo: customLogo,
-                        color: customColor
-                    });
+                    if (window.UniBoxDb) {
+                        const res = await window.UniBoxDb.registerTeamOwner({
+                            ownerName,
+                            email,
+                            password,
+                            teamMode: 'custom',
+                            customTeamName,
+                            department,
+                            logo,
+                            budget,
+                            color: '#F5C542'
+                        });
 
-                    if (!res.success) {
-                        showAlert(res.error || 'Registration failed.');
-                        return;
+                        if (!res.success) {
+                            showAlert(res.error || 'Registration failed.');
+                            return;
+                        }
+
+                        showAlert(`Franchise "${res.team.name}" registered successfully! Redirecting to hub...`, true);
+                        setTimeout(() => {
+                            window.location.replace('index.html');
+                        }, 600);
+                    } else {
+                        showAlert('Database service is not ready. Please refresh the page.');
                     }
-
-                    showAlert(`Franchise "${res.team.name}" registered successfully! Launching dashboard...`, true);
-                    setTimeout(() => {
-                        window.location.replace('index.html');
-                    }, 600);
                 } catch (err) {
-                    console.error('Registration error:', err);
-                    showAlert(err.message || 'Registration failed. Check server connection.');
+                    console.error('Owner registration error:', err);
+                    showAlert(err.message || 'Registration failed. Check network or server connection.');
                 } finally {
                     if (spinner) spinner.classList.add('hidden');
                     if (btn) btn.disabled = false;
@@ -421,4 +383,3 @@
 </body>
 
 </html>
-
