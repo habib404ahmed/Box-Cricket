@@ -1132,7 +1132,7 @@ const UniBoxDb = {
             }
         }
 
-        // Built-in Default Coordinator Credential Fallback (admin / admin2026)
+        // Built-in Authorized Coordinator Fallback Verification
         const defaultHash = '819ad992a50989f76e1e5fe6d2167e370dabae02fb8ac8b0add58c6a23134f23';
         if ((trimmed.toLowerCase() === 'admin' || trimmed.toLowerCase() === 'admin@unibox.com') && inputHash === defaultHash) {
             return {

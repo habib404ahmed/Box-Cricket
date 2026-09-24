@@ -85,7 +85,7 @@ npm run build:css
 ### 5. Launch
 Open `index.html` with VS Code **Live Server** (or any static HTTP server):
 - Athlete Portal: `http://localhost:5500/index.html`
-- Admin Panel: `http://localhost:5500/admin/index.html` (Default: `admin` / `admin2026`)
+- Admin Panel: `http://localhost:5500/admin/index.html` (Authorized coordinators only)
 
 ---
 

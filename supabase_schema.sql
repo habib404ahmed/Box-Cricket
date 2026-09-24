@@ -78,7 +78,7 @@ create policy "Allow read on admins for authentication"
     for select 
     using (true);
 
--- Seed Default Coordinator Account (Username: admin | Password: admin2026)
+-- Seed Default Coordinator Account (Username: admin | Secure SHA-256 password hash)
 insert into public.admins (username, email, password_hash, role)
 values ('admin', 'admin@unibox.com', '819ad992a50989f76e1e5fe6d2167e370dabae02fb8ac8b0add58c6a23134f23', 'Lead Coordinator')
 on conflict (username) do nothing;
