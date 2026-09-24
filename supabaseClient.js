@@ -157,7 +157,7 @@ const UniBoxDb = {
     },
 
     // --- TEAMS & LIVE BUDGET PURSE MANAGEMENT ---
-    getAllTeams: async () => {
+    getAllTeams: async (providedPlayers = null) => {
         let teams = [];
         try {
             const storedTeams = localStorage.getItem('unibox_teams');
@@ -190,7 +190,11 @@ const UniBoxDb = {
         // Attempt Supabase fetch if available
         if (UniBoxDb.isReady()) {
             try {
-                const { data, error } = await supabaseClient.from('teams').select('*').order('name');
+                const fetchPromise = supabaseClient.from('teams').select('*').order('name');
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Teams fetch timed out')), 5000)
+                );
+                const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
                 if (!error && Array.isArray(data) && data.length > 0) {
                     const localTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
                     const registry = JSON.parse(localStorage.getItem('unibox_team_owners_registry') || '{}');
@@ -239,8 +243,16 @@ const UniBoxDb = {
             } catch (err) {}
         }
 
-        // Fetch all players to calculate spent & leftover balance for each team
-        const { data: players } = await UniBoxDb.getAllPlayers();
+        // Fetch players to calculate spent & leftover balance for each team
+        let players = providedPlayers;
+        if (!players || !Array.isArray(players) || players.length === 0) {
+            if (typeof allPlayers !== 'undefined' && Array.isArray(allPlayers) && allPlayers.length > 0) {
+                players = allPlayers;
+            } else {
+                const { data } = await UniBoxDb.getAllPlayers();
+                players = data;
+            }
+        }
 
         const enrichedTeams = teams.map(team => {
             const teamName = (team.name || '').trim().toLowerCase();
@@ -976,15 +988,21 @@ const UniBoxDb = {
             players = JSON.parse(localStorage.getItem('unibox_players') || '[]');
         } else {
             try {
-                const { data, error } = await supabaseClient
+                const fetchPromise = supabaseClient
                     .from('players')
                     .select('*')
                     .order('created_at', { ascending: false });
 
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Supabase request timed out after 6000ms')), 6000)
+                );
+
+                const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
                 if (error) throw error;
                 players = Array.isArray(data) ? data : [];
             } catch (error) {
-                console.error('Failed to fetch all players from Supabase:', error);
+                console.warn('Failed to fetch all players from Supabase, using local fallback:', error);
                 players = JSON.parse(localStorage.getItem('unibox_players') || '[]');
             }
 

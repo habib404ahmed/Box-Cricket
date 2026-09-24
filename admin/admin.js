@@ -57,13 +57,29 @@ const toastBanner = document.getElementById('toast-banner');
 const toastIcon = document.getElementById('toast-icon');
 const toastMessage = document.getElementById('toast-message');
 
-// Initialize Admin Dashboard
-document.addEventListener('DOMContentLoaded', async () => {
+// Initialize Admin Dashboard with lifecycle check
+let isDashboardInitialized = false;
+async function initAdminDashboard() {
+    if (isDashboardInitialized) return;
+    isDashboardInitialized = true;
+
     initDbStatus();
-    await Promise.all([loadRosterData(), loadTeamsData()]);
     bindEventListeners();
     initRealtimeAuctionSync();
-});
+
+    // Independent parallel loaders — one failure must not block the other
+    await Promise.allSettled([
+        loadRosterData(true),
+        loadTeamsData()
+    ]);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAdminDashboard);
+} else {
+    // DOM already loaded or interactive
+    initAdminDashboard();
+}
 
 // 1. Connection Status Badge
 function initDbStatus() {
@@ -80,16 +96,34 @@ function initDbStatus() {
 }
 
 // 2. Load Teams Data & Live Leftover Balance HUD
-async function loadTeamsData() {
+async function loadTeamsData(providedPlayers = null) {
     try {
         if (window.UniBoxDb) {
-            const { data } = await window.UniBoxDb.getAllTeams();
+            const { data } = await window.UniBoxDb.getAllTeams(providedPlayers || allPlayers);
             allTeams = Array.isArray(data) ? data : [];
+        } else {
+            allTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
         }
         renderTeamBalanceHUD();
     } catch (err) {
         console.error('Error loading team data:', err);
+        renderTeamBalanceError(err);
     }
+}
+
+function renderTeamBalanceError(err) {
+    if (!teamsHudContainer) return;
+    teamsHudContainer.innerHTML = `
+        <div class="col-span-full py-6 px-4 text-center rounded-2xl bg-[#08111F]/80 border border-rose-500/30 text-rose-400">
+            <div class="text-xl mb-1">⚠️</div>
+            <p class="text-xs font-bold text-slate-200">Unable to Load Franchise Balances</p>
+            <p class="text-[11px] text-slate-400 mt-1 mb-3">${err?.message || "Failed to retrieve tournament franchise data."}</p>
+            <button type="button" onclick="loadTeamsData()" class="btn-primary text-xs px-3.5 py-1.5 inline-flex items-center gap-1.5 mx-auto">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Try Again
+            </button>
+        </div>
+    `;
 }
 
 // Render the 5 Franchise Balance Cards with live leftover purse reflection
@@ -97,7 +131,7 @@ function renderTeamBalanceHUD() {
     if (!teamsHudContainer) return;
 
     if (!allTeams.length) {
-        teamsHudContainer.innerHTML = `<div class="col-span-full py-4 text-center text-slate-500 text-xs">No teams loaded.</div>`;
+        teamsHudContainer.innerHTML = `<div class="col-span-full py-6 text-center text-slate-400 text-xs bg-[#08111F]/50 rounded-2xl border border-sky-950/60">No franchise balances available</div>`;
         return;
     }
 
@@ -167,8 +201,8 @@ async function loadRosterData(showSpinner = true) {
             <tr>
                 <td colspan="8" class="py-12 text-center text-slate-500">
                     <div class="flex flex-col items-center justify-center gap-3">
-                        <div class="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin"></div>
-                        <p class="text-xs">Fetching tournament athletes from Supabase...</p>
+                        <div class="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
+                        <p class="text-xs text-slate-400 font-medium">Fetching tournament athletes from Supabase...</p>
                     </div>
                 </td>
             </tr>
@@ -188,15 +222,24 @@ async function loadRosterData(showSpinner = true) {
 
         updateMetrics();
         applyFilters();
-        await loadTeamsData();
+        // Update teams HUD with newly loaded players without duplicate network query
+        loadTeamsData(allPlayers);
     } catch (err) {
         console.error('Error loading roster data:', err);
         showToast('Error loading roster data. Check database connection.', 'error');
         rosterTableBody.innerHTML = `
             <tr>
-                <td colspan="8" class="py-12 text-center text-rose-400">
-                    <p class="text-sm font-bold">Failed to load athletes from database.</p>
-                    <p class="text-xs text-slate-500 mt-1">${err.message || 'Please check your Supabase credentials'}</p>
+                <td colspan="8" class="py-12 text-center">
+                    <div class="max-w-md mx-auto p-6 rounded-2xl bg-[#08111F]/90 border border-rose-500/30 text-center space-y-3">
+                        <span class="text-3xl">⚠️</span>
+                        <h3 class="text-sm font-bold text-slate-200">Unable to Load Athletes</h3>
+                        <p class="text-xs text-slate-400">We couldn't retrieve tournament data from the database.</p>
+                        <p class="text-[11px] font-mono text-slate-500">${err?.message || 'Connection failed'}</p>
+                        <button type="button" onclick="loadRosterData(true)" class="btn-primary text-xs px-4 py-2 inline-flex items-center gap-1.5 mx-auto">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            Try Again
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -273,6 +316,21 @@ function applyFilters() {
 
 // 6. Render Dynamic Roster Table Rows
 function renderRosterTable() {
+    if (!allPlayers.length) {
+        rosterTableBody.innerHTML = `
+            <tr>
+                <td colspan="8" class="py-12 text-center text-slate-500">
+                    <div class="flex flex-col items-center justify-center gap-2">
+                        <span class="text-3xl">📋</span>
+                        <p class="text-sm font-bold text-slate-300">No athletes found</p>
+                        <p class="text-xs text-slate-500">No athlete registrations have been submitted to the tournament yet.</p>
+                    </div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
     if (!filteredPlayers.length) {
         rosterTableBody.innerHTML = `
             <tr>
