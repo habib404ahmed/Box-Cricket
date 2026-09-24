@@ -28,11 +28,42 @@
             .print-clean { border: 1px solid #ddd !important; box-shadow: none !important; }
         }
     </style>
-    <!-- Instant Route Guard: Redirect to login if unauthenticated -->
+    <!-- Instant Route Guard & Robust Admin Logout -->
     <script>
-        if (!sessionStorage.getItem('unibox_admin_session')) {
-            window.location.replace('login.html');
+        function adminLogout() {
+            try {
+                sessionStorage.removeItem('unibox_admin_session');
+                localStorage.removeItem('unibox_admin_session');
+            } catch (e) {}
+
+            const p = window.location.pathname || '';
+            let target = 'login.html';
+            if (p.endsWith('/admin')) {
+                target = p + '/login.html';
+            } else if (p.includes('/admin/')) {
+                target = p.substring(0, p.indexOf('/admin/') + 7) + 'login.html';
+            } else {
+                target = '/admin/login.html';
+            }
+            window.location.href = target;
         }
+        window.adminLogout = adminLogout;
+
+        (function() {
+            const hasSession = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+            if (!hasSession) {
+                const p = window.location.pathname || '';
+                let target = 'login.html';
+                if (p.endsWith('/admin')) {
+                    target = p + '/login.html';
+                } else if (p.includes('/admin/')) {
+                    target = p.substring(0, p.indexOf('/admin/') + 7) + 'login.html';
+                } else {
+                    target = '/admin/login.html';
+                }
+                window.location.replace(target);
+            }
+        })();
     </script>
 </head>
 
@@ -99,7 +130,7 @@
                 </a>
 
                 <!-- Log Out -->
-                <button onclick="adminLogout()" type="button" class="text-xs font-bold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5" title="Exit Admin Session">
+                <button id="admin-logout-btn" onclick="adminLogout()" type="button" class="text-xs font-bold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5" title="Exit Admin Session">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
                     <span>Log Out</span>
                 </button>

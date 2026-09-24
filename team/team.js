@@ -4,9 +4,18 @@
 
 document.addEventListener('DOMContentLoaded', async () => {
     // 1. AUTHENTICATION GUARD
-    const sessionRaw = localStorage.getItem('unibox_team_owner_session');
+    const sessionRaw = localStorage.getItem('unibox_team_owner_session') || sessionStorage.getItem('unibox_team_owner_session');
     if (!sessionRaw) {
-        window.location.replace('login.html');
+        const p = window.location.pathname || '';
+        let target = 'login.html';
+        if (p.endsWith('/team')) {
+            target = p + '/login.html';
+        } else if (p.includes('/team/')) {
+            target = p.substring(0, p.indexOf('/team/') + 6) + 'login.html';
+        } else {
+            target = '/team/login.html';
+        }
+        window.location.replace(target);
         return;
     }
 
@@ -15,12 +24,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         session = JSON.parse(sessionRaw);
     } catch (e) {
         localStorage.removeItem('unibox_team_owner_session');
-        window.location.replace('login.html');
+        sessionStorage.removeItem('unibox_team_owner_session');
+        const p = window.location.pathname || '';
+        let target = 'login.html';
+        if (p.endsWith('/team')) {
+            target = p + '/login.html';
+        } else if (p.includes('/team/')) {
+            target = p.substring(0, p.indexOf('/team/') + 6) + 'login.html';
+        } else {
+            target = '/team/login.html';
+        }
+        window.location.replace(target);
         return;
     }
 
     if (!session || !session.email) {
-        window.location.replace('login.html');
+        const p = window.location.pathname || '';
+        let target = 'login.html';
+        if (p.endsWith('/team')) {
+            target = p + '/login.html';
+        } else if (p.includes('/team/')) {
+            target = p.substring(0, p.indexOf('/team/') + 6) + 'login.html';
+        } else {
+            target = '/team/login.html';
+        }
+        window.location.replace(target);
         return;
     }
 
@@ -69,9 +97,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 2. LOGOUT HANDLER
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => {
-            localStorage.removeItem('unibox_team_owner_session');
-            window.location.replace('login.html');
+        logoutBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            try {
+                localStorage.removeItem('unibox_team_owner_session');
+                sessionStorage.removeItem('unibox_team_owner_session');
+            } catch (err) {}
+            const p = window.location.pathname || '';
+            let target = 'login.html';
+            if (p.endsWith('/team')) {
+                target = p + '/login.html';
+            } else if (p.includes('/team/')) {
+                target = p.substring(0, p.indexOf('/team/') + 6) + 'login.html';
+            } else {
+                target = '/team/login.html';
+            }
+            window.location.href = target;
         });
     }
 

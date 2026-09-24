@@ -1162,6 +1162,12 @@ function bindEventListeners() {
         }
     });
 
+    const logoutBtn = document.getElementById('admin-logout-btn');
+    logoutBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        adminLogout();
+    });
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closeAthleteModal();
@@ -1175,8 +1181,21 @@ function bindEventListeners() {
 }
 
 function adminLogout() {
-    sessionStorage.removeItem('unibox_admin_session');
-    window.location.replace('login.html');
+    try {
+        sessionStorage.removeItem('unibox_admin_session');
+        localStorage.removeItem('unibox_admin_session');
+    } catch (e) {}
+
+    const p = window.location.pathname || '';
+    let target = 'login.html';
+    if (p.endsWith('/admin')) {
+        target = p + '/login.html';
+    } else if (p.includes('/admin/')) {
+        target = p.substring(0, p.indexOf('/admin/') + 7) + 'login.html';
+    } else {
+        target = '/admin/login.html';
+    }
+    window.location.href = target;
 }
 
 function openCertViewerModal(name, data) {
