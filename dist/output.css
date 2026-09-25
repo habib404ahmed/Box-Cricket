@@ -3676,6 +3676,15 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+.hidden {
+  display: none !important;
+}
+html.is-athlete-logged-in #nav-login-btn {
+  display: none !important;
+}
+html.is-athlete-logged-in #nav-logout-btn {
+  display: inline-flex !important;
+}
 @property --tw-translate-x {
   syntax: "*";
   inherits: false;

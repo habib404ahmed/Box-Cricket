@@ -861,3 +861,16 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Ensure .hidden utility strictly overrides any component display rules */
+.hidden {
+  display: none !important;
+}
+
+html.is-athlete-logged-in #nav-login-btn {
+  display: none !important;
+}
+
+html.is-athlete-logged-in #nav-logout-btn {
+  display: inline-flex !important;
+}

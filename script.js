@@ -210,9 +210,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Persist student session and profile
         if (user && user.email) {
+            const athleteName = user.name || user.full_name || '';
             const sessionData = {
                 email: user.email,
-                name: user.name || '',
+                name: athleteName,
                 staySignedIn: isStaySignedIn,
                 loginTimestamp: Date.now(),
                 expiresAt: expiresAt
@@ -254,10 +255,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         document.querySelector('[modal-backdrop]')?.remove();
         document.body.classList.remove('overflow-hidden');
+        document.body.style.overflow = '';
 
         // 4. Hide landing hero section and reveal the dashboard
         document.querySelector('main')?.classList.add('hidden');
-        document.getElementById('player-dashboard')?.classList.remove('hidden');
+        const dashboard = document.getElementById('player-dashboard');
+        if (dashboard) {
+            dashboard.classList.remove('hidden');
+        }
+
+        // Scroll to top to ensure athlete immediately views dashboard
+        window.scrollTo({ top: 0, behavior: 'instant' });
+
+        // Synchronize browser history / URL hash to #dashboard
+        if (window.location.hash !== '#dashboard') {
+            try {
+                history.replaceState(null, '', '#dashboard');
+            } catch (e) {}
+        }
 
         // 5. Update clearance status badge based on admin's decision (Approved / Rejected / Pending)
         updateDashboardClearanceBadge(user?.status || 'Registered');
@@ -318,6 +333,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const navLogoutBtn = document.getElementById('nav-logout-btn');
         if (navLogoutBtn) navLogoutBtn.classList.add('hidden');
+
+        // 3. Clear URL hash if at #dashboard and reset scroll
+        if (window.location.hash === '#dashboard') {
+            try {
+                history.replaceState(null, '', window.location.pathname);
+            } catch (e) {}
+        }
+        window.scrollTo({ top: 0, behavior: 'instant' });
     }
 
     // Form Submissions
@@ -363,6 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 userProfile = {
                     name: dbPlayer.full_name || dbPlayer.name || fallbackName,
+                    full_name: dbPlayer.full_name || dbPlayer.name || fallbackName,
                     email: dbPlayer.email,
                     enrollment_no: dbPlayer.enrollment_no || '---',
                     department: dbPlayer.department || '---',
@@ -385,7 +409,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             sessionStorage.setItem('unibox_active_email', email);
-            enterDashboard(userProfile);
             enterDashboard(userProfile, staySignedIn);
             loginForm.reset();
             if (staySignedInCheckbox) staySignedInCheckbox.checked = false;
@@ -669,134 +692,149 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Dynamic Profile Registration Router Handler with Strict Validation
-    const signupForm = document.getElementById('signup-form');
-    if (signupForm) {
-        signupForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
+    // Dynamic Profile Registration Router Handler with Strict Validation & Verified Dashboard Redirect
+    async function handleRegistration(e) {
+        if (e) e.preventDefault();
 
-            const signupErrorBox = document.getElementById('signup-error-box');
-            const signupErrorText = document.getElementById('signup-error-text');
-            if (signupErrorBox) signupErrorBox.classList.add('hidden');
+        const submitBtn = document.getElementById('signup-submit-btn');
+        const signupErrorBox = document.getElementById('signup-error-box');
+        const signupErrorText = document.getElementById('signup-error-text');
+        if (signupErrorBox) signupErrorBox.classList.add('hidden');
 
-            // Reset previous field errors
-            ['signup-name', 'signup-enrollment', 'signup-phone', 'signup-department', 'signup-email', 'signup-password', 'signup-photo', 'signup-certificate'].forEach(id => {
-                const errId = id === 'signup-certificate' ? 'signup-cert-error' : `${id}-error`;
-                clearFieldError(id, errId);
-            });
+        // Reset previous field errors
+        ['signup-name', 'signup-enrollment', 'signup-phone', 'signup-department', 'signup-email', 'signup-password', 'signup-photo', 'signup-certificate'].forEach(id => {
+            const errId = id === 'signup-certificate' ? 'signup-cert-error' : `${id}-error`;
+            clearFieldError(id, errId);
+        });
 
-            // 1. Full Name Validation: Text only (letters, spaces, hyphens, apostrophes), 2-100 chars
-            const rawName = document.getElementById('signup-name')?.value || '';
-            const sanitizedName = rawName
-                .replace(/[^A-Za-zÀ-ÿ' -]/g, '')
-                .replace(/\s{2,}/g, ' ');
-            const trimmedName = sanitizedName.trim();
+        // 1. Full Name Validation: Text only (letters, spaces, hyphens, apostrophes), 2-100 chars
+        const rawName = document.getElementById('signup-name')?.value || '';
+        const sanitizedName = rawName
+            .replace(/[^A-Za-zÀ-ÿ' -]/g, '')
+            .replace(/\s{2,}/g, ' ');
+        const trimmedName = sanitizedName.trim();
 
-            if (/[0-9]/.test(rawName)) {
-                showFieldError('signup-name', 'signup-name-error', 'Full Name cannot contain numbers. Numbers are strictly disallowed.');
-                document.getElementById('signup-name')?.focus();
-                return;
+        if (/[0-9]/.test(rawName)) {
+            showFieldError('signup-name', 'signup-name-error', 'Full Name cannot contain numbers. Numbers are strictly disallowed.');
+            document.getElementById('signup-name')?.focus();
+            return;
+        }
+
+        if (/[^A-Za-zÀ-ÿ' -]/.test(rawName)) {
+            showFieldError('signup-name', 'signup-name-error', 'Full Name can only contain letters, spaces, hyphens and apostrophes (no numbers or special characters).');
+            document.getElementById('signup-name')?.focus();
+            return;
+        }
+
+        if (!trimmedName || trimmedName.length < 2) {
+            showFieldError('signup-name', 'signup-name-error', 'Full Name is required (minimum 2 characters).');
+            document.getElementById('signup-name')?.focus();
+            return;
+        }
+
+        if (trimmedName.length > 100) {
+            showFieldError('signup-name', 'signup-name-error', 'Full Name must not exceed 100 characters.');
+            document.getElementById('signup-name')?.focus();
+            return;
+        }
+
+        const nameRegex = /^[A-Za-zÀ-ÿ]+([ A-Za-zÀ-ÿ'-]*[A-Za-zÀ-ÿ]+)*$/;
+        if (!nameRegex.test(trimmedName)) {
+            showFieldError('signup-name', 'signup-name-error', 'Please enter a valid full name (letters, spaces, hyphens and apostrophes only).');
+            document.getElementById('signup-name')?.focus();
+            return;
+        }
+
+        // 2. Enrollment Number Validation: Alphanumeric, hyphens/slashes, 4-25 chars
+        const rawEnrollment = document.getElementById('signup-enrollment')?.value || '';
+        const cleanEnrollment = rawEnrollment.trim().toUpperCase();
+        const enrollmentRegex = /^[A-Z0-9\/-]{4,25}$/;
+
+        if (!cleanEnrollment || !enrollmentRegex.test(cleanEnrollment)) {
+            showFieldError('signup-enrollment', 'signup-enrollment-error', 'Enrollment Number must be 4–25 alphanumeric characters (letters, numbers, hyphens or slashes only).');
+            document.getElementById('signup-enrollment')?.focus();
+            return;
+        }
+
+        // 3. Phone Number Validation: Exactly 10 digits for Indian mobile numbers
+        const rawPhone = document.getElementById('signup-phone')?.value || '';
+        const cleanPhone = rawPhone.replace(/\D/g, '');
+
+        if (!cleanPhone || cleanPhone.length !== 10) {
+            showFieldError('signup-phone', 'signup-phone-error', 'Please enter a valid 10-digit mobile number (digits only, no spaces or special characters).');
+            document.getElementById('signup-phone')?.focus();
+            return;
+        }
+
+        // 4. Branch / Department Validation: Must match authorized tournament branches
+        const deptSelect = document.getElementById('signup-department');
+        const deptText = deptSelect ? (deptSelect.options[deptSelect.selectedIndex]?.value || '') : '';
+        const VALID_BRANCHES = ['B.Tech', 'BCA', 'BBA', 'MCA', 'MBA'];
+
+        if (!deptText || !VALID_BRANCHES.includes(deptText)) {
+            showFieldError('signup-department', 'signup-department-error', 'Please select an authorized branch from the dropdown.');
+            deptSelect?.focus();
+            return;
+        }
+
+        // 5. Email ID Validation: Valid standard email format
+        const rawEmail = document.getElementById('signup-email')?.value || '';
+        const cleanEmail = rawEmail.trim().toLowerCase();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+        if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+            showFieldError('signup-email', 'signup-email-error', 'Please enter a valid email address (e.g., student@university.edu).');
+            document.getElementById('signup-email')?.focus();
+            return;
+        }
+
+        // 6. Password Validation: Minimum 8 characters
+        const rawPassword = document.getElementById('signup-password')?.value || '';
+        if (!rawPassword || rawPassword.length < 8) {
+            showFieldError('signup-password', 'signup-password-error', 'Password must be at least 8 characters long.');
+            document.getElementById('signup-password')?.focus();
+            return;
+        }
+
+        // 7. Gender Validation: Controlled radio options
+        const genderVal = signupForm?.querySelector('input[name="gender"]:checked')?.value || 'Male';
+        const VALID_GENDERS = ['Male', 'Female', 'Other'];
+        if (!VALID_GENDERS.includes(genderVal)) {
+            if (signupErrorBox && signupErrorText) {
+                signupErrorText.textContent = 'Please select a valid gender option.';
+                signupErrorBox.classList.remove('hidden');
+                signupErrorBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
+            return;
+        }
 
-            if (/[^A-Za-zÀ-ÿ' -]/.test(rawName)) {
-                showFieldError('signup-name', 'signup-name-error', 'Full Name can only contain letters, spaces, hyphens and apostrophes (no numbers or special characters).');
-                document.getElementById('signup-name')?.focus();
-                return;
+        // 8. Role Validation: Controlled radio options
+        const selectedRole = signupForm?.querySelector('input[name="player_role"]:checked')?.value || 'All-Rounder';
+        const VALID_ROLES = ['All-Rounder', 'Batter', 'Bowler', 'Keeper', 'Wicketkeeper', 'Fielder'];
+        if (!VALID_ROLES.includes(selectedRole)) {
+            if (signupErrorBox && signupErrorText) {
+                signupErrorText.textContent = 'Please select a valid playing role.';
+                signupErrorBox.classList.remove('hidden');
+                signupErrorBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
+            return;
+        }
+        const normalizedRole = selectedRole === 'Keeper' ? 'Wicketkeeper' : selectedRole;
 
-            if (!trimmedName || trimmedName.length < 2) {
-                showFieldError('signup-name', 'signup-name-error', 'Full Name is required (minimum 2 characters).');
-                document.getElementById('signup-name')?.focus();
-                return;
-            }
+        // Visual loading state on register button
+        const originalBtnHTML = submitBtn ? submitBtn.innerHTML : 'Register & Join Arena';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-75', 'cursor-not-allowed');
+            submitBtn.innerHTML = `
+                <div class="flex items-center justify-center gap-2">
+                    <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Registering Athlete...</span>
+                </div>
+            `;
+        }
 
-            if (trimmedName.length > 100) {
-                showFieldError('signup-name', 'signup-name-error', 'Full Name must not exceed 100 characters.');
-                document.getElementById('signup-name')?.focus();
-                return;
-            }
-
-            const nameRegex = /^[A-Za-zÀ-ÿ]+([ A-Za-zÀ-ÿ'-]*[A-Za-zÀ-ÿ]+)*$/;
-            if (!nameRegex.test(trimmedName)) {
-                showFieldError('signup-name', 'signup-name-error', 'Please enter a valid full name (letters, spaces, hyphens and apostrophes only).');
-                document.getElementById('signup-name')?.focus();
-                return;
-            }
-
-            // 2. Enrollment Number Validation: Alphanumeric, hyphens/slashes, 4-25 chars
-            const rawEnrollment = document.getElementById('signup-enrollment')?.value || '';
-            const cleanEnrollment = rawEnrollment.trim().toUpperCase();
-            const enrollmentRegex = /^[A-Z0-9\/-]{4,25}$/;
-
-            if (!cleanEnrollment || !enrollmentRegex.test(cleanEnrollment)) {
-                showFieldError('signup-enrollment', 'signup-enrollment-error', 'Enrollment Number must be 4–25 alphanumeric characters (letters, numbers, hyphens or slashes only).');
-                document.getElementById('signup-enrollment')?.focus();
-                return;
-            }
-
-            // 3. Phone Number Validation: Exactly 10 digits for Indian mobile numbers
-            const rawPhone = document.getElementById('signup-phone')?.value || '';
-            const cleanPhone = rawPhone.replace(/\D/g, '');
-
-            if (!cleanPhone || cleanPhone.length !== 10) {
-                showFieldError('signup-phone', 'signup-phone-error', 'Please enter a valid 10-digit mobile number (digits only, no spaces or special characters).');
-                document.getElementById('signup-phone')?.focus();
-                return;
-            }
-
-            // 4. Branch / Department Validation: Must match authorized tournament branches
-            const deptSelect = document.getElementById('signup-department');
-            const deptText = deptSelect ? (deptSelect.options[deptSelect.selectedIndex]?.value || '') : '';
-            const VALID_BRANCHES = ['B.Tech', 'BCA', 'BBA', 'MCA', 'MBA'];
-
-            if (!deptText || !VALID_BRANCHES.includes(deptText)) {
-                showFieldError('signup-department', 'signup-department-error', 'Please select an authorized branch from the dropdown.');
-                deptSelect?.focus();
-                return;
-            }
-
-            // 5. Email ID Validation: Valid standard email format
-            const rawEmail = document.getElementById('signup-email')?.value || '';
-            const cleanEmail = rawEmail.trim().toLowerCase();
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-            if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-                showFieldError('signup-email', 'signup-email-error', 'Please enter a valid email address (e.g., student@university.edu).');
-                document.getElementById('signup-email')?.focus();
-                return;
-            }
-
-            // 6. Password Validation: Minimum 8 characters
-            const rawPassword = document.getElementById('signup-password')?.value || '';
-            if (!rawPassword || rawPassword.length < 8) {
-                showFieldError('signup-password', 'signup-password-error', 'Password must be at least 8 characters long.');
-                document.getElementById('signup-password')?.focus();
-                return;
-            }
-
-            // 7. Gender Validation: Controlled radio options
-            const genderVal = signupForm.querySelector('input[name="gender"]:checked')?.value || 'Male';
-            const VALID_GENDERS = ['Male', 'Female', 'Other'];
-            if (!VALID_GENDERS.includes(genderVal)) {
-                if (signupErrorBox && signupErrorText) {
-                    signupErrorText.textContent = 'Please select a valid gender option.';
-                    signupErrorBox.classList.remove('hidden');
-                }
-                return;
-            }
-
-            // 8. Role Validation: Controlled radio options
-            const selectedRole = signupForm.querySelector('input[name="player_role"]:checked')?.value || 'All-Rounder';
-            const VALID_ROLES = ['All-Rounder', 'Batter', 'Bowler', 'Keeper', 'Wicketkeeper', 'Fielder'];
-            if (!VALID_ROLES.includes(selectedRole)) {
-                if (signupErrorBox && signupErrorText) {
-                    signupErrorText.textContent = 'Please select a valid playing role.';
-                    signupErrorBox.classList.remove('hidden');
-                }
-                return;
-            }
-            const normalizedRole = selectedRole === 'Keeper' ? 'Wicketkeeper' : selectedRole;
-
+        try {
             // 9. Read certificate file asynchronously if submitted right after selection
             const certFile = certInput?.files?.[0];
             if (certFile && !pendingCertData) {
@@ -816,6 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const playerData = {
                 name: trimmedName,
+                full_name: trimmedName,
                 enrollment_no: cleanEnrollment,
                 phone: cleanPhone,
                 department: deptText,
@@ -833,31 +872,55 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             // 10. Persist to Database (Supabase / local fallback)
-            sessionStorage.setItem('unibox_active_email', playerData.email);
             let finalProfile = playerData;
             if (window.UniBoxDb) {
                 const dbResult = await window.UniBoxDb.savePlayer(playerData);
-                if (dbResult.error) {
+                if (dbResult.error || !dbResult.data) {
+                    const errMsg = (dbResult.error?.code === '23505' || dbResult.error?.message?.includes('unique') || dbResult.error?.message?.includes('duplicate key'))
+                        ? 'An athlete with this email or enrollment number already exists.'
+                        : (dbResult.error?.message || 'Registration failed. Please check details and try again.');
+                    
                     if (signupErrorBox && signupErrorText) {
-                        signupErrorText.textContent = (dbResult.error.code === '23505' || dbResult.error.message?.includes('unique') || dbResult.error.message?.includes('duplicate key'))
-                            ? 'An athlete with this email or enrollment number already exists.'
-                            : (dbResult.error.message || 'Registration failed.');
+                        signupErrorText.textContent = errMsg;
                         signupErrorBox.classList.remove('hidden');
-                        return;
+                        signupErrorBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
+                    return;
                 }
-                if (dbResult.data) {
-                    finalProfile = { ...playerData, ...dbResult.data };
-                }
+                finalProfile = { ...playerData, ...dbResult.data };
+                finalProfile.name = finalProfile.name || finalProfile.full_name || trimmedName;
+                finalProfile.full_name = finalProfile.full_name || finalProfile.name || trimmedName;
+                finalProfile.phone = finalProfile.phone || cleanPhone;
             }
 
-            // 11. Populate all profile and auction fields on the dashboard
+            // 11. Authentication & Session Creation
+            const sessionData = {
+                email: finalProfile.email,
+                name: finalProfile.name || finalProfile.full_name || trimmedName,
+                staySignedIn: true,
+                loginTimestamp: Date.now(),
+                expiresAt: null
+            };
+            localStorage.setItem('unibox_student_session', JSON.stringify(sessionData));
+            localStorage.setItem('unibox_cached_profile', JSON.stringify(finalProfile));
+            sessionStorage.setItem('unibox_active_email', finalProfile.email);
+            sessionStorage.setItem('unibox_session_active', '1');
+
+            // 12. Session Verification
+            const verifySession = localStorage.getItem('unibox_student_session');
+            const verifyEmail = sessionStorage.getItem('unibox_active_email');
+            if (!verifySession || !verifyEmail) {
+                throw new Error('Session verification check failed after registration.');
+            }
+
+            // 13. Populate all profile and auction fields on the dashboard
             applyProfileToUI(finalProfile);
 
-            // 12. Switch to dashboard view & hide header login button
-            enterDashboard(finalProfile);
+            // 14. Switch to dashboard view, close modal & redirect
+            enterDashboard(finalProfile, true);
             updateCertViewerButton(playerData.certificate, playerData.certificate_data);
 
+            // 15. Clean reset form & state
             signupForm.reset();
             pendingCertData = null;
             pendingCertName = null;
@@ -875,8 +938,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 filenameLabel.textContent = 'Choose Athlete Photo...';
                 filenameLabel.classList.remove('text-sky-400');
             }
-        });
+
+            showSessionToast('Registration successful! Welcome to your Player Dashboard.', 'success');
+
+        } catch (err) {
+            console.error('[REGISTRATION] Exception during registration flow:', err);
+            if (signupErrorBox && signupErrorText) {
+                signupErrorText.textContent = err?.message || 'An unexpected error occurred during registration.';
+                signupErrorBox.classList.remove('hidden');
+                signupErrorBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+                submitBtn.innerHTML = originalBtnHTML;
+            }
+        }
     }
+
+    const signupForm = document.getElementById('signup-form');
+    if (signupForm) {
+        signupForm.addEventListener('submit', handleRegistration);
+    }
+    window.handleRegistration = handleRegistration;
 
     // Dashboard Player Photo Upload Handler with Inline Notification
     const photoInput = document.getElementById('dash-photo-input');
