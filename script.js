@@ -893,6 +893,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 finalProfile.phone = finalProfile.phone || cleanPhone;
             }
 
+            // Immediately trigger hero athlete count synchronization
+            if (typeof syncAthleteCount === 'function') {
+                syncAthleteCount();
+            }
+
             // 11. Authentication & Session Creation
             const sessionData = {
                 email: finalProfile.email,
@@ -1280,7 +1285,128 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ==============================================================================
+    // HERO STATS STRIP & LIVE ATHLETE COUNT SYNCHRONIZATION (1000ms Interval)
+    // ==============================================================================
+    let athleteSyncInterval = null;
+    let athleteSyncInProgress = false;
+    let lastKnownAthleteCount = null;
+    let heroRealtimeUnsub = null;
+
+    function formatAthleteCount(count) {
+        if (typeof count !== 'number' || isNaN(count)) return '--';
+        return count < 10 ? `0${count}` : String(count);
+    }
+
+    function updateHeroAthleteDisplay(newCount) {
+        const athleteEl = document.getElementById('hero-stat-athletes');
+        if (!athleteEl) return;
+
+        const formatted = formatAthleteCount(newCount);
+        if (athleteEl.textContent !== formatted) {
+            athleteEl.textContent = formatted;
+            // Subtle micro-transition without layout jump or card bounce
+            athleteEl.classList.add('text-amber-300');
+            setTimeout(() => {
+                athleteEl.classList.remove('text-amber-300');
+            }, 300);
+        }
+    }
+
+    async function syncAthleteCount() {
+        if (athleteSyncInProgress) return;
+        athleteSyncInProgress = true;
+
+        try {
+            if (window.UniBoxDb && typeof window.UniBoxDb.getAthletesCount === 'function') {
+                const { count, error } = await window.UniBoxDb.getAthletesCount();
+                if (!error && count !== null && count !== undefined) {
+                    lastKnownAthleteCount = count;
+                    updateHeroAthleteDisplay(count);
+                } else if (lastKnownAthleteCount !== null) {
+                    // Preserve last known valid count if Supabase has a temporary network hiccup
+                    updateHeroAthleteDisplay(lastKnownAthleteCount);
+                }
+            } else if (window.UniBoxDb && typeof window.UniBoxDb.getAllPlayers === 'function') {
+                const { data, error } = await window.UniBoxDb.getAllPlayers();
+                if (!error && Array.isArray(data)) {
+                    lastKnownAthleteCount = data.length;
+                    updateHeroAthleteDisplay(data.length);
+                } else if (lastKnownAthleteCount !== null) {
+                    updateHeroAthleteDisplay(lastKnownAthleteCount);
+                }
+            }
+        } catch (err) {
+            console.warn('[ATHLETE COUNT SYNC] Sync error:', err);
+            if (lastKnownAthleteCount !== null) {
+                updateHeroAthleteDisplay(lastKnownAthleteCount);
+            }
+        } finally {
+            athleteSyncInProgress = false;
+        }
+    }
+
+    function startAthleteCountSync() {
+        if (athleteSyncInterval) {
+            clearInterval(athleteSyncInterval);
+            athleteSyncInterval = null;
+        }
+        // 1000ms background interval
+        athleteSyncInterval = setInterval(syncAthleteCount, 1000);
+    }
+
+    function stopAthleteCountSync() {
+        if (athleteSyncInterval) {
+            clearInterval(athleteSyncInterval);
+            athleteSyncInterval = null;
+        }
+    }
+
+    // 1. Initial Immediate Sync
+    syncAthleteCount();
+
+    // 2. Start 1-second background synchronization
+    startAthleteCountSync();
+
+    // 3. Primary: Realtime event listener for instant updates
+    if (window.UniBoxDb && typeof window.UniBoxDb.subscribeToAuctionUpdates === 'function') {
+        heroRealtimeUnsub = window.UniBoxDb.subscribeToAuctionUpdates((event) => {
+            if (!event || 
+                event.type === 'PLAYER_REGISTERED' || 
+                event.type === 'PLAYER_DELETED' || 
+                event.type === 'ALL_PLAYERS_DELETED' || 
+                event.type === 'SUPABASE_REALTIME') {
+                syncAthleteCount();
+            }
+        });
+    }
+
+    // 4. Page Visibility Management: Reduce background work when tab hidden, immediate sync on tab focus
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopAthleteCountSync();
+        } else {
+            syncAthleteCount();
+            startAthleteCountSync();
+        }
+    });
+
+    // 5. Cleanup before unload
+    window.addEventListener('beforeunload', () => {
+        stopAthleteCountSync();
+        if (typeof heroRealtimeUnsub === 'function') {
+            heroRealtimeUnsub();
+            heroRealtimeUnsub = null;
+        }
+    });
+
+    // Make sync accessible globally for testing & external triggers
+    window.syncAthleteCount = syncAthleteCount;
+    window.startAthleteCountSync = startAthleteCountSync;
+    window.stopAthleteCountSync = stopAthleteCountSync;
+
     // Run auto-restore
     restoreStudentSession();
 });
+
 

@@ -745,47 +745,67 @@ const UniBoxDb = {
         }
     },
 
-    // Realtime Subscriber
-    subscribeToAuctionUpdates: (callback) => {
-        if (typeof window === 'undefined') return () => {};
+    // Realtime Subscriber (Singleton Channel & Multi-Subscriber Dispatcher)
+    _auctionSubscribers: new Set(),
+    _sbRealtimeChannel: null,
+    _auctionListenersInitialized: false,
 
-        const handleMessage = (data) => {
-            if (typeof callback === 'function') callback(data);
+    _initAuctionListeners: () => {
+        if (UniBoxDb._auctionListenersInitialized || typeof window === 'undefined') return;
+        UniBoxDb._auctionListenersInitialized = true;
+
+        const broadcastToSubscribers = (data) => {
+            UniBoxDb._auctionSubscribers.forEach(cb => {
+                try { cb(data); } catch (e) { console.error('Error in realtime subscriber:', e); }
+            });
         };
 
         if (auctionChannel) {
-            auctionChannel.onmessage = (e) => handleMessage(e.data);
+            auctionChannel.onmessage = (e) => broadcastToSubscribers(e.data);
         }
 
-        const windowListener = (e) => handleMessage(e.detail);
-        window.addEventListener('unibox_auction_update', windowListener);
+        window.addEventListener('unibox_auction_update', (e) => broadcastToSubscribers(e.detail));
 
-        const storageListener = (e) => {
+        window.addEventListener('storage', (e) => {
             if (e.key === 'unibox_last_auction_sync' && e.newValue) {
-                try { handleMessage(JSON.parse(e.newValue)); } catch (err) {}
+                try { broadcastToSubscribers(JSON.parse(e.newValue)); } catch (err) {}
             }
-        };
-        window.addEventListener('storage', storageListener);
+        });
+    },
 
-        // Supabase Realtime channel subscription if available
-        let sbSub = null;
-        if (UniBoxDb.isReady() && supabaseClient) {
+    subscribeToAuctionUpdates: (callback) => {
+        if (typeof window === 'undefined' || typeof callback !== 'function') return () => {};
+
+        UniBoxDb._initAuctionListeners();
+        UniBoxDb._auctionSubscribers.add(callback);
+
+        // Ensure single Supabase Realtime channel
+        if (UniBoxDb.isReady() && supabaseClient && !UniBoxDb._sbRealtimeChannel) {
             try {
-                sbSub = supabaseClient
+                UniBoxDb._sbRealtimeChannel = supabaseClient
                     .channel('public:players_realtime')
                     .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
-                        handleMessage({ type: 'SUPABASE_REALTIME', payload });
+                        UniBoxDb._auctionSubscribers.forEach(cb => {
+                            try { cb({ type: 'SUPABASE_REALTIME', payload }); } catch (e) {}
+                        });
                     })
                     .subscribe();
-            } catch (err) {}
+            } catch (err) {
+                console.warn('Failed to subscribe to Supabase Realtime channel:', err);
+            }
         }
 
         return () => {
-            window.removeEventListener('unibox_auction_update', windowListener);
-            window.removeEventListener('storage', storageListener);
-            if (sbSub && supabaseClient) supabaseClient.removeChannel(sbSub);
+            UniBoxDb._auctionSubscribers.delete(callback);
+            if (UniBoxDb._auctionSubscribers.size === 0 && UniBoxDb._sbRealtimeChannel && supabaseClient) {
+                try {
+                    supabaseClient.removeChannel(UniBoxDb._sbRealtimeChannel);
+                } catch (e) {}
+                UniBoxDb._sbRealtimeChannel = null;
+            }
         };
     },
+
 
     // --- ATHLETE REGISTRATION & PROFILE METHODS ---
     // Save new player registration record (Supabase is authoritative source of truth)
@@ -960,6 +980,51 @@ const UniBoxDb = {
         }
 
         return { data: player, error: null };
+    },
+
+    // Fetch total registered athletes count efficiently via HEAD request
+    getAthletesCount: async (statusFilter = null) => {
+        if (!UniBoxDb.isReady()) {
+            try {
+                let localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                if (statusFilter && statusFilter !== 'ALL') {
+                    localPlayers = localPlayers.filter(p => p.status === statusFilter);
+                }
+                return { count: Array.isArray(localPlayers) ? localPlayers.length : 0, error: null, source: 'localStorage' };
+            } catch (e) {
+                return { count: 0, error: null, source: 'localStorage' };
+            }
+        }
+
+        try {
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Supabase count request timed out after 5000ms')), 5000)
+            );
+
+            let query = supabaseClient
+                .from('players')
+                .select('*', { count: 'exact', head: true });
+
+            if (statusFilter && statusFilter !== 'ALL') {
+                query = query.eq('status', statusFilter);
+            }
+
+            const { count, error } = await Promise.race([query, timeoutPromise]);
+
+            if (error) {
+                console.warn('[ATHLETE COUNT] Supabase count query error:', error);
+                throw error;
+            }
+
+            return {
+                count: (count !== null && count !== undefined) ? Number(count) : 0,
+                error: null,
+                source: 'supabase'
+            };
+        } catch (err) {
+            console.warn('[ATHLETE COUNT] Fallback error in getAthletesCount:', err);
+            return { count: null, error: err, source: 'error' };
+        }
     },
 
     // Fetch all registered players (Supabase is authoritative)
