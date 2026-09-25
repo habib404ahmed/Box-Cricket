@@ -200,7 +200,7 @@ async function loadRosterData(showSpinner = true) {
     if (showSpinner && !allPlayers.length) {
         rosterTableBody.innerHTML = `
             <tr>
-                <td colspan="8" class="py-12 text-center text-slate-500">
+                <td colspan="6" class="py-12 text-center text-slate-500">
                     <div class="flex flex-col items-center justify-center gap-3">
                         <div class="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
                         <p class="text-xs text-slate-400 font-medium">Fetching tournament athletes from Supabase...</p>
@@ -232,7 +232,7 @@ async function loadRosterData(showSpinner = true) {
         showToast('Error loading roster data. Check database connection.', 'error');
         rosterTableBody.innerHTML = `
             <tr>
-                <td colspan="8" class="py-12 text-center">
+                <td colspan="6" class="py-12 text-center">
                     <div class="max-w-md mx-auto p-6 rounded-2xl bg-[#08111F]/90 border border-rose-500/30 text-center space-y-3">
                         <span class="text-3xl">⚠️</span>
                         <h3 class="text-sm font-bold text-slate-200">Unable to Load Athletes</h3>
@@ -322,7 +322,7 @@ function renderRosterTable() {
     if (!allPlayers.length) {
         rosterTableBody.innerHTML = `
             <tr>
-                <td colspan="8" class="py-12 text-center text-slate-500">
+                <td colspan="6" class="py-12 text-center text-slate-500">
                     <div class="flex flex-col items-center justify-center gap-2">
                         <span class="text-3xl">📋</span>
                         <p class="text-sm font-bold text-slate-300">No athletes found</p>
@@ -337,7 +337,7 @@ function renderRosterTable() {
     if (!filteredPlayers.length) {
         rosterTableBody.innerHTML = `
             <tr>
-                <td colspan="8" class="py-12 text-center text-slate-500">
+                <td colspan="6" class="py-12 text-center text-slate-500">
                     <div class="flex flex-col items-center justify-center gap-2">
                         <span class="text-3xl">🔍</span>
                         <p class="text-sm font-bold text-slate-300">No matching athletes found</p>
@@ -431,23 +431,19 @@ function renderRosterTable() {
         if (isSold) {
             purchaseActionBtn = `
                 <button type="button" onclick="handleRevokePurchase('${id}')"
-                    class="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 border border-purple-500/30 hover:border-purple-400/60 hover:shadow-[0_0_14px_rgba(168,85,247,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer font-bold text-xs flex items-center gap-1.5"
+                    class="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 border border-purple-500/30 hover:border-purple-400/60 hover:shadow-[0_0_14px_rgba(168,85,247,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer font-bold text-xs flex items-center gap-1 shrink-0"
                     title="Refund Purchase" aria-label="Refund Purchase">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                    </svg>
-                    <span class="text-[11px] hidden xl:inline">Refund</span>
+                    <span class="text-xs">↩️</span>
+                    <span class="text-[11px] font-bold">Refund</span>
                 </button>
             `;
         } else {
             purchaseActionBtn = `
                 <button type="button" onclick="openPurchaseModal('${id}')"
-                    class="px-2.5 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 hover:text-sky-300 border border-sky-500/30 hover:border-sky-400/60 hover:shadow-[0_0_14px_rgba(56,189,248,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer font-bold text-xs flex items-center gap-1.5"
+                    class="px-2.5 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 hover:text-sky-300 border border-sky-500/30 hover:border-sky-400/60 hover:shadow-[0_0_14px_rgba(56,189,248,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer font-bold text-xs flex items-center gap-1 shrink-0"
                     title="Sell Athlete" aria-label="Sell Athlete">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span class="text-[11px] hidden xl:inline">Sell</span>
+                    <span class="text-xs">🔨</span>
+                    <span class="text-[11px] font-bold">Sell</span>
                 </button>
             `;
         }
@@ -458,108 +454,106 @@ function renderRosterTable() {
         if (isApproved) {
             approvalControls = `
                 <!-- Non-clickable Approved Status Badge -->
-                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 select-none shadow-[0_0_12px_rgba(16,185,129,0.2)] cursor-default"
+                <span class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 select-none shadow-[0_0_12px_rgba(16,185,129,0.2)] cursor-default shrink-0"
                     title="Approved Athlete" aria-label="Approved Athlete">
                     <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>Approved</span>
+                    <span class="text-[11px]">Approved</span>
                 </span>
             `;
         } else {
             approvalControls = `
                 <!-- Quick Approve -->
                 <button type="button" onclick="handleStatusUpdate('${id}', 'Approved')"
-                    class="p-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 hover:border-emerald-400/60 hover:shadow-[0_0_14px_rgba(16,185,129,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1"
+                    class="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 hover:border-emerald-400/60 hover:shadow-[0_0_14px_rgba(16,185,129,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1 shrink-0"
                     title="Approve Athlete" aria-label="Approve Athlete">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
                     </svg>
-                    <span class="text-[11px] font-bold hidden 2xl:inline">Approve</span>
+                    <span class="text-[11px] font-bold">Approve</span>
                 </button>
 
                 <!-- Quick Reject -->
                 <button type="button" onclick="handleStatusUpdate('${id}', 'Rejected')"
-                    class="p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/30 hover:border-amber-400/60 hover:shadow-[0_0_14px_rgba(245,158,11,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1"
+                    class="p-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/30 hover:border-amber-400/60 hover:shadow-[0_0_14px_rgba(245,158,11,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center shrink-0"
                     title="Reject Athlete" aria-label="Reject Athlete">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                    <span class="text-[11px] font-bold hidden 2xl:inline">Reject</span>
                 </button>
             `;
         }
 
+        const viewActionBtn = `
+            <button type="button" onclick="openAthleteModal('${id}')"
+                class="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500 hover:shadow-[0_0_14px_rgba(148,163,184,0.25)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center shrink-0"
+                title="View Athlete" aria-label="View Athlete">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+            </button>
+        `;
+
+        const deleteActionBtn = `
+            <button type="button" onclick="handleDeletePlayer('${id}')"
+                class="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 hover:border-rose-400/60 hover:shadow-[0_0_14px_rgba(244,63,94,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center shrink-0"
+                title="Delete Athlete" aria-label="Delete Athlete">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+            </button>
+        `;
+
         return `
-            <tr class="hover:bg-slate-900/80 transition-colors group">
-                <!-- Athlete Profile -->
-                <td class="py-4 px-6">
-                    <div class="flex items-center gap-3">
+            <tr class="hover:bg-slate-900/70 transition-colors group">
+                <!-- Athlete Profile & Academic Info -->
+                <td class="py-3.5 px-4 sm:px-6">
+                    <div class="flex items-center gap-3 min-w-[240px] sm:min-w-[280px]">
                         ${avatarHtml}
-                        <div class="overflow-hidden">
-                            <p class="font-bold text-white text-sm truncate group-hover:text-lime-400 transition-colors cursor-pointer" onclick="openAthleteModal('${id}')">${name}</p>
-                            <p class="text-xs text-slate-500 font-mono truncate">${email}</p>
+                        <div class="min-w-0 flex-1">
+                            <p class="font-bold text-white text-sm truncate group-hover:text-lime-400 transition-colors cursor-pointer" onclick="openAthleteModal('${id}')" title="Click to view ${name}">${name}</p>
+                            <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                                    ${enrollment}
+                                </span>
+                                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-950/80 border border-sky-800/50 text-sky-400">
+                                    ${department}
+                                </span>
+                            </div>
+                            <p class="text-[11px] text-slate-500 font-mono truncate mt-0.5">${email}</p>
                         </div>
                     </div>
                 </td>
 
-                <!-- Enrollment ID -->
-                <td class="py-4 px-3 font-mono text-xs text-slate-300">
-                    <span class="bg-slate-950 px-2 py-1 rounded-md border border-slate-800 font-bold">${enrollment}</span>
-                </td>
-
-                <!-- Department -->
-                <td class="py-4 px-3">
-                    <span class="text-xs font-semibold text-slate-300">${department}</span>
-                </td>
-
                 <!-- Playing Role -->
-                <td class="py-4 px-3">
+                <td class="py-3.5 px-3 whitespace-nowrap">
                     ${roleBadge}
                 </td>
 
                 <!-- Base Price -->
-                <td class="py-4 px-3">
+                <td class="py-3.5 px-3 whitespace-nowrap">
                     ${basePriceHtml}
                 </td>
 
                 <!-- Clearance Status -->
-                <td class="py-4 px-3">
+                <td class="py-3.5 px-3 whitespace-nowrap">
                     ${statusBadge}
                 </td>
 
                 <!-- Auction Status -->
-                <td class="py-4 px-4">
+                <td class="py-3.5 px-3 whitespace-nowrap">
                     ${auctionBadge}
                 </td>
 
-                <!-- Actions -->
-                <td class="py-4 px-6 text-right no-print">
-                    <div class="flex items-center justify-end gap-1.5 flex-wrap">
-                        <!-- Purchase / Refund Button -->
+                <!-- Actions (Sticky Right Column) -->
+                <td class="py-3.5 px-4 sm:px-6 text-right sticky right-0 bg-[#08111F] group-hover:bg-[#0c182c] transition-colors z-10 shadow-[-12px_0_16px_rgba(0,0,0,0.45)] border-l border-sky-950/70 w-[240px] min-w-[240px] whitespace-nowrap no-print">
+                    <div class="flex items-center justify-end gap-1.5 flex-nowrap">
                         ${purchaseActionBtn}
-
-                        <!-- Approval Workflow Controls -->
                         ${approvalControls}
-
-                        <!-- View Modal Button -->
-                        <button type="button" onclick="openAthleteModal('${id}')"
-                            class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500 hover:shadow-[0_0_14px_rgba(148,163,184,0.25)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center"
-                            title="View Athlete" aria-label="View Athlete">
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                        </button>
-
-                        <!-- Delete Button -->
-                        <button type="button" onclick="handleDeletePlayer('${id}')"
-                            class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 hover:border-rose-400/60 hover:shadow-[0_0_14px_rgba(244,63,94,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center"
-                            title="Delete Athlete" aria-label="Delete Athlete">
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                        </button>
+                        ${viewActionBtn}
+                        ${deleteActionBtn}
                     </div>
                 </td>
             </tr>

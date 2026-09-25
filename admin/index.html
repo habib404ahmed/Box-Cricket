@@ -93,7 +93,7 @@
         <!-- Top Electric Blue & Gold Accent Line -->
         <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-amber-400 opacity-60"></div>
 
-        <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-[70px] sm:h-[74px] flex items-center justify-between gap-2 sm:gap-4 overflow-hidden">
+        <div class="max-w-[1560px] mx-auto px-3 sm:px-6 lg:px-8 h-[70px] sm:h-[74px] flex items-center justify-between gap-2 sm:gap-4 overflow-hidden">
             <!-- Brand & Badge (Requirement 5) -->
             <div class="flex items-center gap-2 sm:gap-4 min-w-0">
                 <a href="../index.html" class="flex items-center gap-2.5 sm:gap-3 group min-w-0" title="Return to Public Portal">
@@ -143,7 +143,7 @@
     </header>
 
     <!-- ===== MAIN ADMIN CONTAINER ===== -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10 space-y-6">
+    <main class="max-w-[1560px] mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10 space-y-6">
 
         <!-- ===== KPI METRICS STRIP (Cinematic Midnight Cards) ===== -->
         <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -331,26 +331,24 @@
             </div>
 
             <!-- ===== ROSTER TABLE ===== -->
-            <div class="overflow-x-auto">
-                <table class="premium-table">
+            <div class="w-full max-w-full overflow-x-auto relative rounded-b-2xl scrollbar-thin">
+                <table class="w-full text-left border-collapse min-w-[860px] lg:min-w-full">
                     <thead>
-                        <tr>
-                            <th class="py-4 px-5">Athlete Profile</th>
-                            <th class="py-4 px-3">Enrollment</th>
-                            <th class="py-4 px-3">Branch</th>
-                            <th class="py-4 px-3">Playing Role</th>
-                            <th class="py-4 px-3">Base Price</th>
-                            <th class="py-4 px-3">Clearance</th>
-                            <th class="py-4 px-4">Auction</th>
-                            <th class="py-4 px-5 text-right no-print">Actions</th>
+                        <tr class="border-b border-sky-950/80 bg-[#08111F]/90 text-[11px] font-black uppercase tracking-wider text-slate-400">
+                            <th class="py-3.5 px-4 sm:px-6">Athlete Profile</th>
+                            <th class="py-3.5 px-3">Role</th>
+                            <th class="py-3.5 px-3">Base Price</th>
+                            <th class="py-3.5 px-3">Clearance</th>
+                            <th class="py-3.5 px-3">Auction Status</th>
+                            <th class="py-3.5 px-4 sm:px-6 text-right sticky right-0 bg-[#08111F] z-10 shadow-[-12px_0_16px_rgba(0,0,0,0.45)] border-l border-sky-950/70 w-[240px] min-w-[240px] no-print">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="roster-table-body" class="divide-y divide-sky-950/60">
                         <tr>
-                            <td colspan="8" class="py-12 text-center text-slate-500">
+                            <td colspan="6" class="py-12 text-center text-slate-500">
                                 <div class="flex flex-col items-center justify-center gap-3">
                                     <div class="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
-                                    <p class="text-xs">Connecting to Supabase and retrieving athletes...</p>
+                                    <p class="text-xs text-slate-400">Connecting to Supabase and retrieving athletes...</p>
                                 </div>
                             </td>
                         </tr>
