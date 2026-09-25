@@ -788,54 +788,34 @@ const UniBoxDb = {
     },
 
     // --- ATHLETE REGISTRATION & PROFILE METHODS ---
+    // Save new player registration record (Supabase is authoritative source of truth)
     savePlayer: async (playerData) => {
         const roleBasePrice = UniBoxDb.getDefaultBasePriceForRole(playerData.player_role);
         const resolvedBasePrice = playerData.base_price !== undefined ? Number(playerData.base_price) : roleBasePrice;
 
-        // 1. Immediately cache auction metadata (base_price, auction_status) locally
-        try {
-            const auctionCache = JSON.parse(localStorage.getItem('unibox_auction_players_cache') || '{}');
-            const cacheEntry = {
-                base_price: resolvedBasePrice,
-                auction_status: playerData.auction_status || 'Upcoming'
-            };
-            if (playerData.email) {
-                auctionCache[playerData.email] = { ...(auctionCache[playerData.email] || {}), ...cacheEntry };
-            }
-            if (playerData.enrollment_no) {
-                auctionCache[playerData.enrollment_no] = { ...(auctionCache[playerData.enrollment_no] || {}), ...cacheEntry };
-            }
-            localStorage.setItem('unibox_auction_players_cache', JSON.stringify(auctionCache));
-        } catch (e) {
-            console.warn('Failed to cache auction metadata locally:', e);
-        }
-
-        // 2. Prepare comprehensive local player record
-        const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-        const existingIdx = localPlayers.findIndex(p => p.email === playerData.email || p.enrollment_no === playerData.enrollment_no);
-        const record = {
-            ...playerData,
-            base_price: resolvedBasePrice,
-            auction_status: playerData.auction_status || 'Upcoming',
-            status: playerData.status || 'Registered'
-        };
-        if (existingIdx >= 0) {
-            localPlayers[existingIdx] = { ...localPlayers[existingIdx], ...record };
-        } else {
-            localPlayers.push({ ...record, id: 'local_' + Date.now(), created_at: new Date().toISOString() });
-        }
-        localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
-
+        // Offline / Unconfigured fallback only if Supabase is completely unavailable
         if (!UniBoxDb.isReady()) {
+            console.warn('[REGISTRATION] Supabase not configured. Using local storage fallback.');
+            const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+            const record = {
+                ...playerData,
+                base_price: resolvedBasePrice,
+                auction_status: playerData.auction_status || 'Upcoming',
+                status: playerData.status || 'Registered',
+                id: 'local_' + Date.now(),
+                created_at: new Date().toISOString()
+            };
+            localPlayers.push(record);
+            localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
             UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_REGISTERED', player: record });
             return { data: record, error: null, source: 'localStorage' };
         }
 
         try {
+            // Prepare authoritative payload matching the database schema
             const payload = {
                 full_name: playerData.name,
                 enrollment_no: playerData.enrollment_no,
-                phone: playerData.phone || null,
                 department: playerData.department,
                 email: playerData.email,
                 gender: playerData.gender,
@@ -849,95 +829,91 @@ const UniBoxDb = {
                 status: 'Registered'
             };
 
-            let data = null;
-            let error = null;
-            let attempts = 0;
-            const maxAttempts = 6;
+            // Include phone if provided
+            if (playerData.phone) {
+                payload.phone = playerData.phone;
+            }
 
-            while (attempts < maxAttempts) {
-                attempts++;
-                const res = await supabaseClient
+            console.log('[REGISTRATION] Submitting athlete to Supabase:', payload.email);
+
+            let res = await supabaseClient
+                .from('players')
+                .upsert([payload], { onConflict: 'email' })
+                .select();
+
+            let data = res.data;
+            let error = res.error;
+
+            // Handle schema cache missing column (e.g., if phone column does not exist on remote table)
+            if (error && (error.code === 'PGRST204' || error.message?.includes('schema cache') || error.message?.includes('column'))) {
+                console.warn('[REGISTRATION] Schema cache column mismatch detected:', error.message);
+                const match = error.message?.match(/Could not find the '([^']+)' column/i);
+                if (match && match[1] && payload.hasOwnProperty(match[1])) {
+                    delete payload[match[1]];
+                } else if (payload.phone !== undefined) {
+                    delete payload.phone;
+                }
+
+                // Retry without the unsupported column
+                res = await supabaseClient
                     .from('players')
                     .upsert([payload], { onConflict: 'email' })
                     .select();
                 data = res.data;
                 error = res.error;
-
-                if (!error) {
-                    break; // Successfully inserted/updated
-                }
-
-                // If duplicate registration (unique constraint violation), stop and return error
-                if (error.code === '23505' || error.message?.includes('duplicate key') || error.message?.includes('violates unique constraint')) {
-                    return { data: null, error, source: 'supabase' };
-                }
-
-                // Check for missing column / schema cache errors
-                const msg = (error.message || '').toLowerCase();
-                const isSchemaError = error.code === '42703' ||
-                    error.code === 'PGRST204' ||
-                    error.code === 'PGRST100' ||
-                    msg.includes('schema cache') ||
-                    msg.includes('could not find the') ||
-                    msg.includes('column') ||
-                    msg.includes('does not exist');
-
-                if (isSchemaError) {
-                    // Extract offending column name from error message if possible
-                    const match = error.message?.match(/Could not find the '([^']+)' column/i) ||
-                                  error.message?.match(/column ["']?([^"'\s]+)["']? does not exist/i);
-                    if (match && match[1] && payload.hasOwnProperty(match[1])) {
-                        delete payload[match[1]];
-                        continue;
-                    }
-
-                    // Fallback to removing optional columns in order of likelihood
-                    if (payload.phone !== undefined) {
-                        delete payload.phone;
-                        continue;
-                    }
-                    if (payload.auction_status !== undefined) {
-                        delete payload.auction_status;
-                        continue;
-                    }
-                    if (payload.base_price !== undefined) {
-                        delete payload.base_price;
-                        continue;
-                    }
-                    if (payload.certificate_data !== undefined) {
-                        delete payload.certificate_data;
-                        continue;
-                    }
-                    if (payload.password_hash !== undefined) {
-                        delete payload.password_hash;
-                        continue;
-                    }
-                    if (payload.photo_data !== undefined) {
-                        delete payload.photo_data;
-                        continue;
-                    }
-                }
-
-                // Unrecognized error that cannot be resolved by stripping columns
-                break;
             }
 
+            // CRITICAL: If Supabase fails, DO NOT report successful registration.
+            // DO NOT pretend the player was saved and DO NOT fall back to local storage.
             if (error) {
-                console.warn('Supabase upsert failed, continuing with local storage fallback:', error);
-                // Unique constraint error should still be reported
-                if (error.code === '23505' || error.message?.includes('duplicate key')) {
-                    return { data: null, error, source: 'supabase' };
-                }
-                return { data: record, error: null, source: 'localStorageFallback' };
+                console.error('[REGISTRATION] Supabase insert failed:', error);
+                return {
+                    data: null,
+                    error,
+                    source: 'supabase'
+                };
             }
 
-            const finalRecord = { ...record, ...(data?.[0] || {}) };
-            UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_REGISTERED', player: finalRecord });
-            return { data: finalRecord, error: null, source: 'supabase' };
-        } catch (error) {
-            console.error('Failed to save player to Supabase, used local record fallback:', error);
-            UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_REGISTERED', player: record });
-            return { data: record, error: null, source: 'localStorageFallback' };
+            const verifiedRecord = data && data[0] ? data[0] : payload;
+
+            // Cache verified Supabase record in local storage for instant offline UI lookup
+            try {
+                const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                const existingIdx = localPlayers.findIndex(p => p.email === verifiedRecord.email || p.id === verifiedRecord.id);
+                const recordWithPhone = { ...verifiedRecord, phone: playerData.phone || verifiedRecord.phone || null };
+                if (existingIdx >= 0) {
+                    localPlayers[existingIdx] = recordWithPhone;
+                } else {
+                    localPlayers.unshift(recordWithPhone);
+                }
+                localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
+
+                const auctionCache = JSON.parse(localStorage.getItem('unibox_auction_players_cache') || '{}');
+                const cacheEntry = {
+                    base_price: resolvedBasePrice,
+                    auction_status: 'Upcoming'
+                };
+                if (verifiedRecord.email) auctionCache[verifiedRecord.email] = { ...(auctionCache[verifiedRecord.email] || {}), ...cacheEntry };
+                if (verifiedRecord.id) auctionCache[verifiedRecord.id] = { ...(auctionCache[verifiedRecord.id] || {}), ...cacheEntry };
+                localStorage.setItem('unibox_auction_players_cache', JSON.stringify(auctionCache));
+            } catch (cacheErr) {
+                console.warn('Failed to cache player record:', cacheErr);
+            }
+
+            UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_REGISTERED', player: verifiedRecord });
+
+            return {
+                data: { ...verifiedRecord, phone: playerData.phone || verifiedRecord.phone || null },
+                error: null,
+                source: 'supabase'
+            };
+        } catch (err) {
+            console.error('[REGISTRATION] Exception during Supabase save:', err);
+            return {
+                data: null,
+                error: { message: err?.message || 'Database connection error' },
+                source: 'supabase'
+            };
         }
     },
 
@@ -986,67 +962,69 @@ const UniBoxDb = {
         return { data: player, error: null };
     },
 
-    // Fetch all registered players
+    // Fetch all registered players (Supabase is authoritative)
     getAllPlayers: async () => {
-        let players = [];
         if (!UniBoxDb.isReady()) {
-            players = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-        } else {
-            try {
-                const fetchPromise = supabaseClient
-                    .from('players')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Supabase request timed out after 6000ms')), 6000)
-                );
-
-                const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
-
-                if (error) throw error;
-                players = Array.isArray(data) ? data : [];
-            } catch (error) {
-                console.warn('Failed to fetch all players from Supabase, using local fallback:', error);
-                players = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-            }
-
-            // Merge local players not yet reflected in Supabase
+            console.warn('[ROSTER] Supabase not ready. Returning local players.');
             const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-            localPlayers.forEach(lp => {
-                const lpEmail = (lp.email || '').toLowerCase();
-                const lpEnr = (lp.enrollment_no || '').toLowerCase();
-                if (!players.some(p => (p.email && p.email.toLowerCase() === lpEmail) || (p.enrollment_no && p.enrollment_no.toLowerCase() === lpEnr))) {
-                    players.push(lp);
-                }
-            });
+            return { data: localPlayers, error: null, source: 'localStorage' };
         }
 
-        // Overlay auction cache (base_price, sold_price, sold_to_team, auction_status)
-        const auctionCache = JSON.parse(localStorage.getItem('unibox_auction_players_cache') || '{}');
-        const rolePrices = UniBoxDb.getRoleBasePrices();
+        try {
+            const fetchPromise = supabaseClient
+                .from('players')
+                .select('*')
+                .order('created_at', { ascending: false });
 
-        players = players.map(player => {
-            const id = player.id || player.email;
-            const cached = auctionCache[id] || auctionCache[player.email] || {};
-            const role = player.player_role || 'All-Rounder';
-            const defaultPrice = UniBoxDb.getDefaultBasePriceForRole(role, rolePrices);
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Supabase request timed out after 8000ms')), 8000)
+            );
 
-            return {
-                ...player,
-                base_price: (player.base_price !== undefined && player.base_price !== null)
-                    ? Number(player.base_price)
-                    : (cached.base_price !== undefined ? Number(cached.base_price) : defaultPrice),
-                sold_price: (player.sold_price !== undefined && player.sold_price !== null)
-                    ? Number(player.sold_price)
-                    : (cached.sold_price !== undefined ? Number(cached.sold_price) : null),
-                sold_to_team: cached.sold_to_team || player.sold_to_team || null,
-                sold_to_team_id: cached.sold_to_team_id || player.sold_to_team_id || null,
-                auction_status: (cached.sold_to_team || player.sold_to_team) ? 'Sold' : (cached.auction_status || player.auction_status || 'Upcoming')
-            };
-        });
+            const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
 
-        return { data: players, error: null };
+            if (error) {
+                console.error('[ROSTER] Error fetching players from Supabase:', error);
+                throw error;
+            }
+
+            let players = Array.isArray(data) ? data : [];
+
+            // Overlay auction cache (base_price, sold_price, sold_to_team, auction_status)
+            const auctionCache = JSON.parse(localStorage.getItem('unibox_auction_players_cache') || '{}');
+            const rolePrices = UniBoxDb.getRoleBasePrices();
+
+            players = players.map(player => {
+                const id = player.id || player.email;
+                const cached = auctionCache[id] || auctionCache[player.email] || {};
+                const role = player.player_role || 'All-Rounder';
+                const defaultPrice = UniBoxDb.getDefaultBasePriceForRole(role, rolePrices);
+
+                return {
+                    ...player,
+                    base_price: (player.base_price !== undefined && player.base_price !== null)
+                        ? Number(player.base_price)
+                        : (cached.base_price !== undefined ? Number(cached.base_price) : defaultPrice),
+                    sold_price: (player.sold_price !== undefined && player.sold_price !== null)
+                        ? Number(player.sold_price)
+                        : (cached.sold_price !== undefined ? Number(cached.sold_price) : null),
+                    sold_to_team: cached.sold_to_team || player.sold_to_team || null,
+                    sold_to_team_id: cached.sold_to_team_id || player.sold_to_team_id || null,
+                    auction_status: (cached.sold_to_team || player.sold_to_team) ? 'Sold' : (cached.auction_status || player.auction_status || 'Upcoming')
+                };
+            });
+
+            // Update local cache with authoritative Supabase data
+            try {
+                localStorage.setItem('unibox_players', JSON.stringify(players));
+            } catch (e) {}
+
+            return { data: players, error: null, source: 'supabase' };
+        } catch (error) {
+            console.error('[ROSTER] Supabase fetch failed:', error);
+            // If Supabase failed, return error so the Admin UI accurately informs the coordinator
+            const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+            return { data: localPlayers, error, source: 'errorWithLocalFallback' };
+        }
     },
 
     // Update player clearance status
