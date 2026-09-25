@@ -1,0 +1,16 @@
+{
+  "name": "Sunstone Premier League 2026",
+  "short_name": "Sunstone PL",
+  "description": "Official tournament platform for Sunstone Premier League 2026 — Inter-Department Box Cricket Championship.",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#050816",
+  "theme_color": "#050816",
+  "icons": [
+    {
+      "src": "/assets/branding/sunstone-premier-league-2026.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
