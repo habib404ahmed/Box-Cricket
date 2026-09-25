@@ -449,20 +449,15 @@ function renderRosterTable() {
         }
 
         // Approval Workflow Controls (Based on database state)
-        const isApproved = String(status).trim().toLowerCase() === 'approved';
+        // STATE 1: Registered / Pending -> Show [ ✓ APPROVE ] and [ ✕ REJECT ]
+        // STATE 2: Approved -> Mutually exclusive, both disappear
+        // STATE 3: Rejected -> Mutually exclusive, both disappear
+        const rawStatus = String(status || 'Registered').trim().toLowerCase();
+        const isApproved = rawStatus === 'approved';
+        const isRejected = rawStatus === 'rejected';
         let approvalControls = '';
-        if (isApproved) {
-            approvalControls = `
-                <!-- Non-clickable Approved Status Badge -->
-                <span class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 select-none shadow-[0_0_12px_rgba(16,185,129,0.2)] cursor-default shrink-0"
-                    title="Approved Athlete" aria-label="Approved Athlete">
-                    <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span class="text-[11px]">Approved</span>
-                </span>
-            `;
-        } else {
+
+        if (!isApproved && !isRejected) {
             approvalControls = `
                 <!-- Quick Approve -->
                 <button type="button" onclick="handleStatusUpdate('${id}', 'Approved')"
@@ -476,11 +471,12 @@ function renderRosterTable() {
 
                 <!-- Quick Reject -->
                 <button type="button" onclick="handleStatusUpdate('${id}', 'Rejected')"
-                    class="p-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/30 hover:border-amber-400/60 hover:shadow-[0_0_14px_rgba(245,158,11,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center shrink-0"
+                    class="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/30 hover:border-amber-400/60 hover:shadow-[0_0_14px_rgba(245,158,11,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1 shrink-0"
                     title="Reject Athlete" aria-label="Reject Athlete">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
                     </svg>
+                    <span class="text-[11px] font-bold">Reject</span>
                 </button>
             `;
         }
@@ -709,27 +705,37 @@ function openAthleteModal(playerId) {
 
 function updateModalBadges() {
     if (!activeModalPlayer) return;
-    const status = activeModalPlayer.status || 'Registered';
-    const isApproved = String(status).trim().toLowerCase() === 'approved';
+    const rawStatus = String(activeModalPlayer.status || 'Registered').trim().toLowerCase();
+    const isApproved = rawStatus === 'approved';
+    const isRejected = rawStatus === 'rejected';
 
     const modalApproveBtn = document.getElementById('modal-approve-btn');
+    const modalRejectBtn = document.getElementById('modal-reject-btn');
     const modalApprovedBadge = document.getElementById('modal-approved-badge');
+    const modalRejectedBadge = document.getElementById('modal-rejected-badge');
 
     if (isApproved) {
         modalStatusBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 mb-1';
         modalStatusBadge.textContent = 'Approved for Matchday';
         if (modalApproveBtn) modalApproveBtn.classList.add('hidden');
+        if (modalRejectBtn) modalRejectBtn.classList.add('hidden');
         if (modalApprovedBadge) modalApprovedBadge.classList.remove('hidden');
-    } else if (status === 'Rejected') {
+        if (modalRejectedBadge) modalRejectedBadge.classList.add('hidden');
+    } else if (isRejected) {
         modalStatusBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-400/10 text-rose-400 border border-rose-400/20 mb-1';
         modalStatusBadge.textContent = 'Clearance Rejected';
-        if (modalApproveBtn) modalApproveBtn.classList.remove('hidden');
+        if (modalApproveBtn) modalApproveBtn.classList.add('hidden');
+        if (modalRejectBtn) modalRejectBtn.classList.add('hidden');
         if (modalApprovedBadge) modalApprovedBadge.classList.add('hidden');
+        if (modalRejectedBadge) modalRejectedBadge.classList.remove('hidden');
     } else {
+        // Pending / Registered
         modalStatusBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-400/10 text-amber-400 border border-amber-400/20 mb-1';
         modalStatusBadge.textContent = 'Pending Clearance';
         if (modalApproveBtn) modalApproveBtn.classList.remove('hidden');
+        if (modalRejectBtn) modalRejectBtn.classList.remove('hidden');
         if (modalApprovedBadge) modalApprovedBadge.classList.add('hidden');
+        if (modalRejectedBadge) modalRejectedBadge.classList.add('hidden');
     }
 }
 

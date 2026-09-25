@@ -817,9 +817,6 @@
   .animate-spin {
     animation: var(--animate-spin);
   }
-  .cursor-default {
-    cursor: default;
-  }
   .cursor-not-allowed {
     cursor: not-allowed;
   }
@@ -2151,10 +2148,6 @@
   }
   .shadow-\[-12px_0_16px_rgba\(0\,0\,0\,0\.45\)\] {
     --tw-shadow: -12px 0 16px var(--tw-shadow-color, rgba(0,0,0,0.45));
-    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
-  }
-  .shadow-\[0_0_12px_rgba\(16\,185\,129\,0\.2\)\] {
-    --tw-shadow: 0 0 12px var(--tw-shadow-color, rgba(16,185,129,0.2));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
   .shadow-\[0_0_60px_rgba\(14\,165\,233\,0\.18\)\] {
