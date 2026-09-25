@@ -281,7 +281,7 @@
     <section id="player-dashboard" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 hidden">
 
         <!-- Tournament Identity Header (Requirement 4) -->
-        <div class="mb-8 p-6 rounded-2xl bg-gradient-to-r from-[#0B172E]/90 via-[#0F2247]/75 to-[#0B172E]/90 border border-sky-500/30 shadow-xl backdrop-blur-md flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
+        <div class="mb-6 p-6 rounded-2xl bg-gradient-to-r from-[#0B172E]/90 via-[#0F2247]/75 to-[#0B172E]/90 border border-sky-500/30 shadow-xl backdrop-blur-md flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
             <img src="assets/branding/sunstone-premier-league-2026.png" 
                  alt="Sunstone Premier League 2026" 
                  class="h-20 sm:h-24 w-auto object-contain logo-entrance tournament-logo-glow flex-shrink-0">
@@ -295,7 +295,7 @@
         </div>
 
         <!-- Dashboard Header Bar -->
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-sky-950/80 pb-8 mb-8 gap-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-sky-950/80 pb-5 mb-6 gap-4">
             <div class="space-y-1">
                 <div class="flex items-center gap-2 flex-wrap mb-2">
                     <div class="badge-live">
@@ -326,7 +326,7 @@
         </div>
 
         <!-- ===== ATHLETE ID CARD (Cinematic Midnight & Gold Hologram) ===== -->
-        <div class="id-card scan-effect mb-8 p-6 sm:p-8">
+        <div class="id-card scan-effect mb-6 p-6 sm:p-8">
             <!-- Card Header -->
             <div class="flex items-center justify-between mb-6">
                 <div>
@@ -371,22 +371,22 @@
                 <!-- Info Grid -->
                 <div class="flex-1 w-full text-center sm:text-left">
                     <div class="mb-4">
-                        <h3 id="dash-player-name-full" class="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">---</h3>
+                        <h3 id="dash-player-name-full" class="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">Not provided</h3>
                         <div class="flex items-center justify-center sm:justify-start gap-2 mt-1 flex-wrap">
-                            <span id="dash-player-dept-detail" class="text-sm text-slate-400 font-medium">---</span>
+                            <span id="dash-player-dept-detail" class="text-sm text-slate-400 font-medium">Not provided</span>
                             <span class="text-slate-600">·</span>
-                            <span id="dash-player-role-detail" class="role-badge allrounder">---</span>
+                            <span id="dash-player-role-detail" class="role-badge allrounder">Not provided</span>
                         </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-3 text-left">
                         <div class="p-3 rounded-xl bg-[#050816]/80 border border-sky-950/70">
                             <div class="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">Enrollment No.</div>
-                            <div id="dash-player-roll-detail" class="text-sm font-bold text-white font-mono">---</div>
+                            <div id="dash-player-roll-detail" class="text-sm font-bold text-white font-mono">Not provided</div>
                         </div>
                         <div class="p-3 rounded-xl bg-[#050816]/80 border border-sky-950/70">
                             <div class="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">Gender</div>
-                            <div id="dash-player-gender-detail" class="text-sm font-bold text-white">---</div>
+                            <div id="dash-player-gender-detail" class="text-sm font-bold text-white">Not provided</div>
                         </div>
                     </div>
                 </div>
@@ -416,37 +416,37 @@
                     <tbody>
                         <tr>
                             <td class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Full Name</td>
-                            <td class="font-bold text-white"><span id="dash-player-name">---</span></td>
+                            <td class="font-bold text-white"><span id="dash-player-name">Not provided</span></td>
                         </tr>
                         <tr>
                             <td class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Email ID</td>
-                            <td class="font-mono text-slate-200"><span id="dash-player-email">---</span></td>
+                            <td class="font-mono text-slate-200"><span id="dash-player-email">Not provided</span></td>
                         </tr>
                         <tr>
                             <td class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Mobile Number</td>
-                            <td class="font-mono text-slate-200"><span id="dash-player-phone">---</span></td>
+                            <td class="font-mono text-slate-200"><span id="dash-player-phone">Not provided</span></td>
                         </tr>
                         <tr>
                             <td class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Enrollment Number</td>
-                            <td class="font-mono font-bold text-slate-200"><span id="dash-player-roll">---</span></td>
+                            <td class="font-mono font-bold text-slate-200"><span id="dash-player-roll">Not provided</span></td>
                         </tr>
                         <tr>
                             <td class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Department</td>
-                            <td class="font-bold text-slate-200"><span id="dash-player-dept">---</span></td>
+                            <td class="font-bold text-slate-200"><span id="dash-player-dept">Not provided</span></td>
                         </tr>
                         <tr>
                             <td class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Gender</td>
-                            <td class="text-slate-200"><span id="dash-player-gender">---</span></td>
+                            <td class="text-slate-200"><span id="dash-player-gender">Not provided</span></td>
                         </tr>
                         <tr>
                             <td class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Playing Role</td>
                             <td>
-                                <span id="dash-player-role" class="inline-block font-black text-sky-400 bg-sky-500/10 px-3 py-1 rounded-lg border border-sky-500/25 text-xs uppercase tracking-wider">---</span>
+                                <span id="dash-player-role" class="inline-block font-black text-sky-400 bg-sky-500/10 px-3 py-1 rounded-lg border border-sky-500/25 text-xs uppercase tracking-wider">Not provided</span>
                             </td>
                         </tr>
                         <tr>
                             <td class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Auction Base Price</td>
-                            <td class="font-mono font-bold text-amber-400"><span id="dash-player-base-price">---</span></td>
+                            <td class="font-mono font-bold text-amber-400"><span id="dash-player-base-price">Not provided</span></td>
                         </tr>
                         <tr>
                             <td class="text-slate-400 font-semibold text-xs uppercase tracking-wider">Auction Status</td>

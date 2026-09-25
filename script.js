@@ -282,6 +282,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (userEmail && window.UniBoxDb) {
             window.UniBoxDb.getPlayerByEmail(userEmail).then(({ data: freshPlayer }) => {
                 if (freshPlayer) {
+                    if (!freshPlayer.phone) {
+                        freshPlayer.phone = user?.phone || localStorage.getItem('unibox_phone_' + userEmail.toLowerCase()) || null;
+                    }
                     applyProfileToUI(freshPlayer);
                 }
             });
@@ -384,14 +387,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
+                const userPhone = dbPlayer.phone || localStorage.getItem('unibox_phone_' + email.toLowerCase()) || null;
                 userProfile = {
                     name: dbPlayer.full_name || dbPlayer.name || fallbackName,
                     full_name: dbPlayer.full_name || dbPlayer.name || fallbackName,
                     email: dbPlayer.email,
-                    enrollment_no: dbPlayer.enrollment_no || '---',
-                    department: dbPlayer.department || '---',
-                    gender: dbPlayer.gender || '---',
-                    player_role: dbPlayer.player_role || '---',
+                    phone: userPhone,
+                    enrollment_no: dbPlayer.enrollment_no || 'Not provided',
+                    department: dbPlayer.department || 'Not provided',
+                    gender: dbPlayer.gender || 'Not provided',
+                    player_role: dbPlayer.player_role || 'Not provided',
                     certificate: dbPlayer.certificate_name || dbPlayer.certificate || 'None attached',
                     certificate_name: dbPlayer.certificate_name || dbPlayer.certificate || 'None attached',
                     certificate_data: dbPlayer.certificate_data || null,
@@ -908,6 +913,9 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             localStorage.setItem('unibox_student_session', JSON.stringify(sessionData));
             localStorage.setItem('unibox_cached_profile', JSON.stringify(finalProfile));
+            if (cleanPhone) {
+                localStorage.setItem('unibox_phone_' + cleanEmail.toLowerCase(), cleanPhone);
+            }
             sessionStorage.setItem('unibox_active_email', finalProfile.email);
             sessionStorage.setItem('unibox_session_active', '1');
 
@@ -1028,23 +1036,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper to immediately apply player profile to UI elements
     function applyProfileToUI(profile) {
         if (!profile) return;
+        const formatVal = (val, isCert = false) => {
+            if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== '---') {
+                return String(val).trim();
+            }
+            return isCert ? 'None attached' : 'Not provided';
+        };
+
         const setInnerText = (id, val) => {
             const el = document.getElementById(id);
-            if (el && val) el.innerText = val;
+            if (el) el.innerText = val;
         };
-        setInnerText('dash-player-name', profile.name || profile.full_name);
-        setInnerText('dash-player-name-full', profile.name || profile.full_name);
-        setInnerText('dash-player-email', profile.email);
-        setInnerText('dash-player-phone', profile.phone || '---');
-        setInnerText('dash-player-roll', profile.enrollment_no);
-        setInnerText('dash-player-roll-detail', profile.enrollment_no);
-        setInnerText('dash-player-dept', profile.department);
-        setInnerText('dash-player-dept-detail', profile.department);
-        setInnerText('dash-player-gender', profile.gender);
-        setInnerText('dash-player-gender-detail', profile.gender);
-        setInnerText('dash-player-role', profile.player_role);
-        setInnerText('dash-player-role-detail', profile.player_role);
-        setInnerText('dash-player-cert', profile.certificate || profile.certificate_name);
+
+        const resolvedName = formatVal(profile.name || profile.full_name);
+        const resolvedEmail = formatVal(profile.email);
+        const userEmailKey = (profile.email || sessionStorage.getItem('unibox_active_email') || '').toLowerCase();
+        const resolvedPhone = formatVal(profile.phone || (userEmailKey ? localStorage.getItem('unibox_phone_' + userEmailKey) : null));
+        const resolvedRoll = formatVal(profile.enrollment_no);
+        const resolvedDept = formatVal(profile.department);
+        const resolvedGender = formatVal(profile.gender);
+        const resolvedRole = formatVal(profile.player_role);
+        const resolvedCert = formatVal(profile.certificate || profile.certificate_name, true);
+
+        setInnerText('dash-player-name', resolvedName);
+        setInnerText('dash-player-name-full', resolvedName);
+        setInnerText('dash-player-email', resolvedEmail);
+        setInnerText('dash-player-phone', resolvedPhone);
+        setInnerText('dash-player-roll', resolvedRoll);
+        setInnerText('dash-player-roll-detail', resolvedRoll);
+        setInnerText('dash-player-dept', resolvedDept);
+        setInnerText('dash-player-dept-detail', resolvedDept);
+        setInnerText('dash-player-gender', resolvedGender);
+        setInnerText('dash-player-gender-detail', resolvedGender);
+        setInnerText('dash-player-role', resolvedRole);
+        setInnerText('dash-player-role-detail', resolvedRole);
+        setInnerText('dash-player-cert', resolvedCert);
 
         updateCertViewerButton(profile.certificate || profile.certificate_name, profile.certificate_data);
 
@@ -1142,13 +1168,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.UniBoxDb) {
                 const { data: dbPlayer } = await window.UniBoxDb.getPlayerByEmail(email);
                 if (dbPlayer) {
+                    const restoredPhone = dbPlayer.phone || localStorage.getItem('unibox_phone_' + email.toLowerCase()) || null;
                     userProfile = {
                         name: dbPlayer.full_name || dbPlayer.name || userProfile.name,
                         email: dbPlayer.email,
-                        enrollment_no: dbPlayer.enrollment_no || '---',
-                        department: dbPlayer.department || '---',
-                        gender: dbPlayer.gender || '---',
-                        player_role: dbPlayer.player_role || '---',
+                        phone: restoredPhone,
+                        enrollment_no: dbPlayer.enrollment_no || 'Not provided',
+                        department: dbPlayer.department || 'Not provided',
+                        gender: dbPlayer.gender || 'Not provided',
+                        player_role: dbPlayer.player_role || 'Not provided',
                         certificate: dbPlayer.certificate_name || dbPlayer.certificate || 'None attached',
                         certificate_name: dbPlayer.certificate_name || dbPlayer.certificate || 'None attached',
                         certificate_data: dbPlayer.certificate_data || localStorage.getItem(`unibox_cert_${email}`) || null,

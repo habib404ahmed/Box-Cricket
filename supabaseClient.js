@@ -863,6 +863,9 @@ const UniBoxDb = {
             // Include phone if provided
             if (playerData.phone) {
                 payload.phone = playerData.phone;
+                try {
+                    localStorage.setItem('unibox_phone_' + (playerData.email || '').toLowerCase(), playerData.phone);
+                } catch (e) {}
             }
 
             console.log('[REGISTRATION] Submitting athlete to Supabase:', payload.email);
@@ -883,6 +886,14 @@ const UniBoxDb = {
                     delete payload[match[1]];
                 } else if (payload.phone !== undefined) {
                     delete payload.phone;
+                }
+
+                // If phone column is missing, embed phone into certificate_data so it is preserved in Supabase
+                if (playerData.phone) {
+                    payload.certificate_data = JSON.stringify({
+                        __phone: playerData.phone,
+                        data: playerData.certificate_data || null
+                    });
                 }
 
                 // Retry without the unsupported column
@@ -906,18 +917,23 @@ const UniBoxDb = {
             }
 
             const verifiedRecord = data && data[0] ? data[0] : payload;
+            const resolvedPhone = playerData.phone || verifiedRecord.phone || localStorage.getItem('unibox_phone_' + (verifiedRecord.email || '').toLowerCase()) || null;
 
             // Cache verified Supabase record in local storage for instant offline UI lookup
             try {
                 const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
                 const existingIdx = localPlayers.findIndex(p => p.email === verifiedRecord.email || p.id === verifiedRecord.id);
-                const recordWithPhone = { ...verifiedRecord, phone: playerData.phone || verifiedRecord.phone || null };
+                const recordWithPhone = { ...verifiedRecord, phone: resolvedPhone };
                 if (existingIdx >= 0) {
                     localPlayers[existingIdx] = recordWithPhone;
                 } else {
                     localPlayers.unshift(recordWithPhone);
                 }
                 localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
+
+                if (resolvedPhone && verifiedRecord.email) {
+                    localStorage.setItem('unibox_phone_' + verifiedRecord.email.toLowerCase(), resolvedPhone);
+                }
 
                 const auctionCache = JSON.parse(localStorage.getItem('unibox_auction_players_cache') || '{}');
                 const cacheEntry = {
@@ -931,10 +947,10 @@ const UniBoxDb = {
                 console.warn('Failed to cache player record:', cacheErr);
             }
 
-            UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_REGISTERED', player: verifiedRecord });
+            UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_REGISTERED', player: { ...verifiedRecord, phone: resolvedPhone } });
 
             return {
-                data: { ...verifiedRecord, phone: playerData.phone || verifiedRecord.phone || null },
+                data: { ...verifiedRecord, phone: resolvedPhone },
                 error: null,
                 source: 'supabase'
             };
@@ -971,6 +987,20 @@ const UniBoxDb = {
         }
 
         if (player) {
+            // Unpack phone from certificate_data or localStorage if needed
+            if (player.certificate_data && typeof player.certificate_data === 'string' && player.certificate_data.startsWith('{"__phone":')) {
+                try {
+                    const parsed = JSON.parse(player.certificate_data);
+                    if (parsed && parsed.__phone) {
+                        if (!player.phone) player.phone = parsed.__phone;
+                        player.certificate_data = parsed.data || null;
+                    }
+                } catch (e) {}
+            }
+            if (!player.phone) {
+                player.phone = localStorage.getItem('unibox_phone_' + (player.email || email).toLowerCase()) || null;
+            }
+
             const auctionCache = JSON.parse(localStorage.getItem('unibox_auction_players_cache') || '{}');
             const cached = auctionCache[player.id] || auctionCache[player.email] || {};
             const role = player.player_role || 'All-Rounder';
@@ -1075,8 +1105,26 @@ const UniBoxDb = {
                 const role = player.player_role || 'All-Rounder';
                 const defaultPrice = UniBoxDb.getDefaultBasePriceForRole(role, rolePrices);
 
+                // Unpack phone from certificate_data or localStorage if needed
+                let resolvedPhone = player.phone;
+                let certData = player.certificate_data;
+                if (certData && typeof certData === 'string' && certData.startsWith('{"__phone":')) {
+                    try {
+                        const parsed = JSON.parse(certData);
+                        if (parsed && parsed.__phone) {
+                            if (!resolvedPhone) resolvedPhone = parsed.__phone;
+                            certData = parsed.data || null;
+                        }
+                    } catch (e) {}
+                }
+                if (!resolvedPhone) {
+                    resolvedPhone = localStorage.getItem('unibox_phone_' + (player.email || '').toLowerCase()) || null;
+                }
+
                 return {
                     ...player,
+                    phone: resolvedPhone,
+                    certificate_data: certData,
                     base_price: (player.base_price !== undefined && player.base_price !== null)
                         ? Number(player.base_price)
                         : (cached.base_price !== undefined ? Number(cached.base_price) : defaultPrice),
