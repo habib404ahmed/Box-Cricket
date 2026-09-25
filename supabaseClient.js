@@ -1046,6 +1046,7 @@ const UniBoxDb = {
 
             const { data, error } = await query.select();
             if (error) throw error;
+            UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_STATUS_UPDATED', id: playerIdOrEmail, status: newStatus });
             return { data, error: null, source: 'supabase' };
         } catch (error) {
             console.error('Failed to update player status in Supabase:', error);
@@ -1101,9 +1102,39 @@ const UniBoxDb = {
 
             const { data, error } = await query;
             if (error) throw error;
+            UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_DELETED', id: playerIdOrEmail });
             return { success: true, error: null, source: 'supabase' };
         } catch (error) {
             console.error('Failed to delete player from Supabase:', error);
+            return { success: false, error, source: 'supabase' };
+        }
+    },
+
+    // Delete all player registrations (Admin Bulk Action)
+    deleteAllPlayers: async () => {
+        // Clear local auction cache
+        localStorage.removeItem('unibox_auction_players_cache');
+
+        if (!UniBoxDb.isReady()) {
+            localStorage.setItem('unibox_players', '[]');
+            UniBoxDb.broadcastAuctionEvent({ type: 'ALL_PLAYERS_DELETED' });
+            return { success: true, count: 0, source: 'localStorage' };
+        }
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('players')
+                .delete()
+                .neq('email', '')
+                .select('id');
+
+            if (error) throw error;
+
+            localStorage.setItem('unibox_players', '[]');
+            UniBoxDb.broadcastAuctionEvent({ type: 'ALL_PLAYERS_DELETED' });
+            return { success: true, count: Array.isArray(data) ? data.length : 0, error: null, source: 'supabase' };
+        } catch (error) {
+            console.error('Failed to bulk delete players from Supabase:', error);
             return { success: false, error, source: 'supabase' };
         }
     },

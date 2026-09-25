@@ -217,8 +217,10 @@ async function loadRosterData(showSpinner = true) {
             const { data, error } = await window.UniBoxDb.getAllPlayers();
             if (error) throw error;
             allPlayers = Array.isArray(data) ? data : [];
+            window.allPlayers = allPlayers;
         } else {
             allPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+            window.allPlayers = allPlayers;
         }
 
         updateMetrics();
@@ -424,22 +426,66 @@ function renderRosterTable() {
             ? `<img src="${photo}" alt="${name}" class="w-10 h-10 rounded-xl object-cover border border-slate-700 shrink-0">`
             : `<div class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 font-bold text-xs shrink-0">${name.substring(0, 2).toUpperCase()}</div>`;
 
-        // Purchase / Refund Action Button
+        // Purchase / Refund Action Button (Premium sports-management control style)
         let purchaseActionBtn = '';
         if (isSold) {
             purchaseActionBtn = `
                 <button type="button" onclick="handleRevokePurchase('${id}')"
-                    class="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer font-bold text-xs flex items-center gap-1"
-                    title="Revoke Player Sale & Refund Team Balance">
-                    <span>↩️</span> <span class="hidden xl:inline">Refund</span>
+                    class="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 border border-purple-500/30 hover:border-purple-400/60 hover:shadow-[0_0_14px_rgba(168,85,247,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer font-bold text-xs flex items-center gap-1.5"
+                    title="Refund Purchase" aria-label="Refund Purchase">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                    </svg>
+                    <span class="text-[11px] hidden xl:inline">Refund</span>
                 </button>
             `;
         } else {
             purchaseActionBtn = `
                 <button type="button" onclick="openPurchaseModal('${id}')"
-                    class="p-2 rounded-lg bg-gradient-to-r from-lime-400/20 to-emerald-400/20 hover:from-lime-400 hover:to-emerald-400 text-lime-400 hover:text-slate-950 border border-lime-400/30 transition-all cursor-pointer font-black text-xs flex items-center gap-1 shadow-sm"
-                    title="Purchase Athlete for Franchise">
-                    <span>🔨</span> <span class="hidden xl:inline">Sell</span>
+                    class="px-2.5 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 hover:text-sky-300 border border-sky-500/30 hover:border-sky-400/60 hover:shadow-[0_0_14px_rgba(56,189,248,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer font-bold text-xs flex items-center gap-1.5"
+                    title="Sell Athlete" aria-label="Sell Athlete">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span class="text-[11px] hidden xl:inline">Sell</span>
+                </button>
+            `;
+        }
+
+        // Approval Workflow Controls (Based on database state)
+        const isApproved = String(status).trim().toLowerCase() === 'approved';
+        let approvalControls = '';
+        if (isApproved) {
+            approvalControls = `
+                <!-- Non-clickable Approved Status Badge -->
+                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 select-none shadow-[0_0_12px_rgba(16,185,129,0.2)] cursor-default"
+                    title="Approved Athlete" aria-label="Approved Athlete">
+                    <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>Approved</span>
+                </span>
+            `;
+        } else {
+            approvalControls = `
+                <!-- Quick Approve -->
+                <button type="button" onclick="handleStatusUpdate('${id}', 'Approved')"
+                    class="p-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 hover:border-emerald-400/60 hover:shadow-[0_0_14px_rgba(16,185,129,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1"
+                    title="Approve Athlete" aria-label="Approve Athlete">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span class="text-[11px] font-bold hidden 2xl:inline">Approve</span>
+                </button>
+
+                <!-- Quick Reject -->
+                <button type="button" onclick="handleStatusUpdate('${id}', 'Rejected')"
+                    class="p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/30 hover:border-amber-400/60 hover:shadow-[0_0_14px_rgba(245,158,11,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1"
+                    title="Reject Athlete" aria-label="Reject Athlete">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span class="text-[11px] font-bold hidden 2xl:inline">Reject</span>
                 </button>
             `;
         }
@@ -489,38 +535,27 @@ function renderRosterTable() {
 
                 <!-- Actions -->
                 <td class="py-4 px-6 text-right no-print">
-                    <div class="flex items-center justify-end gap-1.5">
+                    <div class="flex items-center justify-end gap-1.5 flex-wrap">
                         <!-- Purchase / Refund Button -->
                         ${purchaseActionBtn}
 
-                        <!-- Quick Approve -->
-                        <button type="button" onclick="handleStatusUpdate('${id}', 'Approved')"
-                            class="p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition-all cursor-pointer" title="Approve Athlete">
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                            </svg>
-                        </button>
+                        <!-- Approval Workflow Controls -->
+                        ${approvalControls}
 
-                        <!-- Quick Reject -->
-                        <button type="button" onclick="handleStatusUpdate('${id}', 'Rejected')"
-                            class="p-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 transition-all cursor-pointer" title="Reject Athlete">
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
-
-                        <!-- View Modal -->
+                        <!-- View Modal Button -->
                         <button type="button" onclick="openAthleteModal('${id}')"
-                            class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all cursor-pointer" title="Inspect Full Record">
+                            class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500 hover:shadow-[0_0_14px_rgba(148,163,184,0.25)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center"
+                            title="View Athlete" aria-label="View Athlete">
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                             </svg>
                         </button>
 
-                        <!-- Delete -->
+                        <!-- Delete Button -->
                         <button type="button" onclick="handleDeletePlayer('${id}')"
-                            class="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer" title="Delete Registration">
+                            class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 hover:border-rose-400/60 hover:shadow-[0_0_14px_rgba(244,63,94,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center"
+                            title="Delete Athlete" aria-label="Delete Athlete">
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
@@ -681,16 +716,26 @@ function openAthleteModal(playerId) {
 function updateModalBadges() {
     if (!activeModalPlayer) return;
     const status = activeModalPlayer.status || 'Registered';
+    const isApproved = String(status).trim().toLowerCase() === 'approved';
 
-    if (status === 'Approved') {
+    const modalApproveBtn = document.getElementById('modal-approve-btn');
+    const modalApprovedBadge = document.getElementById('modal-approved-badge');
+
+    if (isApproved) {
         modalStatusBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 mb-1';
         modalStatusBadge.textContent = 'Approved for Matchday';
+        if (modalApproveBtn) modalApproveBtn.classList.add('hidden');
+        if (modalApprovedBadge) modalApprovedBadge.classList.remove('hidden');
     } else if (status === 'Rejected') {
         modalStatusBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-400/10 text-rose-400 border border-rose-400/20 mb-1';
         modalStatusBadge.textContent = 'Clearance Rejected';
+        if (modalApproveBtn) modalApproveBtn.classList.remove('hidden');
+        if (modalApprovedBadge) modalApprovedBadge.classList.add('hidden');
     } else {
         modalStatusBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-400/10 text-amber-400 border border-amber-400/20 mb-1';
         modalStatusBadge.textContent = 'Pending Clearance';
+        if (modalApproveBtn) modalApproveBtn.classList.remove('hidden');
+        if (modalApprovedBadge) modalApprovedBadge.classList.add('hidden');
     }
 }
 
@@ -1229,6 +1274,22 @@ function bindEventListeners() {
         adminLogout();
     });
 
+    const bulkInput = document.getElementById('bulk-delete-confirmation-input');
+    const bulkSubmit = document.getElementById('bulk-delete-submit-btn');
+    if (bulkInput && bulkSubmit) {
+        bulkInput.addEventListener('input', () => {
+            const isMatch = bulkInput.value.trim().toUpperCase() === 'DELETE ALL';
+            bulkSubmit.disabled = !isMatch;
+            if (isMatch) {
+                bulkSubmit.classList.remove('cursor-not-allowed', 'opacity-50');
+                bulkSubmit.classList.add('hover:bg-rose-500', 'cursor-pointer');
+            } else {
+                bulkSubmit.classList.add('cursor-not-allowed', 'opacity-50');
+                bulkSubmit.classList.remove('hover:bg-rose-500', 'cursor-pointer');
+            }
+        });
+    }
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closeAthleteModal();
@@ -1237,8 +1298,98 @@ function bindEventListeners() {
             closeEditBasePriceModal();
             closeTeamSquadModal();
             closeCertViewerModal();
+            closeBulkDeleteModal();
         }
     });
+}
+
+// ==============================================================================
+// 16. BULK DELETE ATHLETES (Admin Command Center)
+// ==============================================================================
+function openBulkDeleteModal() {
+    const modal = document.getElementById('bulk-delete-modal');
+    const countEl = document.getElementById('bulk-delete-count');
+    const inputEl = document.getElementById('bulk-delete-confirmation-input');
+    const submitBtn = document.getElementById('bulk-delete-submit-btn');
+
+    if (!modal) return;
+
+    if (countEl) countEl.textContent = allPlayers.length;
+    if (inputEl) {
+        inputEl.value = '';
+        setTimeout(() => inputEl.focus(), 100);
+    }
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add('cursor-not-allowed', 'opacity-50');
+        submitBtn.classList.remove('hover:bg-rose-500', 'cursor-pointer');
+    }
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeBulkDeleteModal() {
+    const modal = document.getElementById('bulk-delete-modal');
+    if (!modal) return;
+
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    document.body.style.overflow = '';
+}
+
+async function handleExecuteBulkDelete() {
+    const inputEl = document.getElementById('bulk-delete-confirmation-input');
+    if (!inputEl || inputEl.value.trim().toUpperCase() !== 'DELETE ALL') {
+        showToast('Please type DELETE ALL to confirm', 'error');
+        return;
+    }
+
+    const submitBtn = document.getElementById('bulk-delete-submit-btn');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `
+            <div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            <span>Deleting Database Records...</span>
+        `;
+    }
+
+    try {
+        const totalToDelete = allPlayers.length;
+        if (window.UniBoxDb && window.UniBoxDb.deleteAllPlayers) {
+            const res = await window.UniBoxDb.deleteAllPlayers();
+            if (!res.success) {
+                throw res.error || new Error('Failed to delete athletes from Supabase');
+            }
+        } else {
+            localStorage.setItem('unibox_players', '[]');
+            localStorage.removeItem('unibox_auction_players_cache');
+        }
+
+        allPlayers = [];
+        filteredPlayers = [];
+
+        updateMetrics();
+        applyFilters();
+        await loadTeamsData();
+
+        closeBulkDeleteModal();
+        showToast(`Successfully deleted all ${totalToDelete} athlete records from Supabase!`, 'success');
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        showToast(`Bulk delete failed: ${err.message || 'Database error'}`, 'error');
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span>Delete All Athletes</span>
+            `;
+        }
+    }
 }
 
 function adminLogout() {
@@ -1340,5 +1491,9 @@ window.handleDeleteTeamFromModal = handleDeleteTeamFromModal;
 window.openCertViewerModal = openCertViewerModal;
 window.closeCertViewerModal = closeCertViewerModal;
 window.openCertViewerFromRow = openCertViewerFromRow;
+window.openBulkDeleteModal = openBulkDeleteModal;
+window.closeBulkDeleteModal = closeBulkDeleteModal;
+window.handleExecuteBulkDelete = handleExecuteBulkDelete;
+window.loadRosterData = loadRosterData;
 window.adminLogout = adminLogout;
 
