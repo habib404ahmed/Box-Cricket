@@ -73,6 +73,9 @@ async function initAdminDashboard() {
         loadRosterData(true),
         loadTeamsData()
     ]);
+
+    // Start background auto-refresh every 1 second (1000ms)
+    startAutoRefresh();
 }
 
 if (document.readyState === 'loading') {
@@ -82,21 +85,133 @@ if (document.readyState === 'loading') {
     initAdminDashboard();
 }
 
-// 1. Connection Status Badge
+// ==============================================================================
+// 1. BACKGROUND AUTO-REFRESH CONTROLLER (1000ms Interval)
+// ==============================================================================
+let adminRefreshInterval = null;
+let isRefreshingAdminData = false;
+let lastPlayersSignature = '';
+let lastTeamsSignature = '';
+
+function computePlayersSignature(players) {
+    if (!Array.isArray(players)) return '';
+    return JSON.stringify(players.map(p => ({
+        id: p.id,
+        email: p.email,
+        status: p.status,
+        base_price: p.base_price,
+        sold_price: p.sold_price,
+        sold_to_team: p.sold_to_team,
+        sold_to_team_id: p.sold_to_team_id,
+        auction_status: p.auction_status,
+        photo_data: p.photo_data ? p.photo_data.substring(0, 30) : null,
+        certificate_name: p.certificate_name
+    })));
+}
+
+function computeTeamsSignature(teams) {
+    if (!Array.isArray(teams)) return '';
+    return JSON.stringify(teams.map(t => ({
+        id: t.id,
+        name: t.name,
+        total_budget: t.total_budget,
+        spent_points: t.spent_points,
+        remaining_purse: t.remaining_purse,
+        squad_count: t.squad_count
+    })));
+}
+
+async function refreshAdminData(forceRender = false) {
+    if (isRefreshingAdminData) return;
+    isRefreshingAdminData = true;
+
+    try {
+        if (window.UniBoxDb) {
+            const [playersRes, teamsRes] = await Promise.allSettled([
+                window.UniBoxDb.getAllPlayers(),
+                window.UniBoxDb.getAllTeams(allPlayers)
+            ]);
+
+            let hasPlayersChanged = false;
+
+            if (playersRes.status === 'fulfilled' && playersRes.value && !playersRes.value.error) {
+                const rawData = playersRes.value.data;
+                const newPlayers = Array.isArray(rawData) ? rawData : [];
+                const newSig = computePlayersSignature(newPlayers);
+
+                if (forceRender || newSig !== lastPlayersSignature) {
+                    lastPlayersSignature = newSig;
+                    allPlayers = newPlayers;
+                    window.allPlayers = allPlayers;
+                    hasPlayersChanged = true;
+                    updateMetrics();
+                    applyFilters();
+                }
+            }
+
+            if (teamsRes.status === 'fulfilled' && teamsRes.value && !teamsRes.value.error) {
+                const rawTeams = teamsRes.value.data;
+                const newTeams = Array.isArray(rawTeams) ? rawTeams : [];
+                const newTeamSig = computeTeamsSignature(newTeams);
+
+                if (forceRender || hasPlayersChanged || newTeamSig !== lastTeamsSignature) {
+                    lastTeamsSignature = newTeamSig;
+                    allTeams = newTeams;
+                    renderTeamBalanceHUD();
+                }
+            }
+        } else {
+            const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+            const localTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
+            const newSig = computePlayersSignature(localPlayers);
+            if (forceRender || newSig !== lastPlayersSignature) {
+                lastPlayersSignature = newSig;
+                allPlayers = localPlayers;
+                window.allPlayers = allPlayers;
+                updateMetrics();
+                applyFilters();
+            }
+            const newTeamSig = computeTeamsSignature(localTeams);
+            if (forceRender || newTeamSig !== lastTeamsSignature) {
+                lastTeamsSignature = newTeamSig;
+                allTeams = localTeams;
+                renderTeamBalanceHUD();
+            }
+        }
+    } catch (err) {
+        console.warn('[BACKGROUND REFRESH] Error refreshing admin data:', err);
+    } finally {
+        isRefreshingAdminData = false;
+    }
+}
+
+function startAutoRefresh() {
+    if (adminRefreshInterval) clearInterval(adminRefreshInterval);
+    adminRefreshInterval = setInterval(refreshAdminData, 1000);
+}
+
+function stopAutoRefresh() {
+    if (adminRefreshInterval) {
+        clearInterval(adminRefreshInterval);
+        adminRefreshInterval = null;
+    }
+}
+
+// 2. Connection Status Badge
 function initDbStatus() {
     const dbStatusBadge = document.getElementById('db-status-badge');
     const dbStatusText = document.getElementById('db-status-text');
 
     if (window.UniBoxDb && window.UniBoxDb.isReady()) {
-        dbStatusText.textContent = 'Supabase Live';
+        dbStatusText.textContent = 'Supabase Live • 1s Auto-Refresh';
         dbStatusBadge.classList.remove('hidden');
     } else {
-        dbStatusText.textContent = 'Local Storage Mode';
+        dbStatusText.textContent = 'Local Mode • 1s Auto-Refresh';
         dbStatusBadge.classList.remove('hidden');
     }
 }
 
-// 2. Load Teams Data & Live Leftover Balance HUD
+// 3. Load Teams Data & Live Leftover Balance HUD
 async function loadTeamsData(providedPlayers = null) {
     try {
         if (window.UniBoxDb) {
@@ -105,6 +220,7 @@ async function loadTeamsData(providedPlayers = null) {
         } else {
             allTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
         }
+        lastTeamsSignature = computeTeamsSignature(allTeams);
         renderTeamBalanceHUD();
     } catch (err) {
         console.error('Error loading team data:', err);
@@ -225,6 +341,7 @@ async function loadRosterData(showSpinner = true) {
 
         updateMetrics();
         applyFilters();
+        lastPlayersSignature = computePlayersSignature(allPlayers);
         // Update teams HUD with newly loaded players without duplicate network query
         loadTeamsData(allPlayers);
     } catch (err) {
@@ -1509,4 +1626,7 @@ window.closeBulkDeleteModal = closeBulkDeleteModal;
 window.handleExecuteBulkDelete = handleExecuteBulkDelete;
 window.loadRosterData = loadRosterData;
 window.adminLogout = adminLogout;
+window.refreshAdminData = refreshAdminData;
+window.startAutoRefresh = startAutoRefresh;
+window.stopAutoRefresh = stopAutoRefresh;
 
