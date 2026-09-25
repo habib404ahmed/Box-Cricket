@@ -766,13 +766,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 4. Branch / Department Validation: Must match authorized tournament branches
+        // 4. Branch / Department Validation: Strictly BCA, B.Tech, or BBA only
         const deptSelect = document.getElementById('signup-department');
         const deptText = deptSelect ? (deptSelect.options[deptSelect.selectedIndex]?.value || '') : '';
-        const VALID_BRANCHES = ['B.Tech', 'BCA', 'BBA', 'MCA', 'MBA'];
+        const VALID_BRANCHES = ['BCA', 'B.Tech', 'BBA'];
 
         if (!deptText || !VALID_BRANCHES.includes(deptText)) {
-            showFieldError('signup-department', 'signup-department-error', 'Please select an authorized branch from the dropdown.');
+            showFieldError('signup-department', 'signup-department-error', 'Please select an authorized tournament branch (BCA, B.Tech, or BBA).');
             deptSelect?.focus();
             return;
         }

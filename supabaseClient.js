@@ -810,6 +810,17 @@ const UniBoxDb = {
     // --- ATHLETE REGISTRATION & PROFILE METHODS ---
     // Save new player registration record (Supabase is authoritative source of truth)
     savePlayer: async (playerData) => {
+        // Strictly validate branch/department for new athlete registrations
+        const VALID_BRANCHES = ['BCA', 'B.Tech', 'BBA'];
+        if (playerData.department && !VALID_BRANCHES.includes(playerData.department)) {
+            console.error(`[REGISTRATION] Rejected invalid branch "${playerData.department}". Allowed: ${VALID_BRANCHES.join(', ')}.`);
+            return {
+                data: null,
+                error: { message: `Invalid branch "${playerData.department}". Only BCA, B.Tech, and BBA are authorized.` },
+                source: 'validation'
+            };
+        }
+
         const roleBasePrice = UniBoxDb.getDefaultBasePriceForRole(playerData.player_role);
         const resolvedBasePrice = playerData.base_price !== undefined ? Number(playerData.base_price) : roleBasePrice;
 
