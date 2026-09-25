@@ -1125,7 +1125,7 @@ const UniBoxDb = {
             const { data, error } = await supabaseClient
                 .from('players')
                 .delete()
-                .neq('email', '')
+                .not('id', 'is', null)
                 .select('id');
 
             if (error) throw error;

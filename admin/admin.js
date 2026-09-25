@@ -1274,6 +1274,12 @@ function bindEventListeners() {
         adminLogout();
     });
 
+    const bulkDeleteBtn = document.getElementById('delete-all-players-btn');
+    bulkDeleteBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        openBulkDeleteModal();
+    });
+
     const bulkInput = document.getElementById('bulk-delete-confirmation-input');
     const bulkSubmit = document.getElementById('bulk-delete-submit-btn');
     if (bulkInput && bulkSubmit) {
@@ -1286,6 +1292,13 @@ function bindEventListeners() {
             } else {
                 bulkSubmit.classList.add('cursor-not-allowed', 'opacity-50');
                 bulkSubmit.classList.remove('hover:bg-rose-500', 'cursor-pointer');
+            }
+        });
+
+        bulkInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !bulkSubmit.disabled) {
+                e.preventDefault();
+                handleExecuteBulkDelete();
             }
         });
     }
