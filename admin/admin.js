@@ -90,8 +90,20 @@ if (document.readyState === 'loading') {
 // ==============================================================================
 let adminRefreshInterval = null;
 let isRefreshingAdminData = false;
+let isDeletingTeam = false;
 let lastPlayersSignature = '';
 let lastTeamsSignature = '';
+
+// Guard set against deleted teams resurrection from in-flight/stale background polls
+const pendingOrDeletedTeamIds = new Set(
+    (function() {
+        try {
+            return JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]').map(id => String(id).trim());
+        } catch (e) {
+            return [];
+        }
+    })()
+);
 
 function computePlayersSignature(players) {
     if (!Array.isArray(players)) return '';
@@ -151,7 +163,9 @@ async function refreshAdminData(forceRender = false) {
 
             if (teamsRes.status === 'fulfilled' && teamsRes.value && !teamsRes.value.error) {
                 const rawTeams = teamsRes.value.data;
-                const newTeams = Array.isArray(rawTeams) ? rawTeams : [];
+                const newTeams = (Array.isArray(rawTeams) ? rawTeams : []).filter(
+                    t => !pendingOrDeletedTeamIds.has(String(t.id).trim())
+                );
                 const newTeamSig = computeTeamsSignature(newTeams);
 
                 if (forceRender || hasPlayersChanged || newTeamSig !== lastTeamsSignature) {
@@ -162,7 +176,9 @@ async function refreshAdminData(forceRender = false) {
             }
         } else {
             const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-            const localTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
+            const localTeams = (JSON.parse(localStorage.getItem('unibox_teams') || '[]')).filter(
+                t => !pendingOrDeletedTeamIds.has(String(t.id).trim())
+            );
             const newSig = computePlayersSignature(localPlayers);
             if (forceRender || newSig !== lastPlayersSignature) {
                 lastPlayersSignature = newSig;
@@ -219,9 +235,11 @@ async function loadTeamsData(providedPlayers = null) {
     try {
         if (window.UniBoxDb) {
             const { data } = await window.UniBoxDb.getAllTeams(providedPlayers || allPlayers);
-            allTeams = Array.isArray(data) ? data : [];
+            const rawTeams = Array.isArray(data) ? data : [];
+            allTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
         } else {
-            allTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
+            const rawTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
+            allTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
         }
         lastTeamsSignature = computeTeamsSignature(allTeams);
         renderTeamBalanceHUD();
@@ -248,6 +266,15 @@ function renderTeamBalanceError(err) {
 
 // Render the 5 Franchise Balance Cards with live leftover purse reflection
 function renderTeamBalanceHUD() {
+    // Keep count badge and KPI metric updated in real-time
+    const countBadge = document.getElementById('franchise-count-badge');
+    if (countBadge) {
+        countBadge.textContent = `${allTeams.length} Active`;
+    }
+    if (statDepts) {
+        statDepts.textContent = allTeams.length;
+    }
+
     if (!teamsHudContainer) return;
 
     if (!allTeams.length) {
@@ -383,7 +410,7 @@ function updateMetrics() {
     statTotal.textContent = total;
     statApproved.textContent = approved;
     statPending.textContent = pending;
-    statDepts.textContent = depts.size;
+    statDepts.textContent = allTeams.length > 0 ? allTeams.length : depts.size;
 
     const approvedPct = total > 0 ? (approved / total) * 100 : 0;
     const pendingPct = total > 0 ? (pending / total) * 100 : 0;
@@ -1250,27 +1277,39 @@ function closeTeamSquadModal() {
     document.body.style.overflow = '';
 }
 
-function handleDeleteTeamFromModal() {
+function handleDeleteTeamFromModal(btnElement = null) {
     if (activeSquadTeamId) {
-        handleDeleteTeam(activeSquadTeamId);
+        handleDeleteTeam(activeSquadTeamId, btnElement || document.getElementById('team-modal-delete-btn'));
     }
 }
 
 async function handleDeleteTeam(rawTeamId, btnElement = null) {
+    // Step 7: Prevent duplicate / concurrent delete requests
+    if (isDeletingTeam) {
+        console.warn('A franchise deletion is already in progress.');
+        return;
+    }
+
     const teamId = (btnElement && btnElement.dataset && btnElement.dataset.teamId) || rawTeamId;
     if (!teamId) {
         showToast('Missing team ID for deletion.', 'error');
         return;
     }
 
-    const team = allTeams.find(t => t.id === teamId || t.name === teamId);
+    const cleanTeamId = String(teamId).trim();
+    // Step 4: Robust ID matching (string-safe)
+    const team = allTeams.find(t => 
+        String(t.id).trim() === cleanTeamId || 
+        String(t.name).trim().toLowerCase() === cleanTeamId.toLowerCase()
+    );
+
     if (!team) {
-        showToast(`Team not found with ID: ${teamId}`, 'error');
+        showToast(`Team not found with ID: ${cleanTeamId}`, 'error');
         return;
     }
 
     const squadCount = Number(team.squad_count || (team.squad ? team.squad.length : 0));
-    // STEP 4 SAFETY CHECK: Block deletion if team has players
+    // Safety check: Block deletion if team has players assigned
     if (squadCount > 0) {
         const errMsg = 'Cannot delete a team that has players assigned to it.';
         showToast(errMsg, 'error');
@@ -1282,26 +1321,118 @@ async function handleDeleteTeam(rawTeamId, btnElement = null) {
         return;
     }
 
+    // Step 7: Prevent Double Click & show small loading state on button
+    const targetBtn = btnElement || document.querySelector(`button[data-team-id="${team.id}"]`) || document.getElementById('team-modal-delete-btn');
+    const originalBtnHtml = targetBtn ? targetBtn.innerHTML : '';
+    if (targetBtn) {
+        targetBtn.disabled = true;
+        targetBtn.style.pointerEvents = 'none';
+        targetBtn.innerHTML = `<span class="inline-block w-3.5 h-3.5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin"></span>`;
+    }
+
+    isDeletingTeam = true;
+
     try {
         let res;
         if (window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
-            res = await window.GoogleTourneyApi.deleteTeam(teamId);
+            res = await window.GoogleTourneyApi.deleteTeam(team.id || cleanTeamId);
         } else if (window.UniBoxDb && window.UniBoxDb.deleteTeam) {
-            res = await window.UniBoxDb.deleteTeam(teamId);
+            res = await window.UniBoxDb.deleteTeam(team.id || cleanTeamId);
         }
 
         if (res && res.success === false) {
-            throw new Error(res.error || 'Team deletion failed.');
+            throw new Error(res.error || 'Failed to delete franchise team from Google Sheets.');
         }
 
-        closeTeamSquadModal();
-        // Immediately re-fetch from Google Sheets and re-render HUD without full page reload
-        await loadTeamsData();
-        showToast(`Franchise "${team.name}" was successfully deleted from Google Sheets!`, 'success');
+        // ==============================================================================
+        // SUCCESS: IMMEDIATELY UPDATE FRONTEND STATE & DOM (NO PAGE RELOAD)
+        // ==============================================================================
+
+        // 1. Register ID in the guard set so ongoing/in-flight 1s polling cannot revive it (Step 10)
+        pendingOrDeletedTeamIds.add(String(team.id).trim());
+        if (cleanTeamId) pendingOrDeletedTeamIds.add(cleanTeamId);
+
+        try {
+            const deletedSet = new Set(JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]'));
+            deletedSet.add(String(team.id).trim());
+            if (cleanTeamId) deletedSet.add(cleanTeamId);
+            localStorage.setItem('unibox_deleted_teams', JSON.stringify([...deletedSet]));
+        } catch (e) {}
+
+        // 2. Immediately remove from local state (Step 2 & 3)
+        allTeams = allTeams.filter(t => 
+            String(t.id).trim() !== String(team.id).trim() && 
+            String(t.id).trim() !== cleanTeamId
+        );
+
+        try {
+            localStorage.setItem('unibox_teams', JSON.stringify(allTeams));
+        } catch (e) {}
+
+        // 3. Immediately re-render franchise cards (0ms DOM update, Step 2 & 5)
+        lastTeamsSignature = computeTeamsSignature(allTeams);
+        renderTeamBalanceHUD();
+
+        // 4. Close squad modal only if open for this specific deleted team (Step 8)
+        if (activeSquadTeamId && (String(activeSquadTeamId).trim() === String(team.id).trim() || String(activeSquadTeamId).trim() === cleanTeamId)) {
+            closeTeamSquadModal();
+        }
+
+        // 5. Update count KPI immediately (Step 9)
+        if (statDepts) {
+            statDepts.textContent = allTeams.length;
+        }
+
+        showToast(`Franchise "${team.name}" deleted successfully`, 'success');
+
+        // 6. Background verification against Google Sheets (Step 3 & 6)
+        refreshTeamsInBackground();
+
     } catch (err) {
-        console.error('Delete team error:', err);
-        showToast(`Delete failed: ${err.message || 'Unknown error'}`, 'error');
-        alert(`Delete failed: ${err.message || 'Unknown error'}`);
+        console.error('Delete team failed:', err);
+        showToast(err.message || 'Unable to delete franchise', 'error');
+        alert(err.message || 'Unable to delete franchise');
+
+        // Restore button state on error
+        if (targetBtn) {
+            targetBtn.disabled = false;
+            targetBtn.style.pointerEvents = '';
+            targetBtn.innerHTML = originalBtnHtml;
+        }
+    } finally {
+        isDeletingTeam = false;
+    }
+}
+
+// Step 6: Background verification that reconciles with Google Sheets
+async function refreshTeamsInBackground() {
+    try {
+        let latestTeams = [];
+        if (window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
+            const latest = await window.GoogleTourneyApi.getTeams(allPlayers);
+            if (latest && latest.success !== false && Array.isArray(latest.data)) {
+                latestTeams = latest.data;
+            }
+        } else if (window.UniBoxDb) {
+            const { data } = await window.UniBoxDb.getAllTeams(allPlayers);
+            if (Array.isArray(data)) {
+                latestTeams = data;
+            }
+        }
+
+        if (latestTeams.length > 0) {
+            // Keep local UI: filter out any deleted teams
+            allTeams = latestTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
+            try {
+                localStorage.setItem('unibox_teams', JSON.stringify(allTeams));
+            } catch (e) {}
+            lastTeamsSignature = computeTeamsSignature(allTeams);
+            renderTeamBalanceHUD();
+            if (statDepts) statDepts.textContent = allTeams.length;
+        }
+    } catch (error) {
+        console.warn('Background team refresh failed:', error);
+        // Keep the already-updated UI. Do not restore the deleted team because of a temporary refresh failure.
     }
 }
 

@@ -496,6 +496,14 @@
                 }
             }
 
+            // Filter out any locally deleted teams to avoid resurrection
+            try {
+                const deletedIds = JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]').map(id => String(id).trim());
+                if (deletedIds.length > 0) {
+                    teams = teams.filter(t => !deletedIds.includes(String(t.id).trim()));
+                }
+            } catch (e) {}
+
             // Calculate spent & squad from players
             let players = providedPlayers;
             if (!players || !Array.isArray(players) || players.length === 0) {
@@ -540,8 +548,12 @@
 
             // Remove from local cache on confirmed Google Sheets deletion
             try {
+                const deletedSet = new Set(JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]'));
+                deletedSet.add(cleanId);
+                localStorage.setItem('unibox_deleted_teams', JSON.stringify([...deletedSet]));
+
                 let teams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
-                teams = teams.filter(t => t.id !== cleanId && t.team_name !== cleanId);
+                teams = teams.filter(t => String(t.id).trim() !== cleanId && String(t.team_name || t.name).trim() !== cleanId);
                 localStorage.setItem('unibox_teams', JSON.stringify(teams));
             } catch (e) {}
 
