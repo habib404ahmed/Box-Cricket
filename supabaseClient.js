@@ -1,5 +1,5 @@
 // ==============================================================================
-// UniBox League 2026 - Supabase Client Connector & Database Operations
+// Sunstone Premier League 2026 - Supabase Client Connector & Database Operations
 // ==============================================================================
 
 // 1. CONFIGURATION
@@ -43,13 +43,16 @@ const DEFAULT_ROLE_BASE_PRICES = {
     'Fielder': 5
 };
 
-// 4. DEFAULT TOURNAMENT TEAMS (Purse: 1000 Points each)
+// 4. DEFAULT TOURNAMENT TEAMS (Purse: 1000 Points each — Exactly 8 Tournament Franchises)
 const DEFAULT_TEAMS = [
-    { id: 'team-btech', name: 'B.Tech Titans', department: 'B.Tech', logo: '⚡', color: '#38bdf8', total_budget: 1000 },
-    { id: 'team-bca', name: 'BCA Blasters', department: 'BCA', logo: '🏏', color: '#a3e635', total_budget: 1000 },
-    { id: 'team-bba', name: 'BBA Bulls', department: 'BBA', logo: '🐂', color: '#fbbf24', total_budget: 1000 },
-    { id: 'team-mca', name: 'MCA Mavericks', department: 'MCA', logo: '🦅', color: '#34d399', total_budget: 1000 },
-    { id: 'team-mba', name: 'MBA Monarchs', department: 'MBA', logo: '👑', color: '#c084fc', total_budget: 1000 }
+    { id: 'team-titans', name: 'B.Tech Titans', team_name: 'B.Tech Titans', short_name: 'TITANS', department: 'B.Tech', logo: '⚡', color: '#38bdf8', total_budget: 1000, purse: 1000 },
+    { id: 'team-blasters', name: 'BCA Blasters', team_name: 'BCA Blasters', short_name: 'BLASTERS', department: 'BCA', logo: '🏏', color: '#a3e635', total_budget: 1000, purse: 1000 },
+    { id: 'team-bulls', name: 'BBA Bulls', team_name: 'BBA Bulls', short_name: 'BULLS', department: 'BBA', logo: '🐂', color: '#fbbf24', total_budget: 1000, purse: 1000 },
+    { id: 'team-strikers', name: 'Sunstone Strikers', team_name: 'Sunstone Strikers', short_name: 'STRIKERS', department: 'Campus', logo: '🔥', color: '#f97316', total_budget: 1000, purse: 1000 },
+    { id: 'team-warriors', name: 'Campus Warriors', team_name: 'Campus Warriors', short_name: 'WARRIORS', department: 'Campus', logo: '⚔️', color: '#ef4444', total_budget: 1000, purse: 1000 },
+    { id: 'team-knights', name: 'Royal Knights', team_name: 'Royal Knights', short_name: 'KNIGHTS', department: 'Campus', logo: '🛡️', color: '#8b5cf6', total_budget: 1000, purse: 1000 },
+    { id: 'team-kings', name: 'Super Kings', team_name: 'Super Kings', short_name: 'KINGS', department: 'Campus', logo: '👑', color: '#eab308', total_budget: 1000, purse: 1000 },
+    { id: 'team-challengers', name: 'Premier Challengers', team_name: 'Premier Challengers', short_name: 'CHALLENGERS', department: 'Campus', logo: '🏆', color: '#06b6d4', total_budget: 1000, purse: 1000 }
 ];
 
 // BroadcastChannel for instant multi-tab zero-latency realtime synchronization
@@ -59,7 +62,15 @@ const auctionChannel = (typeof window !== 'undefined' && typeof window.Broadcast
 
 // 5. DATABASE & AUCTION HELPER METHODS
 const UniBoxDb = {
-    isReady: () => isConfigured() && supabaseClient !== null,
+    isReady: () => {
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
+            return true;
+        }
+        return isConfigured() && supabaseClient !== null;
+    },
+    isGoogleBackend: () => {
+        return Boolean(typeof window !== 'undefined' && window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured());
+    },
     supabaseClient,
 
     // Cryptographic Password Hashing (Salted SHA-256 via native Web Crypto API)
@@ -158,6 +169,18 @@ const UniBoxDb = {
 
     // --- TEAMS & LIVE BUDGET PURSE MANAGEMENT ---
     getAllTeams: async (providedPlayers = null) => {
+        // Delegate to Google Sheets & Drive backend if available
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
+            try {
+                const googleTeamsRes = await window.GoogleTourneyApi.getTeams(providedPlayers);
+                if (googleTeamsRes && Array.isArray(googleTeamsRes.data) && googleTeamsRes.data.length > 0) {
+                    return { data: googleTeamsRes.data, error: null, source: googleTeamsRes.source || 'google_sheets' };
+                }
+            } catch (err) {
+                console.warn('[TEAMS] Google Tourney API getTeams error:', err);
+            }
+        }
+
         let teams = [];
         try {
             const storedTeams = localStorage.getItem('unibox_teams');
@@ -609,6 +632,20 @@ const UniBoxDb = {
             throw new Error(`Insufficient budget! ${targetTeam.name} has only ${targetTeam.leftover_balance} Points remaining, but purchase price is ${numPrice} Points.`);
         }
 
+        // Delegate to Google Sheets & Drive backend if configured
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
+            try {
+                await window.GoogleTourneyApi.purchasePlayer({
+                    playerId: playerIdOrEmail,
+                    teamId: targetTeam.id,
+                    soldPrice: numPrice
+                });
+            } catch (gErr) {
+                console.error('[AUCTION] Google Sheets purchase error:', gErr);
+                throw gErr;
+            }
+        }
+
         // Update local auction cache
         const auctionCache = JSON.parse(localStorage.getItem('unibox_auction_players_cache') || '{}');
         if (!auctionCache[playerIdOrEmail]) auctionCache[playerIdOrEmail] = {};
@@ -698,6 +735,15 @@ const UniBoxDb = {
             localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
         }
 
+        // Revoke in Google Sheets if configured
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
+            try {
+                await window.GoogleTourneyApi.revokePlayerPurchase(playerIdOrEmail);
+            } catch (gErr) {
+                console.warn('[AUCTION] Google backend revoke error:', gErr);
+            }
+        }
+
         // Supabase update
         if (UniBoxDb.isReady()) {
             try {
@@ -779,36 +825,13 @@ const UniBoxDb = {
         UniBoxDb._initAuctionListeners();
         UniBoxDb._auctionSubscribers.add(callback);
 
-        // Ensure single Supabase Realtime channel
-        if (UniBoxDb.isReady() && supabaseClient && !UniBoxDb._sbRealtimeChannel) {
-            try {
-                UniBoxDb._sbRealtimeChannel = supabaseClient
-                    .channel('public:players_realtime')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
-                        UniBoxDb._auctionSubscribers.forEach(cb => {
-                            try { cb({ type: 'SUPABASE_REALTIME', payload }); } catch (e) {}
-                        });
-                    })
-                    .subscribe();
-            } catch (err) {
-                console.warn('Failed to subscribe to Supabase Realtime channel:', err);
-            }
-        }
-
         return () => {
             UniBoxDb._auctionSubscribers.delete(callback);
-            if (UniBoxDb._auctionSubscribers.size === 0 && UniBoxDb._sbRealtimeChannel && supabaseClient) {
-                try {
-                    supabaseClient.removeChannel(UniBoxDb._sbRealtimeChannel);
-                } catch (e) {}
-                UniBoxDb._sbRealtimeChannel = null;
-            }
         };
     },
 
-
     // --- ATHLETE REGISTRATION & PROFILE METHODS ---
-    // Save new player registration record (Supabase is authoritative source of truth)
+    // Save new player registration record (Google Sheets & Google Drive is authoritative source of truth)
     savePlayer: async (playerData) => {
         // Strictly validate branch/department for new athlete registrations
         const VALID_BRANCHES = ['BCA', 'B.Tech', 'BBA'];
@@ -821,12 +844,47 @@ const UniBoxDb = {
             };
         }
 
+        // Validate 10-digit Indian mobile number
+        const cleanMobile = String(playerData.mobile_number || playerData.phone || '').replace(/\D/g, '');
+        if (!cleanMobile || cleanMobile.length !== 10) {
+            return {
+                data: null,
+                error: { message: 'A valid 10-digit mobile number is required.' },
+                source: 'validation'
+            };
+        }
+        playerData.mobile_number = cleanMobile;
+        playerData.phone = cleanMobile;
+
         const roleBasePrice = UniBoxDb.getDefaultBasePriceForRole(playerData.player_role);
         const resolvedBasePrice = playerData.base_price !== undefined ? Number(playerData.base_price) : roleBasePrice;
+        playerData.base_price = resolvedBasePrice;
 
-        // Offline / Unconfigured fallback only if Supabase is completely unavailable
+        // Primary: Google Sheets & Google Drive backend
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
+            console.log('[REGISTRATION] Submitting athlete to Google Sheets & Drive backend:', playerData.email);
+            const googleRes = await window.GoogleTourneyApi.registerPlayer(playerData);
+            if (!googleRes.success || !googleRes.data) {
+                console.error('[REGISTRATION] Google Sheets registration failed:', googleRes.error);
+                return {
+                    data: null,
+                    error: { message: googleRes.error || 'Failed to save athlete in Google Sheets.' },
+                    source: 'google_sheets'
+                };
+            }
+
+            const verifiedRecord = googleRes.data;
+            UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_REGISTERED', player: verifiedRecord });
+            return {
+                data: verifiedRecord,
+                error: null,
+                source: googleRes.source || 'google_sheets'
+            };
+        }
+
+        // Offline / Unconfigured fallback only if neither backend is configured
         if (!UniBoxDb.isReady()) {
-            console.warn('[REGISTRATION] Supabase not configured. Using local storage fallback.');
+            console.warn('[REGISTRATION] Backend not configured. Using local session fallback.');
             const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
             const record = {
                 ...playerData,
@@ -966,6 +1024,20 @@ const UniBoxDb = {
 
     // Fetch player profile by email
     getPlayerByEmail: async (email) => {
+        if (!email) return { data: null, error: 'Email is required.' };
+
+        // Delegate to Google Sheets & Drive backend if available
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
+            try {
+                const googlePlayerRes = await window.GoogleTourneyApi.getPlayer(email);
+                if (googlePlayerRes && googlePlayerRes.data) {
+                    return { data: googlePlayerRes.data, error: null, source: 'google_sheets' };
+                }
+            } catch (err) {
+                console.warn('[PLAYER] Google Tourney API getPlayer error:', err);
+            }
+        }
+
         let player = null;
         if (!UniBoxDb.isReady()) {
             const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
@@ -1023,8 +1095,20 @@ const UniBoxDb = {
         return { data: player, error: null };
     },
 
-    // Fetch total registered athletes count efficiently via HEAD request
+    // Fetch total registered athletes count efficiently via lightweight Google Sheets / HEAD request
     getAthletesCount: async (statusFilter = null) => {
+        // Delegate to Google Sheets backend via lightweight count action
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
+            try {
+                const countRes = await window.GoogleTourneyApi.getAthleteCount(statusFilter);
+                if (countRes && countRes.count !== null && countRes.count !== undefined) {
+                    return { count: countRes.count, error: null, source: countRes.source || 'google_sheets' };
+                }
+            } catch (err) {
+                console.warn('[ATHLETE COUNT] Google Tourney API count error:', err);
+            }
+        }
+
         if (!UniBoxDb.isReady()) {
             try {
                 let localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
@@ -1068,10 +1152,22 @@ const UniBoxDb = {
         }
     },
 
-    // Fetch all registered players (Supabase is authoritative)
+    // Fetch all registered players (Google Sheets is authoritative)
     getAllPlayers: async () => {
+        // Delegate to Google Sheets & Drive backend if available
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
+            try {
+                const googleRes = await window.GoogleTourneyApi.getPlayers();
+                if (googleRes && Array.isArray(googleRes.data)) {
+                    return { data: googleRes.data, error: null, source: googleRes.source || 'google_sheets' };
+                }
+            } catch (err) {
+                console.warn('[ROSTER] Google Tourney API getPlayers error:', err);
+            }
+        }
+
         if (!UniBoxDb.isReady()) {
-            console.warn('[ROSTER] Supabase not ready. Returning local players.');
+            console.warn('[ROSTER] Backend not ready. Returning local players.');
             const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
             return { data: localPlayers, error: null, source: 'localStorage' };
         }
@@ -1153,6 +1249,26 @@ const UniBoxDb = {
 
     // Update player clearance status
     updatePlayerStatus: async (playerIdOrEmail, newStatus) => {
+        // Delegate to Google Sheets if available
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
+            try {
+                let googleRes;
+                if (newStatus === 'Approved') {
+                    googleRes = await window.GoogleTourneyApi.approvePlayer(playerIdOrEmail);
+                } else if (newStatus === 'Rejected') {
+                    googleRes = await window.GoogleTourneyApi.rejectPlayer(playerIdOrEmail);
+                } else {
+                    googleRes = await window.GoogleTourneyApi.updatePlayer({ id: playerIdOrEmail, status: newStatus });
+                }
+                if (googleRes && googleRes.success) {
+                    UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_STATUS_UPDATED', id: playerIdOrEmail, status: newStatus });
+                    return { success: true, source: 'google_sheets' };
+                }
+            } catch (err) {
+                console.warn('[STATUS] Google Tourney API updatePlayerStatus error:', err);
+            }
+        }
+
         if (!UniBoxDb.isReady()) {
             const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
             const idx = localPlayers.findIndex(p => p.id === playerIdOrEmail || p.email === playerIdOrEmail);
@@ -1180,6 +1296,25 @@ const UniBoxDb = {
 
     // Update player photo
     updatePlayerPhoto: async (email, photoData) => {
+        // Delegate to Google Drive & Google Sheets if available
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
+            try {
+                const uploadRes = await window.GoogleTourneyApi.uploadPhoto(photoData, 'athlete_' + String(email).replace(/[^a-zA-Z0-9]/g, '_'));
+                if (uploadRes && uploadRes.success) {
+                    const updateRes = await window.GoogleTourneyApi.updatePlayer({
+                        email: email,
+                        photo_file_id: uploadRes.file_id,
+                        photo_file_url: uploadRes.file_url
+                    });
+                    if (updateRes && updateRes.success) {
+                        return { data: { photo_file_url: uploadRes.file_url }, error: null, source: 'google_drive' };
+                    }
+                }
+            } catch (err) {
+                console.warn('[PHOTO] Google Tourney API uploadPhoto error:', err);
+            }
+        }
+
         if (!UniBoxDb.isReady()) {
             const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
             const idx = localPlayers.find(p => p.email === email);
@@ -1212,6 +1347,19 @@ const UniBoxDb = {
         delete auctionCache[playerIdOrEmail];
         localStorage.setItem('unibox_auction_players_cache', JSON.stringify(auctionCache));
 
+        // Delegate to Google Sheets if available
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
+            try {
+                const googleRes = await window.GoogleTourneyApi.deletePlayer(playerIdOrEmail);
+                if (googleRes && googleRes.success) {
+                    UniBoxDb.broadcastAuctionEvent({ type: 'PLAYER_DELETED', id: playerIdOrEmail });
+                    return { success: true, error: null, source: 'google_sheets' };
+                }
+            } catch (err) {
+                console.warn('[DELETE] Google Tourney API deletePlayer error:', err);
+            }
+        }
+
         if (!UniBoxDb.isReady()) {
             let localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
             localPlayers = localPlayers.filter(p => p.id !== playerIdOrEmail && p.email !== playerIdOrEmail);
@@ -1238,6 +1386,20 @@ const UniBoxDb = {
     deleteAllPlayers: async () => {
         // Clear local auction cache
         localStorage.removeItem('unibox_auction_players_cache');
+
+        // Delegate to Google Sheets if available
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
+            try {
+                const googleRes = await window.GoogleTourneyApi.deleteAllPlayers('DELETE');
+                if (googleRes && googleRes.success) {
+                    localStorage.setItem('unibox_players', '[]');
+                    UniBoxDb.broadcastAuctionEvent({ type: 'ALL_PLAYERS_DELETED' });
+                    return { success: true, count: googleRes.count || 0, error: null, source: 'google_sheets' };
+                }
+            } catch (err) {
+                console.warn('[BULK DELETE] Google Tourney API deleteAllPlayers error:', err);
+            }
+        }
 
         if (!UniBoxDb.isReady()) {
             localStorage.setItem('unibox_players', '[]');

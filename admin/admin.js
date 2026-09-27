@@ -1,5 +1,5 @@
 // ==============================================================================
-// UniBox League 2026 - Tournament Admin Command Center Controller
+// Sunstone Premier League 2026 - Tournament Admin Command Center Controller
 // ==============================================================================
 
 let allPlayers = [];
@@ -202,11 +202,14 @@ function initDbStatus() {
     const dbStatusBadge = document.getElementById('db-status-badge');
     const dbStatusText = document.getElementById('db-status-text');
 
-    if (window.UniBoxDb && window.UniBoxDb.isReady()) {
-        dbStatusText.textContent = 'Supabase Live • 1s Auto-Refresh';
+    if (window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
+        dbStatusText.textContent = 'Google Sheets Live • 1s Auto-Refresh';
+        dbStatusBadge.classList.remove('hidden');
+    } else if (window.UniBoxDb && window.UniBoxDb.isReady()) {
+        dbStatusText.textContent = 'Backend Live • 1s Auto-Refresh';
         dbStatusBadge.classList.remove('hidden');
     } else {
-        dbStatusText.textContent = 'Local Mode • 1s Auto-Refresh';
+        dbStatusText.textContent = 'Google Sheets Ready • 1s Auto-Refresh';
         dbStatusBadge.classList.remove('hidden');
     }
 }
@@ -473,7 +476,7 @@ function renderRosterTable() {
         const enrollment = player.enrollment_no || '---';
         const department = player.department || '---';
         const role = player.player_role || 'All-Rounder';
-        const photo = player.photo_data || player.photo || '';
+        const photo = player.photo_file_url || player.photo_data || player.photo || '';
         const status = player.status || 'Registered';
         const defaultRolePrice = window.UniBoxDb ? window.UniBoxDb.getDefaultBasePriceForRole(role) : 15;
         const basePrice = (player.base_price !== undefined && player.base_price !== null) ? Number(player.base_price) : defaultRolePrice;
@@ -749,7 +752,7 @@ function openAthleteModal(playerId) {
     modalName.textContent = player.full_name || player.name || '---';
     modalEmail.textContent = player.email || '---';
     modalEnrollment.textContent = player.enrollment_no || '---';
-    if (modalPhone) modalPhone.textContent = player.phone || '---';
+    if (modalPhone) modalPhone.textContent = player.mobile_number || player.phone || '---';
     modalDept.textContent = player.department || '---';
     modalGender.textContent = player.gender || '---';
     modalRole.textContent = player.player_role || '---';
@@ -785,9 +788,10 @@ function openAthleteModal(playerId) {
     if (modalViewCertBtn) {
         const certName = player.certificate_name || player.certificate || '';
         const hasCertDoc = certName && certName !== 'None' && certName !== 'None attached';
-        if (player.certificate_data || hasCertDoc) {
+        const certData = player.certificate_file_url || player.certificate_data;
+        if (certData || hasCertDoc) {
             modalViewCertBtn.classList.remove('hidden');
-            modalViewCertBtn.onclick = () => openCertViewerModal(certName, player.certificate_data);
+            modalViewCertBtn.onclick = () => openCertViewerModal(certName, certData);
         } else {
             modalViewCertBtn.classList.add('hidden');
         }
@@ -803,8 +807,9 @@ function openAthleteModal(playerId) {
         modalCreated.textContent = 'Session Record';
     }
 
-    if (player.photo_data) {
-        modalPhoto.src = player.photo_data;
+    const modalPhotoSrc = player.photo_file_url || player.photo_data || player.photo;
+    if (modalPhotoSrc) {
+        modalPhoto.src = modalPhotoSrc;
         modalPhoto.classList.remove('hidden');
         modalPhotoPlaceholder.classList.add('hidden');
     } else {
@@ -1012,8 +1017,9 @@ function openPurchaseModal(playerId) {
 
     const photoImg = document.getElementById('purchase-player-photo');
     const avatarIcon = document.getElementById('purchase-player-avatar');
-    if (player.photo_data) {
-        photoImg.src = player.photo_data;
+    const purchasePhotoSrc = player.photo_file_url || player.photo_data || player.photo;
+    if (purchasePhotoSrc) {
+        photoImg.src = purchasePhotoSrc;
         photoImg.classList.remove('hidden');
         avatarIcon.classList.add('hidden');
     } else {
@@ -1471,8 +1477,9 @@ function closeBulkDeleteModal() {
 
 async function handleExecuteBulkDelete() {
     const inputEl = document.getElementById('bulk-delete-confirmation-input');
-    if (!inputEl || inputEl.value.trim().toUpperCase() !== 'DELETE ALL') {
-        showToast('Please type DELETE ALL to confirm', 'error');
+    const confVal = inputEl ? inputEl.value.trim().toUpperCase() : '';
+    if (confVal !== 'DELETE' && confVal !== 'DELETE ALL') {
+        showToast('Please type DELETE to confirm', 'error');
         return;
     }
 
@@ -1505,7 +1512,7 @@ async function handleExecuteBulkDelete() {
         await loadTeamsData();
 
         closeBulkDeleteModal();
-        showToast(`Successfully deleted all ${totalToDelete} athlete records from Supabase!`, 'success');
+        showToast(`Successfully deleted all ${totalToDelete} athlete records!`, 'success');
     } catch (err) {
         console.error('Bulk delete error:', err);
         showToast(`Bulk delete failed: ${err.message || 'Database error'}`, 'error');
@@ -1593,7 +1600,7 @@ function closeCertViewerModal() {
 function openCertViewerFromRow(playerId) {
     const player = allPlayers.find(p => (p.id === playerId || p.email === playerId));
     if (player) {
-        openCertViewerModal(player.certificate_name || player.certificate || 'Sports Certificate', player.certificate_data);
+        openCertViewerModal(player.certificate_name || player.certificate || 'Sports Certificate', player.certificate_file_url || player.certificate_data);
     }
 }
 

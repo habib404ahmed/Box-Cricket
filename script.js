@@ -862,6 +862,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 full_name: trimmedName,
                 enrollment_no: cleanEnrollment,
                 phone: cleanPhone,
+                mobile_number: cleanPhone,
                 department: deptText,
                 email: cleanEmail,
                 gender: genderVal,
@@ -876,7 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 status: 'Registered'
             };
 
-            // 10. Persist to Database (Supabase / local fallback)
+            // 10. Persist to Database (Google Sheets / local fallback)
             let finalProfile = playerData;
             if (window.UniBoxDb) {
                 const dbResult = await window.UniBoxDb.savePlayer(playerData);
@@ -895,7 +896,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 finalProfile = { ...playerData, ...dbResult.data };
                 finalProfile.name = finalProfile.name || finalProfile.full_name || trimmedName;
                 finalProfile.full_name = finalProfile.full_name || finalProfile.name || trimmedName;
-                finalProfile.phone = finalProfile.phone || cleanPhone;
+                finalProfile.phone = finalProfile.mobile_number || finalProfile.phone || cleanPhone;
+                finalProfile.mobile_number = finalProfile.phone;
             }
 
             // Immediately trigger hero athlete count synchronization
@@ -1051,7 +1053,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const resolvedName = formatVal(profile.name || profile.full_name);
         const resolvedEmail = formatVal(profile.email);
         const userEmailKey = (profile.email || sessionStorage.getItem('unibox_active_email') || '').toLowerCase();
-        const resolvedPhone = formatVal(profile.phone || (userEmailKey ? localStorage.getItem('unibox_phone_' + userEmailKey) : null));
+        const resolvedPhone = formatVal(profile.mobile_number || profile.phone || (userEmailKey ? localStorage.getItem('unibox_phone_' + userEmailKey) : null));
         const resolvedRoll = formatVal(profile.enrollment_no);
         const resolvedDept = formatVal(profile.department);
         const resolvedGender = formatVal(profile.gender);
@@ -1072,7 +1074,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setInnerText('dash-player-role-detail', resolvedRole);
         setInnerText('dash-player-cert', resolvedCert);
 
-        updateCertViewerButton(profile.certificate || profile.certificate_name, profile.certificate_data);
+        updateCertViewerButton(profile.certificate || profile.certificate_name, profile.certificate_file_url || profile.certificate_data);
 
         // Render Auction Base Price and Sold Status
         const role = profile.player_role || 'All-Rounder';
@@ -1101,13 +1103,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (profile.photo_data) {
+        const resolvedPhoto = profile.photo_file_url || profile.photo_data || profile.photo;
+        if (resolvedPhoto) {
             const playerPhoto = document.getElementById('dash-player-photo');
             const photoPlaceholder = document.getElementById('dash-photo-placeholder');
             const photoStatusBadge = document.getElementById('photo-status-badge');
             const photoBtnText = document.getElementById('photo-btn-text');
             if (playerPhoto) {
-                playerPhoto.src = profile.photo_data;
+                playerPhoto.src = resolvedPhoto;
                 playerPhoto.classList.remove('hidden');
             }
             if (photoPlaceholder) photoPlaceholder.classList.add('hidden');

@@ -363,7 +363,7 @@
             <!-- Table Footer -->
             <div class="p-4 sm:px-6 border-t border-sky-950/70 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400 bg-[#08111F]/30">
                 <p id="table-summary-count">Showing 0 athletes</p>
-                <p class="text-[11px] font-mono text-slate-500">UniBox League 2026 · Official Admin Ledger</p>
+                <p class="text-[11px] font-mono text-slate-500">Sunstone Premier League 2026 · Official Admin Ledger</p>
             </div>
         </section>
     </main>
@@ -823,9 +823,9 @@
 
                     <div class="space-y-2">
                         <label class="block text-xs font-bold text-slate-300">
-                            Type <span class="font-mono text-rose-400 font-black">DELETE ALL</span> to confirm:
+                            Type <span class="font-mono text-rose-400 font-black">DELETE</span> to confirm:
                         </label>
-                        <input id="bulk-delete-confirmation-input" type="text" placeholder="DELETE ALL" autocomplete="off"
+                        <input id="bulk-delete-confirmation-input" type="text" placeholder="DELETE" autocomplete="off"
                             class="w-full bg-[#050816] border border-slate-700 text-white font-mono font-bold rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none uppercase tracking-wider">
                     </div>
 
@@ -848,6 +848,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="/googleApiClient.js" onerror="this.onerror=null; this.src='../googleApiClient.js';"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="/supabaseClient.js" onerror="this.onerror=null; this.src='../supabaseClient.js';"></script>
     <script src="/admin/admin.js" onerror="this.onerror=null; this.src='admin.js';"></script>

@@ -1,5 +1,5 @@
 // ==============================================================================
-// UniBox League 2026 - Franchise Owner Dashboard Controller
+// Sunstone Premier League 2026 - Franchise Owner Dashboard Controller
 // ==============================================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -285,9 +285,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const dept = player.department || '---';
             const role = player.player_role || 'All-Rounder';
             const price = Number(player.sold_price) || 0;
-            const photo = player.photo_data || null;
+            const photo = player.photo_file_url || player.photo_data || player.photo || null;
             const certName = player.certificate_name || player.certificate || '';
-            const certData = player.certificate_data || null;
+            const certData = player.certificate_file_url || player.certificate_data || null;
             const hasCert = Boolean(certData || (certName && certName !== 'None' && certName !== 'None attached'));
 
             // Role badge styling
