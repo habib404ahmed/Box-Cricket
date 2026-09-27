@@ -1248,24 +1248,73 @@ function apiUpdateTeam(payload) {
 }
 
 function apiDeleteTeam(payload) {
-  var teamId = payload.id || payload.team_id || '';
+  var teamId = String(payload.teamId || payload.team_id || payload.id || '').trim();
   if (!teamId) return { success: false, error: 'Team ID is required.' };
 
-  var sheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
-  var lastRow = sheet.getLastRow();
+  var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
+  var playersSheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
+  var lastRow = teamsSheet.getLastRow();
   if (lastRow <= 1) return { success: false, error: 'Team not found.' };
 
-  var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.TEAMS.length).getValues();
+  var values = teamsSheet.getRange(2, 1, lastRow - 1, HEADERS.TEAMS.length).getValues();
   var idIdx = HEADERS.TEAMS.indexOf('id');
+  var nameIdx = HEADERS.TEAMS.indexOf('team_name');
+  var pCountIdx = HEADERS.TEAMS.indexOf('player_count');
+
+  var targetRow = -1;
+  var targetTeamName = '';
+  var targetPlayerCount = 0;
 
   for (var i = 0; i < values.length; i++) {
-    if (String(values[i][idIdx]).trim() === teamId) {
-      sheet.deleteRow(i + 2);
-      return { success: true, message: 'Team franchise deleted.' };
+    var rowId = String(values[i][idIdx]).trim();
+    if (rowId === teamId || rowId.toLowerCase() === teamId.toLowerCase()) {
+      targetRow = i + 2;
+      targetTeamName = String(values[i][nameIdx]).trim();
+      targetPlayerCount = Number(values[i][pCountIdx]) || 0;
+      break;
     }
   }
 
-  return { success: false, error: 'Team not found.' };
+  if (targetRow === -1) {
+    return { success: false, error: 'Team not found.' };
+  }
+
+  // STEP 4 — SAFETY CHECK: Check whether team currently has players
+  if (targetPlayerCount > 0) {
+    return {
+      success: false,
+      error: 'Cannot delete a team that has players assigned to it.'
+    };
+  }
+
+  // Verify in Players sheet if any player is sold to this team
+  var pLastRow = playersSheet.getLastRow();
+  if (pLastRow > 1) {
+    var pValues = playersSheet.getRange(2, 1, pLastRow - 1, HEADERS.PLAYERS.length).getValues();
+    var soldTeamIdx = HEADERS.PLAYERS.indexOf('sold_to_team');
+    for (var p = 0; p < pValues.length; p++) {
+      var soldTeam = String(pValues[p][soldTeamIdx] || '').trim().toLowerCase();
+      if (soldTeam && (soldTeam === teamId.toLowerCase() || (targetTeamName && soldTeam === targetTeamName.toLowerCase()))) {
+        return {
+          success: false,
+          error: 'Cannot delete a team that has players assigned to it.'
+        };
+      }
+    }
+  }
+
+  // Delete ONLY that specific team row
+  teamsSheet.deleteRow(targetRow);
+  Logger.log('[DELETE TEAM] Team ' + teamId + ' deleted from Google Sheet row ' + targetRow);
+
+  return {
+    success: true,
+    data: {
+      deleted: true,
+      teamId: teamId
+    },
+    message: 'Team successfully deleted from Google Sheets.'
+  };
 }
 
 /**

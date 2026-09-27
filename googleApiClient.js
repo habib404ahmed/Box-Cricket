@@ -92,6 +92,56 @@
     }
 
     /**
+     * Normalizes a franchise team record so numeric purse/spent fields,
+     * squads, logo, and department/short_name are safe without ever rendering undefined/NaN.
+     */
+    function normalizeTeam(t, allPlayers = []) {
+        if (!t || typeof t !== 'object') return null;
+
+        const resolvedId = String(t.id || '').trim();
+        const resolvedName = String(t.team_name || t.name || '').trim();
+        const resolvedShort = String(t.short_name || t.shortName || '').trim();
+        const resolvedLogo = t.logo_file_url || t.logo || '🏏';
+        const purse = Number(t.purse ?? t.total_budget ?? 1000);
+
+        // Find squad from players list if not provided
+        const tNameLower = resolvedName.toLowerCase();
+        const tIdLower = resolvedId.toLowerCase();
+        const squad = Array.isArray(t.squad) ? t.squad : (allPlayers || []).filter(p => {
+            const soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
+            return soldTeam && (soldTeam === tNameLower || soldTeam === tIdLower);
+        });
+
+        const spent = Number(t.spent ?? t.total_spent ?? (squad.reduce((sum, p) => sum + (Number(p.sold_price) || 0), 0)));
+        const remaining = Math.max(0, purse - spent);
+        const count = Number(t.player_count ?? squad.length);
+
+        return {
+            id: resolvedId,
+            team_name: resolvedName,
+            name: resolvedName,
+            short_name: resolvedShort || resolvedName.substring(0, 4).toUpperCase(),
+            department: t.department || resolvedShort || 'SPL',
+            logo_file_id: t.logo_file_id || '',
+            logo_file_url: t.logo_file_url || '',
+            logo: resolvedLogo,
+            purse: purse,
+            total_budget: purse,
+            total_spent: spent,
+            spent: spent,
+            spent_points: spent,
+            remaining_purse: remaining,
+            leftover_balance: remaining,
+            player_count: count,
+            squad_count: count,
+            squad: squad,
+            owner_name: t.owner_name || '',
+            status: t.status || 'Active',
+            created_at: t.created_at || new Date().toISOString()
+        };
+    }
+
+    /**
      * Executes GET request to Google Apps Script Web App
      */
     async function getApi(action, queryParams = {}) {
@@ -424,32 +474,26 @@
         // --- TEAMS (READ & WRITE) ---
         getTeams: async (providedPlayers = null) => {
             let teams = [];
+            let source = 'cache';
+
             if (isConfigured()) {
                 const res = await getApi('getTeams');
-                if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+                if (res.success && Array.isArray(res.data)) {
+                    // Respect the authoritative Google Sheet team roster directly (do NOT force 8 teams)
                     teams = res.data;
+                    source = 'google_sheets';
                 }
             }
 
-            if (!teams.length) {
-                // Ensure the 8 official tournament teams exist
+            if (!teams.length && !isConfigured()) {
                 try {
                     const stored = localStorage.getItem('unibox_teams');
                     if (stored) teams = JSON.parse(stored);
                 } catch (e) {}
-            }
 
-            if (!teams || teams.length === 0) {
-                teams = DEFAULT_8_TEAMS.map(t => ({ ...t }));
-            }
-
-            // Guarantee exactly 8 teams if defaults needed
-            if (teams.length < 8) {
-                DEFAULT_8_TEAMS.forEach(dt => {
-                    if (!teams.some(t => t.id === dt.id || t.name === dt.name)) {
-                        teams.push({ ...dt });
-                    }
-                });
+                if (!teams || teams.length === 0) {
+                    teams = DEFAULT_8_TEAMS.map(t => ({ ...t }));
+                }
             }
 
             // Calculate spent & squad from players
@@ -459,40 +503,52 @@
                 players = data;
             }
 
-            const enriched = teams.map(team => {
-                const tName = (team.team_name || team.name || '').trim().toLowerCase();
-                const tId = (team.id || '').trim().toLowerCase();
-
-                const squad = (players || []).filter(p => {
-                    const soldTeam = (p.sold_to_team || '').trim().toLowerCase();
-                    return soldTeam && (soldTeam === tName || soldTeam === tId);
-                });
-
-                const spent = squad.reduce((sum, p) => sum + (Number(p.sold_price) || 0), 0);
-                const purse = Number(team.purse || team.total_budget || 1000);
-                const remaining = Math.max(0, purse - spent);
-
-                return {
-                    ...team,
-                    name: team.team_name || team.name,
-                    team_name: team.team_name || team.name,
-                    purse: purse,
-                    total_budget: purse,
-                    spent: spent,
-                    spent_points: spent,
-                    remaining_purse: remaining,
-                    leftover_balance: remaining,
-                    squad: squad,
-                    squad_count: squad.length,
-                    player_count: squad.length
-                };
-            });
+            const enriched = teams.map(t => normalizeTeam(t, players)).filter(Boolean);
 
             try {
                 localStorage.setItem('unibox_teams', JSON.stringify(enriched));
             } catch (e) {}
 
-            return { data: enriched, error: null, source: isConfigured() ? 'google_sheets' : 'cache' };
+            return { data: enriched, error: null, source: source };
+        },
+
+        // --- FRANCHISE TEAM DELETION (POST) ---
+        deleteTeam: async (teamId) => {
+            if (!teamId) {
+                return { success: false, error: 'Missing team ID' };
+            }
+
+            const cleanId = String(teamId).trim();
+
+            if (!isConfigured()) {
+                return { success: false, error: 'Google backend is not configured yet.' };
+            }
+
+            const res = await postApi('deleteTeam', {
+                action: 'deleteTeam',
+                teamId: cleanId,
+                team_id: cleanId,
+                id: cleanId
+            });
+
+            if (!res.success) {
+                return {
+                    success: false,
+                    error: res.error || 'Failed to delete franchise team from Google Sheets.'
+                };
+            }
+
+            // Remove from local cache on confirmed Google Sheets deletion
+            try {
+                let teams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
+                teams = teams.filter(t => t.id !== cleanId && t.team_name !== cleanId);
+                localStorage.setItem('unibox_teams', JSON.stringify(teams));
+            } catch (e) {}
+
+            return {
+                success: true,
+                data: res.data || { deleted: true, teamId: cleanId }
+            };
         },
 
         // --- AUCTION PURCHASE & REVOCATION ---

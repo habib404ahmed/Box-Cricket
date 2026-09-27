@@ -173,7 +173,7 @@ const UniBoxDb = {
         if (typeof window !== 'undefined' && window.GoogleTourneyApi) {
             try {
                 const googleTeamsRes = await window.GoogleTourneyApi.getTeams(providedPlayers);
-                if (googleTeamsRes && Array.isArray(googleTeamsRes.data) && googleTeamsRes.data.length > 0) {
+                if (googleTeamsRes && Array.isArray(googleTeamsRes.data)) {
                     return { data: googleTeamsRes.data, error: null, source: googleTeamsRes.source || 'google_sheets' };
                 }
             } catch (err) {
@@ -329,7 +329,15 @@ const UniBoxDb = {
     deleteTeam: async (teamId) => {
         if (!teamId) return { success: false, error: 'Team ID is required.' };
 
-        // 1. Remove from local unibox_teams
+        // 1. Authoritative: Google Sheets backend
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
+            const googleRes = await window.GoogleTourneyApi.deleteTeam(teamId);
+            if (!googleRes.success) {
+                return { success: false, error: googleRes.error || 'Failed to delete team in Google Sheets.' };
+            }
+        }
+
+        // 2. Remove from local unibox_teams
         let teams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
         const targetTeam = teams.find(t => t.id === teamId);
         const teamName = targetTeam ? targetTeam.name : null;

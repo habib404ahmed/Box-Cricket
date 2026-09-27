@@ -272,9 +272,9 @@ function renderTeamBalanceHUD() {
                         <span class="text-xl p-1.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0 group-hover:scale-110 transition-transform">${team.logo || '🏏'}</span>
                         <div class="flex items-center gap-1.5">
                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-900 text-slate-400 border border-slate-800">
-                                ${team.department}
+                                ${team.short_name || team.department || 'SPL'}
                             </span>
-                            <button type="button" onclick="event.stopPropagation(); handleDeleteTeam('${team.id}')"
+                            <button type="button" data-team-id="${team.id}" onclick="event.stopPropagation(); handleDeleteTeam('${team.id}', this)"
                                 class="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/15 transition-all cursor-pointer opacity-70 group-hover:opacity-100"
                                 title="Delete ${team.name}">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -1256,33 +1256,52 @@ function handleDeleteTeamFromModal() {
     }
 }
 
-async function handleDeleteTeam(teamId) {
-    const team = allTeams.find(t => t.id === teamId);
-    if (!team) return;
+async function handleDeleteTeam(rawTeamId, btnElement = null) {
+    const teamId = (btnElement && btnElement.dataset && btnElement.dataset.teamId) || rawTeamId;
+    if (!teamId) {
+        showToast('Missing team ID for deletion.', 'error');
+        return;
+    }
 
-    const squadCount = team.squad_count || (team.squad ? team.squad.length : 0);
-    const squadWarning = squadCount > 0 
-        ? `\n\n⚠️ NOTE: This team currently has ${squadCount} athlete(s) in its squad. Deleting this franchise will automatically release all squad members back to the "Upcoming" auction pool.` 
-        : '';
+    const team = allTeams.find(t => t.id === teamId || t.name === teamId);
+    if (!team) {
+        showToast(`Team not found with ID: ${teamId}`, 'error');
+        return;
+    }
 
-    if (!confirm(`Are you sure you want to permanently delete the franchise "${team.name}" (${team.department})?${squadWarning}\n\nThis action cannot be undone.`)) {
+    const squadCount = Number(team.squad_count || (team.squad ? team.squad.length : 0));
+    // STEP 4 SAFETY CHECK: Block deletion if team has players
+    if (squadCount > 0) {
+        const errMsg = 'Cannot delete a team that has players assigned to it.';
+        showToast(errMsg, 'error');
+        alert(`Cannot delete franchise "${team.name}" because it currently has ${squadCount} athlete(s) assigned to it.\n\nPlease release all squad members back to the auction pool before deleting the franchise.`);
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to permanently delete the franchise "${team.name}"?\n\nThis will remove the team from the Google Sheets database.`)) {
         return;
     }
 
     try {
-        if (window.UniBoxDb && window.UniBoxDb.deleteTeam) {
-            const res = await window.UniBoxDb.deleteTeam(teamId);
-            if (!res.success) {
-                throw new Error(res.error || 'Failed to delete team');
-            }
+        let res;
+        if (window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
+            res = await window.GoogleTourneyApi.deleteTeam(teamId);
+        } else if (window.UniBoxDb && window.UniBoxDb.deleteTeam) {
+            res = await window.UniBoxDb.deleteTeam(teamId);
+        }
+
+        if (res && res.success === false) {
+            throw new Error(res.error || 'Team deletion failed.');
         }
 
         closeTeamSquadModal();
-        await Promise.all([loadTeamsData(), loadRosterData()]);
-        showToast(`Franchise "${team.name}" was successfully deleted!`, 'success');
+        // Immediately re-fetch from Google Sheets and re-render HUD without full page reload
+        await loadTeamsData();
+        showToast(`Franchise "${team.name}" was successfully deleted from Google Sheets!`, 'success');
     } catch (err) {
         console.error('Delete team error:', err);
-        showToast(`Failed to delete team: ${err.message || 'Unknown error'}`, 'error');
+        showToast(`Delete failed: ${err.message || 'Unknown error'}`, 'error');
+        alert(`Delete failed: ${err.message || 'Unknown error'}`);
     }
 }
 
