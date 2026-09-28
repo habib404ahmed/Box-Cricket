@@ -150,8 +150,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // 4. LOAD FRANCHISE DATA & SQUAD
-    async function loadFranchiseData() {
+    let lastOwnerDataSig = '';
+
+    // 4. LOAD FRANCHISE DATA & SQUAD (Requirement 18: Real-Time Auto Sync)
+    async function loadFranchiseData(force = false) {
         if (!window.UniBoxDb && !window.GoogleTourneyApi) return;
 
         try {
@@ -177,7 +179,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             if (!team) {
-                console.warn('Franchise not found for owner session:', session);
                 return;
             }
 
@@ -190,12 +191,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                 : await window.UniBoxDb.getAllPlayers();
             allTournamentPlayers = (playersRes && playersRes.data) || [];
 
-            // Render components
-            renderHeader();
-            renderHUD();
-            renderSquadGrid();
-            if (activeTab === 'auction') {
-                renderAuctionWatcherView();
+            const currentSig = JSON.stringify({
+                id: team.id,
+                name: team.team_name || team.name,
+                purse: team.purse,
+                spent: team.total_spent,
+                leftover: team.remaining_purse,
+                squad: (team.squad || []).map(p => ({ id: p.id, sold_price: p.sold_price })),
+                poolCount: allTournamentPlayers.length
+            });
+
+            if (force || currentSig !== lastOwnerDataSig) {
+                lastOwnerDataSig = currentSig;
+                renderHeader();
+                renderHUD();
+                renderSquadGrid();
+                if (activeTab === 'auction') {
+                    renderAuctionWatcherView();
+                }
             }
         } catch (err) {
             console.error('Failed to load franchise data:', err);
@@ -538,5 +551,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Initial load
-    await loadFranchiseData();
+    await loadFranchiseData(true);
+
+    // Requirement 18: Real-Time 1-Second Auto-Refresh for Franchise Owner
+    setInterval(async () => {
+        try {
+            await loadFranchiseData(false);
+        } catch (e) {}
+    }, 1000);
 });

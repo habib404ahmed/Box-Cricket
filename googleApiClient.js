@@ -211,7 +211,15 @@
             };
         }
 
-        const requestBody = JSON.stringify({ action, ...payload });
+        // Determine caller role based on session and page context (Requirements 14 & 15)
+        let callerRole = payload.role;
+        if (!callerRole && typeof window !== 'undefined') {
+            const hasAdminSession = Boolean(sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session'));
+            const isAdminPath = (window.location.pathname || '').includes('/admin');
+            callerRole = (hasAdminSession || isAdminPath) ? 'ADMIN' : 'FRANCHISE_OWNER';
+        }
+
+        const requestBody = JSON.stringify({ action, role: callerRole, ...payload });
 
         try {
             const response = await fetch(GOOGLE_SCRIPT_WEB_APP_URL, {

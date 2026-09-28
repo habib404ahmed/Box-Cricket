@@ -340,10 +340,26 @@ function renderTeamBalanceHUD() {
     // Keep count badge and KPI metric updated in real-time
     const countBadge = document.getElementById('franchise-count-badge');
     if (countBadge) {
-        countBadge.textContent = `${allTeams.length} Active`;
+        countBadge.textContent = `${allTeams.length} / 8 Active`;
     }
     if (statDepts) {
         statDepts.textContent = allTeams.length;
+    }
+
+    // Exactly 8 Franchises limit (Requirement 3)
+    const createBtn = document.getElementById('btn-create-franchise');
+    if (createBtn) {
+        if (allTeams.length >= 8) {
+            createBtn.disabled = true;
+            createBtn.innerHTML = `<span>🔒 8 / 8 FRANCHISES</span>`;
+            createBtn.title = 'Maximum of 8 franchises reached';
+            createBtn.className = 'text-xs font-black text-slate-400 bg-slate-800/80 border border-slate-700 px-4 py-2.5 rounded-xl cursor-not-allowed opacity-60 uppercase tracking-wider flex items-center gap-2 shadow-none';
+        } else {
+            createBtn.disabled = false;
+            createBtn.innerHTML = `<span>➕ Create Franchise (${allTeams.length}/8)</span>`;
+            createBtn.title = 'Create a new franchise';
+            createBtn.className = 'text-xs font-black text-slate-950 bg-gradient-to-r from-lime-400 to-emerald-400 hover:from-lime-300 hover:to-emerald-300 px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm uppercase tracking-wider';
+        }
     }
 
     if (!teamsHudContainer) return;
@@ -1974,6 +1990,11 @@ async function handleCreateFranchiseSubmit(event) {
         return;
     }
 
+    if (allTeams.length >= 8) {
+        showAlert('Maximum of 8 franchises allowed.');
+        return;
+    }
+
     if (spinner) spinner.classList.remove('hidden');
     if (submitBtn) submitBtn.disabled = true;
     if (alertBox) alertBox.classList.add('hidden');
@@ -1994,7 +2015,8 @@ async function handleCreateFranchiseSubmit(event) {
             email: ownerEmail,
             password: password,
             logo: logo,
-            purse: purse
+            purse: purse,
+            role: 'ADMIN'
         };
 
         const res = await window.GoogleTourneyApi.createTeam(payload);

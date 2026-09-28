@@ -505,6 +505,21 @@ function doPost(e) {
     }
     Logger.log('[POST] Action: ' + action + ' | Payload: ' + JSON.stringify(logPayload));
 
+    // Requirements 13, 14, 15: Role-based Authorization for Privileged Admin Actions
+    var PRIVILEGED_ACTIONS = [
+      'createTeam', 'createFranchise', 'registerFranchise', 'updateTeam', 'deleteTeam',
+      'deleteAllPlayers', 'deletePlayer', 'deletePlayers', 'approvePlayer', 'rejectPlayer',
+      'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse', 'updateAuction',
+      'purchasePlayer', 'revokePlayerPurchase'
+    ];
+
+    if (PRIVILEGED_ACTIONS.indexOf(action) !== -1) {
+      if (payload.role === 'FRANCHISE_OWNER') {
+        Logger.log('[AUTH] Blocked unauthorized privileged action: ' + action + ' by FRANCHISE_OWNER');
+        return createJsonResponse({ success: false, error: 'Unauthorized' });
+      }
+    }
+
     var result;
     switch (action) {
       case 'registerPlayer':
@@ -1622,6 +1637,11 @@ function apiRegisterFranchise(payload) {
     }
   }
 
+  // Requirement 3: Maximum of 8 franchises allowed in the tournament
+  if (existingTeamIds.length >= 8) {
+    return { success: false, error: 'Maximum of 8 franchises allowed.' };
+  }
+
   // 2. Check for duplicate email in Franchise_Auth
   var lastRowAuth = authSheet.getLastRow();
   var lastColAuth = authSheet.getLastColumn();
@@ -2051,10 +2071,10 @@ function apiPurchasePlayer(payload) {
     return { success: false, error: 'Athlete record not found in database.' };
   }
 
-  // Update Players sheet: status = Approved, auction_status = Sold, sold_to_team = team_name, sold_price = soldPrice
+  // Update Players sheet: status = Approved, auction_status = Sold, sold_to_team = team ID (Requirement 10)
   playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('status') + 1).setValue('Approved');
   playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('auction_status') + 1).setValue('Sold');
-  playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_to_team') + 1).setValue(targetTeam.team_name);
+  playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_to_team') + 1).setValue(targetTeam.id);
   playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_price') + 1).setValue(soldPrice);
 
   // Update Teams sheet: total_spent, remaining_purse, player_count
@@ -2073,18 +2093,18 @@ function apiPurchasePlayer(payload) {
     playerName,
     '',
     soldPrice,
-    targetTeam.team_name,
+    targetTeam.id,
     'Sold',
     soldPrice,
     targetTeam.team_name,
     new Date().toISOString()
   ]);
 
-  Logger.log('[AUCTION] Athlete ' + playerId + ' sold to ' + targetTeam.team_name + ' for ' + soldPrice);
+  Logger.log('[AUCTION] Athlete ' + playerId + ' sold to ' + targetTeam.team_name + ' (' + targetTeam.id + ') for ' + soldPrice);
 
   return {
     success: true,
-    player: { id: playerId, sold_to_team: targetTeam.team_name, sold_price: soldPrice, auction_status: 'Sold' },
+    player: { id: playerId, sold_to_team: targetTeam.id, sold_price: soldPrice, auction_status: 'Sold' },
     team: { id: targetTeam.id, team_name: targetTeam.team_name, spent: newSpent, leftover_balance: newRemaining, player_count: newCount },
     message: 'Player successfully purchased by ' + targetTeam.team_name + ' for ' + soldPrice + ' Points.'
   };
@@ -2130,9 +2150,11 @@ function apiRevokePlayerPurchase(payload) {
     var teamValues = teamsSheet.getRange(2, 1, Math.max(1, teamsSheet.getLastRow() - 1), HEADERS.TEAMS.length).getValues();
     for (var t = 0; t < teamValues.length; t++) {
       var tRow = teamValues[t];
+      var tId = String(tRow[HEADERS.TEAMS.indexOf('id')]).trim().toLowerCase();
       var tName = String(tRow[HEADERS.TEAMS.indexOf('team_name')]).trim().toLowerCase();
+      var q = soldTeamName.toLowerCase();
 
-      if (tName === soldTeamName.toLowerCase()) {
+      if (tId === q || tName === q) {
         var teamRowIdx = t + 2;
         var currentSpent = Number(tRow[HEADERS.TEAMS.indexOf('total_spent')]) || 0;
         var purse = Number(tRow[HEADERS.TEAMS.indexOf('purse')]) || 1000;
