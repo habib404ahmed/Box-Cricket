@@ -96,6 +96,18 @@ let lastDeleteAllTimestamp = 0;
 let lastPlayersSignature = '';
 let lastTeamsSignature = '';
 
+// Bulk Athlete Selection & Approval State
+let selectedAthleteIds = new Set();
+let isBulkApproving = false;
+const recentlyApprovedPlayerIds = new Map(); // id/email (lowercase) -> timestamp
+
+// Helper to determine if an athlete is eligible for approval (Pending / Registered / empty)
+function isAthleteEligibleForApproval(player) {
+    if (!player) return false;
+    const s = String(player.status || 'Registered').trim().toLowerCase();
+    return s !== 'approved' && s !== 'rejected';
+}
+
 // Guard set against deleted teams resurrection from in-flight/stale background polls
 const pendingOrDeletedTeamIds = new Set(
     (function() {
@@ -122,7 +134,17 @@ function normalizePlayer(player) {
     const mobile = String(player?.mobile_number ?? player?.phone ?? "").trim();
     const gender = String(player?.gender ?? "Male").trim();
     const playerRole = String(player?.player_role ?? player?.role ?? "All-Rounder").trim();
-    const status = String(player?.status ?? "Registered").trim();
+    let status = String(player?.status ?? "Registered").trim();
+    
+    // Protect newly approved athletes from stale in-flight 1s background polling
+    const pid = id.toLowerCase();
+    const pemail = email.toLowerCase();
+    if (
+        (pid && recentlyApprovedPlayerIds.has(pid) && Date.now() - recentlyApprovedPlayerIds.get(pid) < 15000) ||
+        (pemail && recentlyApprovedPlayerIds.has(pemail) && Date.now() - recentlyApprovedPlayerIds.get(pemail) < 15000)
+    ) {
+        status = 'Approved';
+    }
     // Step 10: base_price numeric
     const basePrice = Number(player?.base_price ?? 0) || 15;
     const soldTo = String(player?.sold_to_team ?? "").trim();
@@ -514,10 +536,7 @@ async function loadRosterData(showSpinner = true) {
 function updateMetrics() {
     const total = allPlayers.length;
     const approved = allPlayers.filter(p => String(p.status || '').trim().toLowerCase() === 'approved').length;
-    const pending = allPlayers.filter(p => {
-        const s = String(p.status || '').trim().toLowerCase();
-        return s === 'registered' || s === 'pending' || !s;
-    }).length;
+    const pending = allPlayers.filter(isAthleteEligibleForApproval).length;
     const depts = new Set(allPlayers.map(p => String(p.department || '').trim()).filter(Boolean));
 
     statTotal.textContent = total;
@@ -530,6 +549,26 @@ function updateMetrics() {
 
     statApprovedBar.style.width = `${approvedPct}%`;
     statPendingBar.style.width = `${pendingPct}%`;
+
+    // Dynamic Approve All button state (Requirement 4, 17)
+    const approveAllBtn = document.getElementById('approve-all-players-btn');
+    const approveAllLabel = document.getElementById('approve-all-btn-label');
+    if (approveAllBtn) {
+        if (pending === 0) {
+            approveAllBtn.disabled = true;
+            approveAllBtn.classList.add('opacity-40', 'cursor-not-allowed');
+            approveAllBtn.classList.remove('hover:bg-emerald-600', 'cursor-pointer');
+            approveAllBtn.title = 'No athletes pending approval';
+        } else {
+            approveAllBtn.disabled = false;
+            approveAllBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+            approveAllBtn.classList.add('hover:bg-emerald-600', 'cursor-pointer');
+            approveAllBtn.title = `Approve All ${pending} Pending Athletes`;
+        }
+    }
+    if (approveAllLabel) {
+        approveAllLabel.textContent = pending > 0 ? `✓ Approve All (${pending})` : '✓ Approve All';
+    }
 }
 
 // 5. Filtering and Search Logic (Step 4, 5, 6, 7, 8)
@@ -579,6 +618,8 @@ function applyFilters() {
 
     renderRosterTable();
     updateTableSummary();
+    updateSelectAllCheckboxState();
+    updateBulkToolbar();
 }
 
 // Update table footer summary count (Step 10)
@@ -593,7 +634,7 @@ function renderRosterTable() {
     if (!allPlayers.length) {
         rosterTableBody.innerHTML = `
             <tr>
-                <td colspan="6" class="py-12 text-center text-slate-500">
+                <td colspan="7" class="py-12 text-center text-slate-500">
                     <div class="flex flex-col items-center justify-center gap-2">
                         <span class="text-3xl">📋</span>
                         <p class="text-sm font-bold text-slate-300">NO ATHLETES REGISTERED</p>
@@ -602,13 +643,15 @@ function renderRosterTable() {
                 </td>
             </tr>
         `;
+        updateSelectAllCheckboxState();
+        updateBulkToolbar();
         return;
     }
 
     if (!filteredPlayers.length) {
         rosterTableBody.innerHTML = `
             <tr>
-                <td colspan="6" class="py-12 text-center text-slate-500">
+                <td colspan="7" class="py-12 text-center text-slate-500">
                     <div class="flex flex-col items-center justify-center gap-2">
                         <span class="text-3xl">🔍</span>
                         <p class="text-sm font-bold text-slate-300">No matching athletes found</p>
@@ -617,6 +660,8 @@ function renderRosterTable() {
                 </td>
             </tr>
         `;
+        updateSelectAllCheckboxState();
+        updateBulkToolbar();
         return;
     }
 
@@ -773,8 +818,27 @@ function renderRosterTable() {
             </button>
         `;
 
+        const isEligible = isAthleteEligibleForApproval(player);
+        const isChecked = selectedAthleteIds.has(id);
+        const checkboxCol = isEligible
+            ? `<td class="py-3.5 px-3 sm:px-4 text-center w-12 no-print">
+                <input type="checkbox"
+                    data-player-id="${id}"
+                    ${isChecked ? 'checked' : ''}
+                    onchange="handleSelectAthlete(this)"
+                    class="athlete-row-checkbox w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-400 focus:ring-offset-0 cursor-pointer transition-all">
+               </td>`
+            : `<td class="py-3.5 px-3 sm:px-4 text-center w-12 no-print">
+                <input type="checkbox" disabled
+                    class="w-4 h-4 rounded border-slate-800 bg-slate-950/50 text-slate-700 opacity-20 cursor-not-allowed"
+                    title="Already ${status}">
+               </td>`;
+
         return `
             <tr class="hover:bg-slate-900/70 transition-colors group">
+                <!-- Athlete Checkbox (Requirement 1) -->
+                ${checkboxCol}
+
                 <!-- Athlete Profile & Academic Info -->
                 <td class="py-3.5 px-4 sm:px-6">
                     <div class="flex items-center gap-3 min-w-[240px] sm:min-w-[280px]">
@@ -826,6 +890,9 @@ function renderRosterTable() {
             </tr>
         `;
     }).join('');
+
+    updateSelectAllCheckboxState();
+    updateBulkToolbar();
 }
 
 function updateTableSummary() {
@@ -839,6 +906,16 @@ async function handleStatusUpdate(playerId, newStatus) {
     try {
         const player = allPlayers.find(p => (p.id === playerId || p.email === playerId));
         const playerName = player ? (player.full_name || player.name) : 'Athlete';
+
+        if (newStatus === 'Approved') {
+            const cleanId = String(playerId).toLowerCase();
+            recentlyApprovedPlayerIds.set(cleanId, Date.now());
+            if (player?.original_id) recentlyApprovedPlayerIds.set(String(player.original_id).toLowerCase(), Date.now());
+            if (player?.email) recentlyApprovedPlayerIds.set(String(player.email).toLowerCase(), Date.now());
+            selectedAthleteIds.delete(playerId);
+            if (player?.id) selectedAthleteIds.delete(player.id);
+            if (player?.email) selectedAthleteIds.delete(player.email);
+        }
 
         if (window.UniBoxDb) {
             await window.UniBoxDb.updatePlayerStatus(playerId, newStatus);
@@ -2043,6 +2120,355 @@ async function handleCreateFranchiseSubmit(event) {
     }
 }
 
+// ==============================================================================
+// BULK ATHLETE APPROVAL SYSTEM CONTROLLER
+// ==============================================================================
+
+function updateSelectAllCheckboxState() {
+    const selectAllChk = document.getElementById('select-all-athletes-chk');
+    if (!selectAllChk) return;
+
+    const visibleEligible = filteredPlayers.filter(isAthleteEligibleForApproval);
+    if (visibleEligible.length === 0) {
+        selectAllChk.checked = false;
+        selectAllChk.indeterminate = false;
+        selectAllChk.disabled = true;
+        return;
+    }
+
+    selectAllChk.disabled = false;
+    let selectedVisibleCount = 0;
+    for (const p of visibleEligible) {
+        const pid = p.id || p.email;
+        if (selectedAthleteIds.has(pid)) {
+            selectedVisibleCount++;
+        }
+    }
+
+    if (selectedVisibleCount === 0) {
+        selectAllChk.checked = false;
+        selectAllChk.indeterminate = false;
+    } else if (selectedVisibleCount === visibleEligible.length) {
+        selectAllChk.checked = true;
+        selectAllChk.indeterminate = false;
+    } else {
+        selectAllChk.checked = false;
+        selectAllChk.indeterminate = true;
+    }
+}
+
+function handleSelectAllAthletes(headerChk) {
+    const visibleEligible = filteredPlayers.filter(isAthleteEligibleForApproval);
+    const shouldSelect = headerChk ? headerChk.checked : false;
+
+    visibleEligible.forEach(p => {
+        const pid = p.id || p.email;
+        if (shouldSelect) {
+            selectedAthleteIds.add(pid);
+        } else {
+            selectedAthleteIds.delete(pid);
+        }
+    });
+
+    document.querySelectorAll('.athlete-row-checkbox').forEach(cb => {
+        const pid = cb.getAttribute('data-player-id');
+        cb.checked = selectedAthleteIds.has(pid);
+    });
+
+    updateSelectAllCheckboxState();
+    updateBulkToolbar();
+}
+
+function handleSelectAthlete(chk) {
+    if (!chk) return;
+    const pid = chk.getAttribute('data-player-id');
+    if (!pid) return;
+
+    if (chk.checked) {
+        selectedAthleteIds.add(pid);
+    } else {
+        selectedAthleteIds.delete(pid);
+    }
+
+    updateSelectAllCheckboxState();
+    updateBulkToolbar();
+}
+
+function updateBulkToolbar() {
+    const toolbar = document.getElementById('bulk-athletes-toolbar');
+    const badge = document.getElementById('bulk-selected-badge');
+    const countLabel = document.getElementById('bulk-selected-count');
+    const approveBtn = document.getElementById('bulk-approve-selected-btn');
+
+    // Only count selected athletes that are currently present and eligible
+    const validSelected = Array.from(selectedAthleteIds).filter(id => {
+        const p = allPlayers.find(x => (x.id || x.email) === id);
+        return p && isAthleteEligibleForApproval(p);
+    });
+
+    selectedAthleteIds = new Set(validSelected);
+    const count = selectedAthleteIds.size;
+
+    if (badge) badge.textContent = count;
+    if (countLabel) countLabel.textContent = `${count} SELECTED`;
+    if (approveBtn) approveBtn.disabled = count === 0;
+
+    if (toolbar) {
+        if (count > 0) {
+            toolbar.classList.remove('hidden');
+            toolbar.classList.add('flex');
+        } else {
+            toolbar.classList.add('hidden');
+            toolbar.classList.remove('flex');
+        }
+    }
+}
+
+function clearAthleteSelection() {
+    selectedAthleteIds.clear();
+    document.querySelectorAll('.athlete-row-checkbox').forEach(cb => {
+        cb.checked = false;
+    });
+    updateSelectAllCheckboxState();
+    updateBulkToolbar();
+}
+
+function openApproveSelectedModal() {
+    const validSelected = Array.from(selectedAthleteIds).filter(id => {
+        const p = allPlayers.find(x => (x.id || x.email) === id);
+        return p && isAthleteEligibleForApproval(p);
+    });
+
+    if (validSelected.length === 0) {
+        showToast('No eligible athletes selected for approval.', 'warning');
+        return;
+    }
+
+    const countElem = document.getElementById('approve-selected-confirm-count');
+    if (countElem) {
+        countElem.textContent = `${validSelected.length} selected athlete${validSelected.length === 1 ? '' : 's'}`;
+    }
+
+    const modal = document.getElementById('modal-approve-selected');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+    document.body.classList.add('overflow-hidden');
+}
+
+function closeApproveSelectedModal() {
+    const modal = document.getElementById('modal-approve-selected');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    document.body.classList.remove('overflow-hidden');
+}
+
+async function handleConfirmApproveSelected() {
+    if (isBulkApproving) return;
+    const selectedIds = Array.from(selectedAthleteIds);
+    if (!selectedIds.length) {
+        closeApproveSelectedModal();
+        return;
+    }
+
+    isBulkApproving = true;
+    const submitBtn = document.getElementById('confirm-approve-selected-submit-btn');
+    const originalText = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `
+            <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            <span>Approving ${selectedIds.length}...</span>
+        `;
+    }
+
+    try {
+        let res;
+        if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.approvePlayers === 'function') {
+            res = await window.GoogleTourneyApi.approvePlayers(selectedIds);
+        } else {
+            res = { success: true, data: { approvedCount: selectedIds.length, skippedCount: 0, notFoundCount: 0 } };
+        }
+
+        if (!res || !res.success) {
+            showToast(res?.error || 'Unable to approve athletes. Please try again.', 'error');
+            return;
+        }
+
+        const data = res.data || {};
+        const approvedCount = Number(data.approvedCount ?? selectedIds.length);
+        const skippedCount = Number(data.skippedCount ?? 0);
+        const notFoundCount = Number(data.notFoundCount ?? 0);
+
+        // Immediate UI Update (Requirement 5, 11)
+        const idSet = new Set(selectedIds.map(x => String(x).toLowerCase()));
+        allPlayers.forEach(p => {
+            const pid = String(p.id || p.original_id || '').toLowerCase();
+            const pemail = String(p.email || '').toLowerCase();
+            if (idSet.has(pid) || idSet.has(pemail)) {
+                if (String(p.status || '').toLowerCase() !== 'rejected') {
+                    p.status = 'Approved';
+                    recentlyApprovedPlayerIds.set(p.id.toLowerCase(), Date.now());
+                    if (p.original_id) recentlyApprovedPlayerIds.set(String(p.original_id).toLowerCase(), Date.now());
+                    if (p.email) recentlyApprovedPlayerIds.set(String(p.email).toLowerCase(), Date.now());
+                }
+            }
+        });
+
+        // Audit Logging (Requirement 20)
+        console.log('[AUDIT] Admin Action: BULK_APPROVE', {
+            target: 'selected',
+            count: approvedCount,
+            skipped: skippedCount,
+            notFound: notFoundCount,
+            timestamp: new Date().toISOString()
+        });
+
+        // Clear selection (Requirement 13)
+        clearAthleteSelection();
+        closeApproveSelectedModal();
+
+        updateMetrics();
+        applyFilters();
+
+        if (skippedCount > 0 || notFoundCount > 0) {
+            showToast(`Approved: ${approvedCount} | Skipped: ${skippedCount} | Failed: ${notFoundCount}`, 'info');
+        } else {
+            showToast(`Successfully approved ${approvedCount} athlete${approvedCount === 1 ? '' : 's'}!`, 'success');
+        }
+
+        // Background synchronization with Google Sheets (Requirement 11, 21)
+        setTimeout(() => {
+            refreshAdminData(true);
+        }, 1200);
+
+    } catch (err) {
+        console.error('Bulk approve selected error:', err);
+        showToast('Unable to approve athletes. Please try again.', 'error');
+    } finally {
+        isBulkApproving = false;
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
+    }
+}
+
+function openApproveAllModal() {
+    const pendingAthletes = allPlayers.filter(isAthleteEligibleForApproval);
+    const count = pendingAthletes.length;
+
+    if (count === 0) {
+        showToast('No athletes pending approval.', 'info');
+        return;
+    }
+
+    const countElem = document.getElementById('approve-all-confirm-count');
+    if (countElem) {
+        countElem.textContent = `${count} athlete${count === 1 ? '' : 's'}`;
+    }
+
+    const modal = document.getElementById('modal-approve-all');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+    document.body.classList.add('overflow-hidden');
+}
+
+function closeApproveAllModal() {
+    const modal = document.getElementById('modal-approve-all');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    document.body.classList.remove('overflow-hidden');
+}
+
+async function handleConfirmApproveAll() {
+    if (isBulkApproving) return;
+
+    const pendingAthletes = allPlayers.filter(isAthleteEligibleForApproval);
+    if (!pendingAthletes.length) {
+        closeApproveAllModal();
+        showToast('No athletes pending approval.', 'info');
+        return;
+    }
+
+    isBulkApproving = true;
+    const submitBtn = document.getElementById('confirm-approve-all-submit-btn');
+    const originalText = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `
+            <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            <span>Approving...</span>
+        `;
+    }
+
+    try {
+        let res;
+        if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.approveAllPlayers === 'function') {
+            res = await window.GoogleTourneyApi.approveAllPlayers();
+        } else {
+            res = { success: true, data: { approvedCount: pendingAthletes.length, skippedCount: 0 } };
+        }
+
+        if (!res || !res.success) {
+            showToast(res?.error || 'Unable to approve athletes. Please try again.', 'error');
+            return;
+        }
+
+        const data = res.data || {};
+        const approvedCount = Number(data.approvedCount ?? pendingAthletes.length);
+        const skippedCount = Number(data.skippedCount ?? 0);
+
+        // Immediate UI Update (Requirement 8, 9, 11)
+        allPlayers.forEach(p => {
+            if (isAthleteEligibleForApproval(p)) {
+                p.status = 'Approved';
+                recentlyApprovedPlayerIds.set(p.id.toLowerCase(), Date.now());
+                if (p.original_id) recentlyApprovedPlayerIds.set(String(p.original_id).toLowerCase(), Date.now());
+                if (p.email) recentlyApprovedPlayerIds.set(String(p.email).toLowerCase(), Date.now());
+            }
+        });
+
+        // Audit Logging (Requirement 20)
+        console.log('[AUDIT] Admin Action: BULK_APPROVE', {
+            target: 'all',
+            count: approvedCount,
+            skipped: skippedCount,
+            timestamp: new Date().toISOString()
+        });
+
+        clearAthleteSelection();
+        closeApproveAllModal();
+
+        updateMetrics();
+        applyFilters();
+
+        showToast(`Approved all ${approvedCount} pending athlete${approvedCount === 1 ? '' : 's'}!`, 'success');
+
+        // Background synchronization with Google Sheets (Requirement 11, 21)
+        setTimeout(() => {
+            refreshAdminData(true);
+        }, 1200);
+
+    } catch (err) {
+        console.error('Approve all error:', err);
+        showToast('Unable to approve athletes. Please try again.', 'error');
+    } finally {
+        isBulkApproving = false;
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
+    }
+}
+
 // Global Exports
 window.openAthleteModal = openAthleteModal;
 window.closeAthleteModal = closeAthleteModal;
@@ -2073,6 +2499,15 @@ window.handleExecuteBulkDelete = handleExecuteBulkDelete;
 window.openCreateFranchiseModal = openCreateFranchiseModal;
 window.closeCreateFranchiseModal = closeCreateFranchiseModal;
 window.handleCreateFranchiseSubmit = handleCreateFranchiseSubmit;
+window.handleSelectAthlete = handleSelectAthlete;
+window.handleSelectAllAthletes = handleSelectAllAthletes;
+window.clearAthleteSelection = clearAthleteSelection;
+window.openApproveSelectedModal = openApproveSelectedModal;
+window.closeApproveSelectedModal = closeApproveSelectedModal;
+window.handleConfirmApproveSelected = handleConfirmApproveSelected;
+window.openApproveAllModal = openApproveAllModal;
+window.closeApproveAllModal = closeApproveAllModal;
+window.handleConfirmApproveAll = handleConfirmApproveAll;
 window.loadRosterData = loadRosterData;
 window.adminLogout = adminLogout;
 window.refreshAdminData = refreshAdminData;

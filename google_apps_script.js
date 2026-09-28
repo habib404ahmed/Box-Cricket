@@ -508,8 +508,8 @@ function doPost(e) {
     // Requirements 13, 14, 15: Role-based Authorization for Privileged Admin Actions
     var PRIVILEGED_ACTIONS = [
       'createTeam', 'createFranchise', 'registerFranchise', 'updateTeam', 'deleteTeam',
-      'deleteAllPlayers', 'deletePlayer', 'deletePlayers', 'approvePlayer', 'rejectPlayer',
-      'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse', 'updateAuction',
+      'deleteAllPlayers', 'deletePlayer', 'deletePlayers', 'approvePlayer', 'approvePlayers', 'approveAllPlayers',
+      'rejectPlayer', 'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse', 'updateAuction',
       'purchasePlayer', 'revokePlayerPurchase'
     ];
 
@@ -532,6 +532,14 @@ function doPost(e) {
 
       case 'approvePlayer':
         result = apiSetPlayerStatus(payload, 'Approved');
+        break;
+
+      case 'approvePlayers':
+        result = apiApprovePlayers(payload);
+        break;
+
+      case 'approveAllPlayers':
+        result = apiApproveAllPlayers(payload);
         break;
 
       case 'rejectPlayer':
@@ -1408,6 +1416,182 @@ function apiSetPlayerStatus(payload, newStatus) {
   }
 
   return { success: false, error: 'Player not found.' };
+}
+
+/**
+ * BULK APPROVE SELECTED PLAYERS
+ * Requirements:
+ * 1. Verify Admin authorization.
+ * 2. Open authoritative Players sheet.
+ * 3. Find each player by ID.
+ * 4. Check current status.
+ *    If status = Pending / Registered / empty -> update to Approved
+ *    If status = Approved -> skip
+ *    If status = Rejected -> skip
+ * 5. Do not modify unrelated fields.
+ * 6. Return counts: { approvedCount, skippedCount, notFoundCount }
+ */
+function apiApprovePlayers(payload) {
+  var rawIds = payload.playerIds || payload.player_ids || payload.ids || [];
+  if (!Array.isArray(rawIds) || rawIds.length === 0) {
+    return {
+      success: true,
+      data: { approvedCount: 0, skippedCount: 0, notFoundCount: 0 },
+      message: 'No athlete IDs provided.'
+    };
+  }
+
+  var targetIds = rawIds.map(function(id) {
+    return String(id).replace(/-D\d+$/, '').trim().toLowerCase();
+  }).filter(Boolean);
+
+  var ss = getSpreadsheet();
+  var sheet = getPlayersSheet(ss);
+  if (!sheet) return { success: false, error: 'Players sheet not found.' };
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) {
+    return {
+      success: true,
+      data: { approvedCount: 0, skippedCount: 0, notFoundCount: targetIds.length },
+      message: 'No players in sheet.'
+    };
+  }
+
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h).trim();
+  });
+
+  var idIdx = headerRow.indexOf('id');
+  if (idIdx === -1) idIdx = headerRow.indexOf('player_id');
+  var emailIdx = headerRow.indexOf('email');
+  var statusIdx = headerRow.indexOf('status');
+
+  if (statusIdx === -1) {
+    sheet.getRange(1, lastCol + 1).setValue('status');
+    statusIdx = lastCol;
+    lastCol++;
+  }
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+  var approvedCount = 0;
+  var skippedCount = 0;
+  var notFoundCount = 0;
+  var matchedIds = {};
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var rowId = idIdx !== -1 ? String(row[idIdx] || '').trim().toLowerCase() : '';
+    var rowEmail = emailIdx !== -1 ? String(row[emailIdx] || '').trim().toLowerCase() : '';
+    var currentStatus = statusIdx !== -1 ? String(row[statusIdx] || '').trim().toLowerCase() : '';
+
+    var matchFound = false;
+    for (var t = 0; t < targetIds.length; t++) {
+      var tid = targetIds[t];
+      if ((rowId && rowId === tid) || (rowEmail && rowEmail === tid)) {
+        matchFound = true;
+        matchedIds[tid] = true;
+        break;
+      }
+    }
+
+    if (matchFound) {
+      if (currentStatus === 'approved' || currentStatus === 'rejected') {
+        skippedCount++;
+      } else {
+        sheet.getRange(i + 2, statusIdx + 1).setValue('Approved');
+        approvedCount++;
+      }
+    }
+  }
+
+  for (var k = 0; k < targetIds.length; k++) {
+    if (!matchedIds[targetIds[k]]) {
+      notFoundCount++;
+    }
+  }
+
+  Logger.log('[BULK APPROVE] approved: ' + approvedCount + ', skipped: ' + skippedCount + ', notFound: ' + notFoundCount);
+
+  return {
+    success: true,
+    data: {
+      approvedCount: approvedCount,
+      skippedCount: skippedCount,
+      notFoundCount: notFoundCount
+    },
+    message: 'Approved ' + approvedCount + ' athletes.'
+  };
+}
+
+/**
+ * BULK APPROVE ALL PENDING PLAYERS
+ * Requirements:
+ * 1. Verify Admin authorization.
+ * 2. Read Players sheet.
+ * 3. Identify eligible pending/registered athletes.
+ * 4. Update status to 'Approved'.
+ * 5. Leave already Approved unchanged.
+ * 6. Leave Rejected unchanged.
+ * 7. Return counts: { approvedCount, skippedCount }
+ */
+function apiApproveAllPlayers(payload) {
+  var ss = getSpreadsheet();
+  var sheet = getPlayersSheet(ss);
+  if (!sheet) return { success: false, error: 'Players sheet not found.' };
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) {
+    return {
+      success: true,
+      data: { approvedCount: 0, skippedCount: 0 },
+      message: 'No players in sheet.'
+    };
+  }
+
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h).trim();
+  });
+
+  var statusIdx = headerRow.indexOf('status');
+  if (statusIdx === -1) {
+    sheet.getRange(1, lastCol + 1).setValue('status');
+    statusIdx = lastCol;
+    lastCol++;
+  }
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var approvedCount = 0;
+  var skippedCount = 0;
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var hasContent = row.some(function(c) { return c !== '' && c !== null && c !== undefined; });
+    if (!hasContent) continue;
+
+    var currentStatus = statusIdx !== -1 ? String(row[statusIdx] || '').trim().toLowerCase() : '';
+
+    if (currentStatus === 'approved' || currentStatus === 'rejected') {
+      skippedCount++;
+    } else {
+      sheet.getRange(i + 2, statusIdx + 1).setValue('Approved');
+      approvedCount++;
+    }
+  }
+
+  Logger.log('[APPROVE ALL] approved: ' + approvedCount + ', skipped: ' + skippedCount);
+
+  return {
+    success: true,
+    data: {
+      approvedCount: approvedCount,
+      skippedCount: skippedCount
+    },
+    message: 'Approved all ' + approvedCount + ' pending athletes.'
+  };
 }
 
 /**

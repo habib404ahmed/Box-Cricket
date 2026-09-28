@@ -448,6 +448,62 @@
             return { success: true, status: 'Approved' };
         },
 
+        // --- BULK ATHLETE APPROVAL (POST) ---
+        approvePlayers: async (playerIds) => {
+            if (!Array.isArray(playerIds) || playerIds.length === 0) {
+                return { success: true, data: { approvedCount: 0, skippedCount: 0, notFoundCount: 0 } };
+            }
+            if (!isConfigured()) {
+                return { success: false, error: 'Google backend is not configured yet.' };
+            }
+            const res = await postApi('approvePlayers', { playerIds: playerIds, player_ids: playerIds });
+            if (!res.success) {
+                return { success: false, error: res.error || 'Failed to bulk approve athletes in Google Sheets.' };
+            }
+
+            // Update local cache on successful Google Sheets write
+            try {
+                const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                const idSet = new Set(playerIds.map(x => String(x).toLowerCase()));
+                localPlayers.forEach(p => {
+                    const pid = String(p.id || p.original_id || '').toLowerCase();
+                    const pemail = String(p.email || '').toLowerCase();
+                    if (idSet.has(pid) || idSet.has(pemail)) {
+                        if (String(p.status || '').toLowerCase() !== 'rejected') {
+                            p.status = 'Approved';
+                        }
+                    }
+                });
+                localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
+            } catch (e) {}
+
+            return { success: true, data: res.data || { approvedCount: playerIds.length, skippedCount: 0, notFoundCount: 0 } };
+        },
+
+        approveAllPlayers: async () => {
+            if (!isConfigured()) {
+                return { success: false, error: 'Google backend is not configured yet.' };
+            }
+            const res = await postApi('approveAllPlayers', {});
+            if (!res.success) {
+                return { success: false, error: res.error || 'Failed to approve all pending athletes in Google Sheets.' };
+            }
+
+            // Update local cache on successful Google Sheets write
+            try {
+                const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                localPlayers.forEach(p => {
+                    const s = String(p.status || '').toLowerCase();
+                    if (s !== 'approved' && s !== 'rejected') {
+                        p.status = 'Approved';
+                    }
+                });
+                localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
+            } catch (e) {}
+
+            return { success: true, data: res.data || { approvedCount: 0, skippedCount: 0 } };
+        },
+
         rejectPlayer: async (playerIdOrEmail) => {
             if (!isConfigured()) {
                 return { success: false, error: 'Google backend is not configured yet.' };
