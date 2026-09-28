@@ -2192,6 +2192,20 @@ function closeCreateFranchiseModal() {
         modal.classList.remove('flex');
     }
     document.body.classList.remove('overflow-hidden');
+
+    // Reset button and spinner states upon closing so it is NEVER stuck on "Creating..." (Requirement 16)
+    const submitBtn = document.getElementById('btn-submit-create-franchise');
+    const submitBtnText = document.getElementById('btn-submit-create-franchise-text');
+    const spinner = document.getElementById('create-franchise-spinner');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-80', 'cursor-not-allowed');
+    }
+    if (submitBtnText) submitBtnText.textContent = 'Create Franchise & Credentials';
+    if (spinner) spinner.classList.add('hidden');
+
+    const alertBox = document.getElementById('create-franchise-alert');
+    if (alertBox) alertBox.classList.add('hidden');
 }
 
 async function handleCreateFranchiseSubmit(event) {
@@ -2267,20 +2281,21 @@ async function handleCreateFranchiseSubmit(event) {
             owner_email: ownerEmail,
             email: ownerEmail,
             password: password,
+            rawPassword: password,
             logo: logo,
             purse: purse,
             role: 'ADMIN'
         };
 
-        const res = await window.GoogleTourneyApi.createTeam(payload);
+        let res = await window.GoogleTourneyApi.createTeam(payload);
         
         let createdTeam = null;
         let isSuccess = Boolean(res && res.success);
 
-        // Verification on timeout (Requirements 6, 7 & 21)
-        // If request timed out, check whether Google Sheets write actually succeeded before showing error
-        if (!isSuccess && res?.isTimeout) {
-            console.warn('[CREATE FRANCHISE] Request timed out. Verifying with Google Sheets...');
+        // Verification check (Requirements 6, 7, 9 & 21)
+        // If response wasn't directly confirmed, check whether Google Sheets write actually succeeded before showing error
+        if (!isSuccess) {
+            console.warn('[CREATE FRANCHISE] Response unconfirmed. Checking Google Sheets...');
             if (submitBtnText) submitBtnText.textContent = 'Verifying with Google Sheets...';
             try {
                 const checkRes = await window.GoogleTourneyApi.getTeams();
@@ -2292,7 +2307,7 @@ async function handleCreateFranchiseSubmit(event) {
                 if (matched) {
                     isSuccess = true;
                     createdTeam = matched;
-                    console.log('[CREATE FRANCHISE] Team verified in Google Sheets despite timeout:', matched.id);
+                    console.log('[CREATE FRANCHISE] Team verified in Google Sheets:', matched.id);
                 }
             } catch (checkErr) {
                 console.error('[CREATE FRANCHISE] Verification check failed:', checkErr);
@@ -2309,7 +2324,7 @@ async function handleCreateFranchiseSubmit(event) {
         }
 
         createdTeam = createdTeam || res.data?.team || res.team || res.data || {
-            id: 'SPL-TEAM-' + Date.now().toString().slice(-4),
+            id: res.teamId || ('SPL-TEAM-' + Date.now().toString().slice(-4)),
             team_name: teamName,
             name: teamName,
             short_name: shortName,
@@ -2327,24 +2342,27 @@ async function handleCreateFranchiseSubmit(event) {
             status: 'Active'
         };
 
-        // Requirement 8: Set button text on success
-        if (submitBtnText) submitBtnText.textContent = '✓ Created Successfully';
-        showAlert(`Franchise "${teamName}" created successfully!`, true);
+        // SUCCESS — IMMEDIATELY CLOSE MODAL & STOP SPINNER (Requirement 3, 8 & 12)
+        closeCreateFranchiseModal();
 
-        // Requirement 11 & 17: Immediately update Admin state and render HUD without waiting
+        // Reset form inputs only on success (Requirement 17)
+        const form = document.getElementById('create-franchise-form');
+        if (form) form.reset();
+
+        // Show toast notification (Requirement 12 & 17)
+        showToast(`✓ FRANCHISE CREATED: "${teamName}" (Login ID: ${ownerEmail})`, 'success');
+
+        // Immediately update Admin state and render HUD without waiting (Requirement 11 & 12)
         if (createdTeam && !allTeams.some(t => t.id === createdTeam.id || (t.team_name && t.team_name.toLowerCase() === teamName.toLowerCase()))) {
             allTeams.push(createdTeam);
+            adminState.teams = allTeams;
         }
         renderTeamBalanceHUD();
 
-        // Close modal immediately and show toast
-        closeCreateFranchiseModal();
-        showToast(`✓ FRANCHISE CREATED: "${teamName}" (Login ID: ${ownerEmail})`, 'success');
-
-        // Requirement 10 & 11: Background team refresh WITHOUT awaiting it!
+        // Requirement 10 & 13: Background team refresh WITHOUT awaiting it!
         setTimeout(() => {
             loadTeamsData();
-        }, 600);
+        }, 1000);
 
     } catch (err) {
         console.error('Error creating franchise:', err);

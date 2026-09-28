@@ -776,7 +776,7 @@
         },
 
         // --- FRANCHISE REGISTRATION & CREATION (POST) ---
-        registerFranchise: async (franchiseData) => {
+        createTeam: async (franchiseData) => {
             if (!isConfigured()) {
                 return {
                     success: false,
@@ -784,49 +784,30 @@
                 };
             }
 
-            let res = await postApi('registerFranchise', franchiseData);
-            if (!res || !res.success) {
-                // If remote Apps Script has not been updated with registerFranchise yet, fall back to createTeam
-                if (res && res.error && res.error.includes('Unknown POST action')) {
-                    const fallbackRes = await postApi('createTeam', {
-                        team_name: franchiseData.team_name,
-                        short_name: franchiseData.short_name || franchiseData.team_name?.substring(0, 4).toUpperCase(),
-                        purse: Number(franchiseData.purse) || 1000,
-                        owner_name: franchiseData.owner_name,
-                        owner_email: franchiseData.owner_email || franchiseData.email
-                    });
-                    if (fallbackRes && fallbackRes.success) {
-                        res = {
-                            success: true,
-                            data: {
-                                team: {
-                                    id: fallbackRes.teamId || ('SPL-TEAM-' + Date.now().toString().slice(-4)),
-                                    team_name: franchiseData.team_name,
-                                    name: franchiseData.team_name,
-                                    short_name: franchiseData.short_name || franchiseData.team_name?.substring(0, 4).toUpperCase(),
-                                    owner_name: franchiseData.owner_name,
-                                    owner_email: franchiseData.owner_email || franchiseData.email,
-                                    purse: Number(franchiseData.purse) || 1000,
-                                    total_budget: Number(franchiseData.purse) || 1000,
-                                    total_spent: 0,
-                                    spent: 0,
-                                    remaining_purse: Number(franchiseData.purse) || 1000,
-                                    leftover_balance: Number(franchiseData.purse) || 1000,
-                                    player_count: 0,
-                                    squad_count: 0,
-                                    squad: [],
-                                    status: 'Active',
-                                    created_at: new Date().toISOString()
-                                },
-                                owner: {
-                                    owner_name: franchiseData.owner_name,
-                                    owner_email: franchiseData.owner_email || franchiseData.email,
-                                    team_id: fallbackRes.teamId
-                                }
-                            }
-                        };
-                    }
-                }
+            const clientRequestId = 'req_team_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+            const teamPayload = {
+                team_name: franchiseData.team_name || franchiseData.name,
+                name: franchiseData.team_name || franchiseData.name,
+                short_name: franchiseData.short_name || (franchiseData.team_name || '').substring(0, 4).toUpperCase(),
+                owner_name: franchiseData.owner_name,
+                owner_email: franchiseData.owner_email || franchiseData.email,
+                email: franchiseData.owner_email || franchiseData.email,
+                password: franchiseData.password || franchiseData.rawPassword,
+                rawPassword: franchiseData.password || franchiseData.rawPassword,
+                purse: Number(franchiseData.purse) || 1000,
+                budget: Number(franchiseData.purse) || 1000,
+                logo: franchiseData.logo || '🏏',
+                department: franchiseData.department || franchiseData.short_name || 'Campus',
+                role: franchiseData.role || 'ADMIN',
+                request_id: clientRequestId
+            };
+
+            // Call createTeam directly for single fast network roundtrip (Requirement 3 & 7)
+            let res = await postApi('createTeam', teamPayload, 25000);
+
+            // Fallback to registerFranchise if createTeam is unknown on an alternative deployment
+            if (!res || (!res.success && res.error && res.error.includes('Unknown POST action'))) {
+                res = await postApi('registerFranchise', teamPayload, 25000);
             }
 
             if (!res || !res.success) {
@@ -837,29 +818,54 @@
                 };
             }
 
-            const teamObj = res.data?.team || res.team || res.data;
+            // Normalizes team object across both { teamId: "..." } and { data: { team: {...} } } responses
+            const rawTeam = res.data?.team || res.team || res.data || {};
+            const createdTeam = {
+                id: rawTeam.id || res.teamId || res.team_id || ('SPL-TEAM-' + Date.now().toString().slice(-4)),
+                team_name: rawTeam.team_name || rawTeam.name || teamPayload.team_name,
+                name: rawTeam.name || rawTeam.team_name || teamPayload.team_name,
+                short_name: rawTeam.short_name || teamPayload.short_name,
+                owner_name: rawTeam.owner_name || teamPayload.owner_name,
+                owner_email: rawTeam.owner_email || teamPayload.owner_email,
+                purse: Number(rawTeam.purse || teamPayload.purse || 1000),
+                total_budget: Number(rawTeam.total_budget || rawTeam.purse || teamPayload.purse || 1000),
+                total_spent: 0,
+                spent: 0,
+                remaining_purse: Number(rawTeam.remaining_purse || rawTeam.purse || teamPayload.purse || 1000),
+                leftover_balance: Number(rawTeam.leftover_balance || rawTeam.purse || teamPayload.purse || 1000),
+                player_count: 0,
+                squad_count: 0,
+                squad: [],
+                status: 'Active',
+                logo: rawTeam.logo || teamPayload.logo || '🏏',
+                created_at: rawTeam.created_at || new Date().toISOString()
+            };
 
-            // Update local cache non-blockingly
+            // Update in-memory cache and localStorage immediately (Requirement 12)
             try {
                 let localTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
-                if (teamObj && !localTeams.some(t => t.id === teamObj.id || (t.team_name && t.team_name === teamObj.team_name))) {
-                    localTeams.push(teamObj);
+                if (!localTeams.some(t => t.id === createdTeam.id || (t.team_name && t.team_name.toLowerCase() === createdTeam.team_name.toLowerCase()))) {
+                    localTeams.push(createdTeam);
                     localStorage.setItem('unibox_teams', JSON.stringify(localTeams));
+                }
+                if (_cachedTeams) {
+                    if (!_cachedTeams.some(t => t.id === createdTeam.id)) {
+                        _cachedTeams.push(createdTeam);
+                    }
                 }
             } catch (e) {}
 
             return {
                 success: true,
-                data: res.data || { team: teamObj },
-                team: teamObj,
-                owner: res.data?.owner,
-                message: res.message || 'Franchise registered successfully.'
+                data: { team: createdTeam },
+                team: createdTeam,
+                teamId: createdTeam.id,
+                message: res.message || 'Franchise team created successfully.'
             };
         },
 
-        // Alias for franchise team creation
-        createTeam: async (teamData) => {
-            return await GoogleTourneyApi.registerFranchise(teamData);
+        registerFranchise: async (franchiseData) => {
+            return await GoogleTourneyApi.createTeam(franchiseData);
         },
 
         // --- FRANCHISE AUTHENTICATION (POST) ---
