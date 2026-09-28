@@ -41,6 +41,7 @@ var CONFIG = {
   SHEETS: {
     PLAYERS: 'Players',
     TEAMS: 'Teams',
+    FRANCHISE_AUTH: 'Franchise_Auth',
     AUCTION: 'Auction',
     SETTINGS: 'Settings'
   },
@@ -99,6 +100,8 @@ var HEADERS = {
     'id',
     'team_name',
     'short_name',
+    'owner_name',
+    'owner_email',
     'logo_file_id',
     'logo_file_url',
     'purse',
@@ -107,6 +110,16 @@ var HEADERS = {
     'player_count',
     'status',
     'created_at'
+  ],
+  FRANCHISE_AUTH: [
+    'id',
+    'created_at',
+    'owner_name',
+    'owner_email',
+    'team_id',
+    'password_hash',
+    'status',
+    'last_login_at'
   ],
   AUCTION: [
     'id',
@@ -198,6 +211,50 @@ function getOrCreateDriveFolder(folderName) {
 }
 
 /**
+ * Salted SHA-256 password hashing matching frontend UniBoxDb salt
+ */
+function hashPassword(password) {
+  if (!password) return '';
+  var salt = 'unibox_league_2026_salt_';
+  var rawBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + password, Utilities.Charset.UTF_8);
+  var hex = '';
+  for (var i = 0; i < rawBytes.length; i++) {
+    var b = rawBytes[i];
+    if (b < 0) b += 256;
+    var str = b.toString(16);
+    if (str.length === 1) str = '0' + str;
+    hex += str;
+  }
+  return hex;
+}
+
+/**
+ * Dynamically ensure Teams sheet contains owner_name and owner_email in header row 1
+ */
+function ensureTeamSheetHeaders(sheet) {
+  if (!sheet) return HEADERS.TEAMS;
+  var lastCol = sheet.getLastColumn();
+  if (lastCol <= 0) {
+    sheet.appendRow(HEADERS.TEAMS);
+    return HEADERS.TEAMS;
+  }
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h).trim(); });
+  var needed = ['owner_name', 'owner_email'];
+  var modified = false;
+  needed.forEach(function(col) {
+    if (headers.indexOf(col) === -1) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
+      headers.push(col);
+      modified = true;
+    }
+  });
+  if (modified) {
+    SpreadsheetApp.flush();
+  }
+  return headers;
+}
+
+/**
  * STEP 30 — AUTOMATIC INITIALIZATION FUNCTION: setupTournament()
  * Run this function directly in Apps Script or via API ?action=setup
  */
@@ -212,8 +269,12 @@ function setupTournament() {
   // 1. Create Sheets with headers
   var playersSheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
   var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
+  var franchiseAuthSheet = getOrCreateSheet(CONFIG.SHEETS.FRANCHISE_AUTH, HEADERS.FRANCHISE_AUTH);
   var auctionSheet = getOrCreateSheet(CONFIG.SHEETS.AUCTION, HEADERS.AUCTION);
   var settingsSheet = getOrCreateSheet(CONFIG.SHEETS.SETTINGS, HEADERS.SETTINGS);
+
+  // Ensure Teams sheet has owner_name and owner_email in header row
+  ensureTeamSheetHeaders(teamsSheet);
 
   // If Sheet1 still exists and is empty while Players exists separately, remove Sheet1
   var leftoverSheet1 = ss.getSheetByName('Sheet1');
@@ -231,6 +292,8 @@ function setupTournament() {
         team.id,
         team.team_name,
         team.short_name,
+        '', // owner_name
+        '', // owner_email
         '', // logo_file_id
         '', // logo_file_url
         team.purse,
@@ -268,7 +331,7 @@ function setupTournament() {
     spreadsheet: {
       id: CONFIG.SPREADSHEET_ID,
       url: ss.getUrl(),
-      sheets: [CONFIG.SHEETS.PLAYERS, CONFIG.SHEETS.TEAMS, CONFIG.SHEETS.AUCTION, CONFIG.SHEETS.SETTINGS]
+      sheets: [CONFIG.SHEETS.PLAYERS, CONFIG.SHEETS.TEAMS, CONFIG.SHEETS.FRANCHISE_AUTH, CONFIG.SHEETS.AUCTION, CONFIG.SHEETS.SETTINGS]
     },
     drive: {
       main_folder_id: CONFIG.DRIVE_FOLDER_ID,
@@ -472,8 +535,23 @@ function doPost(e) {
         result = apiDeleteAllPlayers(payload);
         break;
 
+      case 'registerFranchise':
+      case 'createFranchise':
       case 'createTeam':
-        result = apiCreateTeam(payload);
+        result = apiRegisterFranchise(payload);
+        break;
+
+      case 'loginFranchise':
+      case 'loginTeamOwner':
+        result = apiLoginFranchise(payload);
+        break;
+
+      case 'getTeams':
+        result = apiGetTeams(payload);
+        break;
+
+      case 'getTeam':
+        result = apiGetTeam(payload);
         break;
 
       case 'updateTeam':
@@ -769,51 +847,103 @@ function apiGetPlayer(params) {
 function apiGetTeams(params) {
   var sheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
   var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
   if (lastRow <= 1) {
-    setupTournament();
-    lastRow = sheet.getLastRow();
+    return { success: true, data: [] };
   }
 
-  var numCols = HEADERS.TEAMS.length;
-  var values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h).trim();
+  });
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
   var teams = [];
 
   // Read players to compute live squad and spent balance accurately
   var playersRes = apiGetPlayers();
   var allPlayers = playersRes.data || [];
 
+  // Read Franchise_Auth if available to resolve owner if missing in Teams row
+  var authMap = {};
+  try {
+    var ss = getSpreadsheet();
+    var authSheet = ss.getSheetByName(CONFIG.SHEETS.FRANCHISE_AUTH);
+    if (authSheet && authSheet.getLastRow() > 1) {
+      var aCols = authSheet.getLastColumn();
+      var aHeaders = authSheet.getRange(1, 1, 1, aCols).getValues()[0].map(function(h) { return String(h).trim(); });
+      var aTidIdx = aHeaders.indexOf('team_id');
+      var aNameIdx = aHeaders.indexOf('owner_name');
+      var aEmailIdx = aHeaders.indexOf('owner_email');
+      if (aTidIdx !== -1) {
+        var aRows = authSheet.getRange(2, 1, authSheet.getLastRow() - 1, aCols).getValues();
+        for (var a = 0; a < aRows.length; a++) {
+          var tid = String(aRows[a][aTidIdx] || '').trim();
+          if (tid) {
+            authMap[tid] = {
+              owner_name: aNameIdx !== -1 ? String(aRows[a][aNameIdx] || '').trim() : '',
+              owner_email: aEmailIdx !== -1 ? String(aRows[a][aEmailIdx] || '').trim().toLowerCase() : ''
+            };
+          }
+        }
+      }
+    }
+  } catch (authErr) {}
+
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
     var team = {};
-    for (var j = 0; j < numCols; j++) {
-      team[HEADERS.TEAMS[j]] = row[j];
+    for (var j = 0; j < headerRow.length; j++) {
+      var hKey = headerRow[j];
+      if (hKey) team[hKey] = row[j];
     }
 
-    var teamName = String(team.team_name || '').trim().toLowerCase();
-    var teamId = String(team.id || '').trim().toLowerCase();
+    var teamId = String(team.id || '').trim();
+    var teamName = String(team.team_name || team.name || '').trim();
+
+    // Cross-reference owner from Franchise_Auth if empty in Teams row
+    if (authMap[teamId]) {
+      if (!team.owner_name && authMap[teamId].owner_name) {
+        team.owner_name = authMap[teamId].owner_name;
+      }
+      if (!team.owner_email && authMap[teamId].owner_email) {
+        team.owner_email = authMap[teamId].owner_email;
+      }
+    }
+
+    var tNameLower = teamName.toLowerCase();
+    var tIdLower = teamId.toLowerCase();
 
     // Find squad from Players sheet
     var squad = allPlayers.filter(function(p) {
       var soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
-      return soldTeam && (soldTeam === teamName || soldTeam === teamId);
+      return soldTeam && (soldTeam === tNameLower || soldTeam === tIdLower);
     });
 
     var spent = squad.reduce(function(sum, p) {
       return sum + (Number(p.sold_price) || 0);
     }, 0);
 
-    var purse = Number(team.purse) || 1000;
+    var purse = Number(team.purse || team.total_budget || 1000);
     var remaining = Math.max(0, purse - spent);
 
-    team.name = team.team_name;
+    team.id = teamId;
+    team.name = teamName;
+    team.team_name = teamName;
+    team.short_name = String(team.short_name || teamName.substring(0, 4).toUpperCase()).trim();
+    team.owner_name = String(team.owner_name || '').trim();
+    team.owner_email = String(team.owner_email || '').trim().toLowerCase();
+    team.purse = purse;
     team.total_budget = purse;
+    team.total_spent = spent;
     team.spent = spent;
     team.spent_points = spent;
     team.remaining_purse = remaining;
     team.leftover_balance = remaining;
-    team.squad = squad;
-    team.squad_count = squad.length;
     team.player_count = squad.length;
+    team.squad_count = squad.length;
+    team.squad = squad;
+    team.status = String(team.status || 'Active').trim();
+    team.created_at = team.created_at || new Date().toISOString();
 
     teams.push(team);
   }
@@ -1442,34 +1572,290 @@ function apiDeleteAllPlayers(payload) {
 }
 
 /**
- * STEP 23 — TEAMS MANAGEMENT
+ * STEP 23 — FRANCHISE REGISTRATION & SERVER-SIDE TEAM ID GENERATION
+ * Format: SPL-TEAM-0001, SPL-TEAM-0002...
+ * Writes simultaneously to Teams and Franchise_Auth in Google Sheets.
  */
-function apiCreateTeam(payload) {
-  var teamName = String(payload.team_name || payload.name || '').trim();
-  if (!teamName) return { success: false, error: 'Team name is required.' };
+function apiRegisterFranchise(payload) {
+  var ownerName = String(payload.owner_name || payload.ownerName || '').trim();
+  var ownerEmail = String(payload.owner_email || payload.email || '').trim().toLowerCase();
+  var teamName = String(payload.team_name || payload.customTeamName || payload.name || '').trim();
+  var rawPassword = String(payload.password || payload.rawPassword || '');
+  var passwordHash = String(payload.password_hash || '');
+  var department = String(payload.department || payload.branch || 'B.Tech').trim();
+  var logo = String(payload.logo || '🏏').trim();
+  var purse = Number(payload.purse || payload.budget || payload.total_budget || 1000);
+
+  if (!ownerName) return { success: false, error: 'Owner name is required.' };
+  if (!ownerEmail || ownerEmail.indexOf('@') === -1) return { success: false, error: 'A valid email address is required.' };
+  if (!rawPassword && !passwordHash) return { success: false, error: 'Password is required.' };
+  if (!teamName) return { success: false, error: 'Franchise team name is required.' };
+
+  var ss = getSpreadsheet();
+  var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
+  var authSheet = getOrCreateSheet(CONFIG.SHEETS.FRANCHISE_AUTH, HEADERS.FRANCHISE_AUTH);
+
+  var teamsHeaders = ensureTeamSheetHeaders(teamsSheet);
+
+  // 1. Check for duplicate team name or owner in Teams
+  var lastRowTeams = teamsSheet.getLastRow();
+  var lastColTeams = teamsSheet.getLastColumn();
+  var existingTeamIds = [];
+
+  if (lastRowTeams > 1) {
+    var teamValues = teamsSheet.getRange(2, 1, lastRowTeams - 1, lastColTeams).getValues();
+    var idColIdx = teamsHeaders.indexOf('id');
+    var nameColIdx = teamsHeaders.indexOf('team_name');
+    var ownerEmailColIdx = teamsHeaders.indexOf('owner_email');
+
+    for (var i = 0; i < teamValues.length; i++) {
+      var row = teamValues[i];
+      if (idColIdx !== -1 && row[idColIdx]) {
+        existingTeamIds.push(String(row[idColIdx]).trim());
+      }
+      if (nameColIdx !== -1 && String(row[nameColIdx]).trim().toLowerCase() === teamName.toLowerCase()) {
+        return { success: false, error: 'A franchise with this name already exists in the tournament.' };
+      }
+      if (ownerEmailColIdx !== -1 && String(row[ownerEmailColIdx]).trim().toLowerCase() === ownerEmail) {
+        return { success: false, error: 'A franchise owner is already registered with this email address.' };
+      }
+    }
+  }
+
+  // 2. Check for duplicate email in Franchise_Auth
+  var lastRowAuth = authSheet.getLastRow();
+  var lastColAuth = authSheet.getLastColumn();
+  if (lastRowAuth > 1) {
+    var authHeaders = authSheet.getRange(1, 1, 1, lastColAuth).getValues()[0].map(function(h) { return String(h).trim(); });
+    var authEmailIdx = authHeaders.indexOf('owner_email');
+    if (authEmailIdx !== -1) {
+      var authValues = authSheet.getRange(2, 1, lastRowAuth - 1, lastColAuth).getValues();
+      for (var a = 0; a < authValues.length; a++) {
+        if (String(authValues[a][authEmailIdx]).trim().toLowerCase() === ownerEmail) {
+          return { success: false, error: 'A franchise owner is already registered with this email address.' };
+        }
+      }
+    }
+  }
+
+  // 3. Server-Side Sequential Team ID Generation (Format: SPL-TEAM-0001, SPL-TEAM-0002...)
+  var maxSuffix = 0;
+  existingTeamIds.forEach(function(eid) {
+    var match = eid.match(/SPL-TEAM-(\d+)/i);
+    if (match) {
+      var num = parseInt(match[1], 10);
+      if (num > maxSuffix) maxSuffix = num;
+    }
+  });
+
+  var nextNum = maxSuffix + 1;
+  var teamId = 'SPL-TEAM-' + ('0000' + nextNum).slice(-4);
+  while (existingTeamIds.indexOf(teamId) !== -1) {
+    nextNum++;
+    teamId = 'SPL-TEAM-' + ('0000' + nextNum).slice(-4);
+  }
 
   var shortName = String(payload.short_name || teamName.substring(0, 4).toUpperCase()).trim();
-  var purse = Number(payload.purse || payload.total_budget || 1000);
-  var teamId = payload.id || ('team-' + teamName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + new Date().getTime().toString().slice(-4));
-
-  var sheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
   var now = new Date().toISOString();
+  var computedPasswordHash = passwordHash || hashPassword(rawPassword);
 
-  sheet.appendRow([
+  // 4. Append to Teams sheet matching headers
+  var teamRow = [];
+  for (var h = 0; h < teamsHeaders.length; h++) {
+    var col = teamsHeaders[h];
+    if (col === 'id') teamRow.push(teamId);
+    else if (col === 'team_name') teamRow.push(teamName);
+    else if (col === 'short_name') teamRow.push(shortName);
+    else if (col === 'owner_name') teamRow.push(ownerName);
+    else if (col === 'owner_email') teamRow.push(ownerEmail);
+    else if (col === 'logo_file_id') teamRow.push('');
+    else if (col === 'logo_file_url' || col === 'logo') teamRow.push(logo);
+    else if (col === 'purse') teamRow.push(purse);
+    else if (col === 'total_spent') teamRow.push(0);
+    else if (col === 'remaining_purse') teamRow.push(purse);
+    else if (col === 'player_count') teamRow.push(0);
+    else if (col === 'status') teamRow.push('Active');
+    else if (col === 'created_at') teamRow.push(now);
+    else teamRow.push('');
+  }
+  teamsSheet.appendRow(teamRow);
+
+  // 5. Append to Franchise_Auth sheet:
+  // id, created_at, owner_name, owner_email, team_id, password_hash, status, last_login_at
+  var authId = 'SPL-AUTH-' + ('0000' + nextNum).slice(-4);
+  authSheet.appendRow([
+    authId,
+    now,
+    ownerName,
+    ownerEmail,
     teamId,
-    teamName,
-    shortName,
-    payload.logo_file_id || '',
-    payload.logo_file_url || '',
-    purse,
-    0, // total_spent
-    purse, // remaining_purse
-    0, // player_count
+    computedPasswordHash,
     'Active',
     now
   ]);
 
-  return { success: true, teamId: teamId, message: 'Franchise team created.' };
+  SpreadsheetApp.flush();
+
+  // 6. Verify write
+  var verifyLastRow = teamsSheet.getLastRow();
+  if (verifyLastRow <= 1) {
+    return { success: false, error: 'Database write failed: Team row was not persisted in Google Sheets.' };
+  }
+
+  var createdTeam = {
+    id: teamId,
+    team_name: teamName,
+    name: teamName,
+    short_name: shortName,
+    owner_name: ownerName,
+    owner_email: ownerEmail,
+    purse: purse,
+    total_budget: purse,
+    total_spent: 0,
+    spent: 0,
+    remaining_purse: purse,
+    leftover_balance: purse,
+    player_count: 0,
+    squad_count: 0,
+    squad: [],
+    department: department,
+    logo: logo,
+    status: 'Active',
+    created_at: now
+  };
+
+  Logger.log('[FRANCHISE REGISTERED] Team: ' + teamId + ' | Owner: ' + ownerEmail);
+
+  return {
+    success: true,
+    data: {
+      team: createdTeam,
+      owner: {
+        id: authId,
+        owner_name: ownerName,
+        owner_email: ownerEmail,
+        team_id: teamId
+      }
+    },
+    message: 'Franchise team and owner credentials registered successfully.'
+  };
+}
+
+/**
+ * STEP 23 — FRANCHISE OWNER AUTHENTICATION (LOGIN)
+ * Authenticates against Franchise_Auth and resolves team association
+ */
+function apiLoginFranchise(payload) {
+  var email = String(payload.email || payload.owner_email || '').trim().toLowerCase();
+  var rawPassword = String(payload.password || payload.rawPassword || '');
+  var inputHash = String(payload.password_hash || '');
+
+  if (!email) {
+    return { success: false, error: 'Owner email is required.' };
+  }
+  if (!rawPassword && !inputHash) {
+    return { success: false, error: 'Password is required.' };
+  }
+
+  var computedHash = rawPassword ? hashPassword(rawPassword) : inputHash;
+
+  var ss = getSpreadsheet();
+  var authSheet = getOrCreateSheet(CONFIG.SHEETS.FRANCHISE_AUTH, HEADERS.FRANCHISE_AUTH);
+  var lastRowAuth = authSheet.getLastRow();
+  var lastColAuth = authSheet.getLastColumn();
+
+  var matchedAuth = null;
+  var authRowIndex = -1;
+
+  if (lastRowAuth > 1) {
+    var authHeaders = authSheet.getRange(1, 1, 1, lastColAuth).getValues()[0].map(function(h) { return String(h).trim(); });
+    var emailIdx = authHeaders.indexOf('owner_email');
+    var hashIdx = authHeaders.indexOf('password_hash');
+    var teamIdIdx = authHeaders.indexOf('team_id');
+    var ownerNameIdx = authHeaders.indexOf('owner_name');
+    var lastLoginIdx = authHeaders.indexOf('last_login_at');
+
+    var authValues = authSheet.getRange(2, 1, lastRowAuth - 1, lastColAuth).getValues();
+    for (var a = 0; a < authValues.length; a++) {
+      var row = authValues[a];
+      var rowEmail = emailIdx !== -1 ? String(row[emailIdx]).trim().toLowerCase() : '';
+      if (rowEmail === email) {
+        var storedHash = hashIdx !== -1 ? String(row[hashIdx]).trim() : '';
+        // Compare password hash (support computed salted hash or direct match)
+        if (storedHash && (storedHash === computedHash || (inputHash && storedHash === inputHash))) {
+          matchedAuth = {
+            owner_name: ownerNameIdx !== -1 ? String(row[ownerNameIdx]).trim() : '',
+            owner_email: rowEmail,
+            team_id: teamIdIdx !== -1 ? String(row[teamIdIdx]).trim() : ''
+          };
+          authRowIndex = a + 2;
+          // Update last_login_at
+          if (lastLoginIdx !== -1) {
+            authSheet.getRange(authRowIndex, lastLoginIdx + 1).setValue(new Date().toISOString());
+          }
+          break;
+        } else {
+          return { success: false, error: 'Incorrect password. Please verify your credentials.' };
+        }
+      }
+    }
+  }
+
+  // Fallback: If not in Franchise_Auth yet, check Teams sheet for matching owner_email
+  var teamsRes = apiGetTeams();
+  var teams = teamsRes.data || [];
+  var matchedTeam = null;
+
+  if (matchedAuth && matchedAuth.team_id) {
+    matchedTeam = teams.find(function(t) {
+      return String(t.id).trim().toLowerCase() === matchedAuth.team_id.toLowerCase();
+    });
+  }
+
+  if (!matchedTeam) {
+    matchedTeam = teams.find(function(t) {
+      return t.owner_email && t.owner_email.toLowerCase() === email;
+    });
+  }
+
+  if (!matchedAuth && !matchedTeam) {
+    return { success: false, error: 'No franchise owner found with this email. Please register first.' };
+  }
+
+  var finalTeam = matchedTeam || {
+    id: matchedAuth ? matchedAuth.team_id : '',
+    team_name: 'Franchise Team',
+    name: 'Franchise Team',
+    owner_name: matchedAuth ? matchedAuth.owner_name : '',
+    owner_email: email
+  };
+
+  var ownerName = (matchedAuth && matchedAuth.owner_name) || finalTeam.owner_name || 'Franchise Owner';
+  var teamId = finalTeam.id || (matchedAuth ? matchedAuth.team_id : '');
+  var teamName = finalTeam.team_name || finalTeam.name || 'Franchise Team';
+
+  Logger.log('[FRANCHISE LOGIN SUCCESS] Email: ' + email + ' | Team: ' + teamId);
+
+  return {
+    success: true,
+    data: {
+      team_id: teamId,
+      teamId: teamId,
+      owner_name: ownerName,
+      ownerName: ownerName,
+      owner_email: email,
+      email: email,
+      team_name: teamName,
+      teamName: teamName,
+      team: finalTeam
+    },
+    message: 'Authenticated successfully.'
+  };
+}
+
+// Alias for backwards compatibility
+function apiCreateTeam(payload) {
+  return apiRegisterFranchise(payload);
 }
 
 function apiUpdateTeam(payload) {
@@ -1558,6 +1944,29 @@ function apiDeleteTeam(payload) {
   // Delete ONLY that specific team row
   teamsSheet.deleteRow(targetRow);
   Logger.log('[DELETE TEAM] Team ' + teamId + ' deleted from Google Sheet row ' + targetRow);
+
+  // Also clean up corresponding record in Franchise_Auth sheet if it exists
+  try {
+    var ss = getSpreadsheet();
+    var authSheet = ss.getSheetByName(CONFIG.SHEETS.FRANCHISE_AUTH);
+    if (authSheet && authSheet.getLastRow() > 1) {
+      var aCols = authSheet.getLastColumn();
+      var aHeaders = authSheet.getRange(1, 1, 1, aCols).getValues()[0].map(function(h) { return String(h).trim(); });
+      var aTidIdx = aHeaders.indexOf('team_id');
+      if (aTidIdx !== -1) {
+        var aValues = authSheet.getRange(2, 1, authSheet.getLastRow() - 1, aCols).getValues();
+        for (var a = aValues.length - 1; a >= 0; a--) {
+          var aTid = String(aValues[a][aTidIdx] || '').trim().toLowerCase();
+          if (aTid === teamId.toLowerCase()) {
+            authSheet.deleteRow(a + 2);
+            Logger.log('[DELETE TEAM] Removed auth record for team ' + teamId);
+          }
+        }
+      }
+    }
+  } catch (authDelErr) {
+    Logger.log('Auth record delete warning: ' + authDelErr);
+  }
 
   return {
     success: true,

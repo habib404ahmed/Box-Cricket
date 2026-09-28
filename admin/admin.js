@@ -185,9 +185,10 @@ function computeTeamsSignature(teams) {
     if (!Array.isArray(teams)) return '';
     return JSON.stringify(teams.map(t => ({
         id: t.id,
-        name: t.name,
-        total_budget: t.total_budget,
-        spent_points: t.spent_points,
+        name: t.name || t.team_name,
+        owner_name: t.owner_name,
+        total_budget: t.total_budget || t.purse,
+        spent_points: t.spent_points || t.spent,
         remaining_purse: t.remaining_purse,
         squad_count: t.squad_count
     })));
@@ -209,10 +210,10 @@ async function refreshAdminData(forceRender = false) {
                 window.GoogleTourneyApi.getTeams(allPlayers)
             ]);
 
-            if (playersRes.status === 'fulfilled' && playersRes.value && playersRes.value.success) {
+            if (playersRes.status === 'fulfilled' && playersRes.value && (playersRes.value.success || Array.isArray(playersRes.value.data))) {
                 playersData = playersRes.value.data;
             }
-            if (teamsRes.status === 'fulfilled' && teamsRes.value && teamsRes.value.success) {
+            if (teamsRes.status === 'fulfilled' && teamsRes.value && (teamsRes.value.success || Array.isArray(teamsRes.value.data))) {
                 teamsData = teamsRes.value.data;
             }
         } else if (window.UniBoxDb) {
@@ -348,16 +349,25 @@ function renderTeamBalanceHUD() {
     if (!teamsHudContainer) return;
 
     if (!allTeams.length) {
-        teamsHudContainer.innerHTML = `<div class="col-span-full py-6 text-center text-slate-400 text-xs bg-[#08111F]/50 rounded-2xl border border-sky-950/60">No franchise balances available</div>`;
+        teamsHudContainer.innerHTML = `<div class="col-span-full py-6 text-center text-slate-400 text-xs bg-[#08111F]/50 rounded-2xl border border-sky-950/60">No franchises yet.</div>`;
         return;
     }
 
     teamsHudContainer.innerHTML = allTeams.map(team => {
-        const total = Number(team.total_budget) || 1000;
-        const spent = Number(team.spent) || 0;
+        const total = Number(team.purse ?? team.total_budget ?? 1000);
+        const spent = Number(team.spent ?? team.total_spent ?? 0);
         const leftover = Math.max(0, total - spent);
-        const spentPct = Math.min(100, (spent / total) * 100);
-        const squadCount = team.squad_count || (team.squad ? team.squad.length : 0);
+        const spentPct = total > 0 ? Math.min(100, (spent / total) * 100) : 0;
+        const squadCount = team.squad_count ?? (team.squad ? team.squad.length : (team.player_count ?? 0));
+        
+        const rawOwner = team.owner_name ? String(team.owner_name).trim() : '';
+        const ownerName = (rawOwner && rawOwner !== 'undefined' && rawOwner !== 'null') ? rawOwner : 'No Owner Claimed';
+        
+        const teamName = team.team_name || team.name || 'Franchise Team';
+        const rawShort = team.short_name || team.department;
+        const shortName = (rawShort && String(rawShort).trim() && String(rawShort).trim() !== 'undefined' && String(rawShort).trim() !== 'null') 
+            ? String(rawShort).trim() 
+            : 'SPL';
 
         return `
             <div onclick="openTeamSquadModal('${team.id}')"
@@ -369,20 +379,20 @@ function renderTeamBalanceHUD() {
                         <span class="text-xl p-1.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0 group-hover:scale-110 transition-transform">${team.logo || '🏏'}</span>
                         <div class="flex items-center gap-1.5">
                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-900 text-slate-400 border border-slate-800">
-                                ${team.short_name || team.department || 'SPL'}
+                                ${shortName}
                             </span>
                             <button type="button" data-team-id="${team.id}" onclick="event.stopPropagation(); handleDeleteTeam('${team.id}', this)"
                                 class="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/15 transition-all cursor-pointer opacity-70 group-hover:opacity-100"
-                                title="Delete ${team.name}">
+                                title="Delete ${teamName}">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                             </button>
                         </div>
                     </div>
-                    <h4 class="font-black text-white text-sm uppercase truncate group-hover:text-lime-400 transition-colors">${team.name}</h4>
+                    <h4 class="font-black text-white text-sm uppercase truncate group-hover:text-lime-400 transition-colors">${teamName}</h4>
                     <div class="mt-1 flex items-center gap-1.5 text-[11px] truncate">
                         <span class="text-amber-400 text-xs">👑</span>
-                        <span class="${team.owner_name ? 'text-amber-300 font-semibold' : 'text-slate-500 font-normal'} truncate">
-                            ${team.owner_name ? team.owner_name : 'No Owner Claimed'}
+                        <span class="${ownerName !== 'No Owner Claimed' ? 'text-amber-300 font-semibold' : 'text-slate-500 font-normal'} truncate">
+                            ${ownerName}
                         </span>
                     </div>
                 </div>

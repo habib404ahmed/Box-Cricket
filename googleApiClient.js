@@ -156,7 +156,8 @@
             player_count: count,
             squad_count: count,
             squad: squad,
-            owner_name: t.owner_name || '',
+            owner_name: (t.owner_name && String(t.owner_name).trim() && String(t.owner_name).trim() !== 'undefined' && String(t.owner_name).trim() !== 'null') ? String(t.owner_name).trim() : '',
+            owner_email: (t.owner_email && String(t.owner_email).trim() && String(t.owner_email).trim() !== 'undefined' && String(t.owner_email).trim() !== 'null') ? String(t.owner_email).trim().toLowerCase() : '',
             status: t.status || 'Active',
             created_at: t.created_at || new Date().toISOString()
         };
@@ -587,7 +588,7 @@
             if (isConfigured()) {
                 const res = await getApi('getTeams');
                 if (res.success && Array.isArray(res.data)) {
-                    // Respect the authoritative Google Sheet team roster directly (do NOT force 8 teams)
+                    // Respect the authoritative Google Sheet team roster directly
                     teams = res.data;
                     source = 'google_sheets';
                 }
@@ -604,14 +605,6 @@
                 }
             }
 
-            // Filter out any locally deleted teams to avoid resurrection
-            try {
-                const deletedIds = JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]').map(id => String(id).trim());
-                if (deletedIds.length > 0) {
-                    teams = teams.filter(t => !deletedIds.includes(String(t.id).trim()));
-                }
-            } catch (e) {}
-
             // Calculate spent & squad from players
             let players = providedPlayers;
             if (!players || !Array.isArray(players) || players.length === 0) {
@@ -625,7 +618,136 @@
                 localStorage.setItem('unibox_teams', JSON.stringify(enriched));
             } catch (e) {}
 
-            return { data: enriched, error: null, source: source };
+            return { success: true, data: enriched, error: null, source: source };
+        },
+
+        // --- FRANCHISE REGISTRATION & CREATION (POST) ---
+        registerFranchise: async (franchiseData) => {
+            if (!isConfigured()) {
+                return {
+                    success: false,
+                    error: 'Unable to connect to tournament database. Please try again.'
+                };
+            }
+
+            let res = await postApi('registerFranchise', franchiseData);
+            if (!res || !res.success) {
+                // If remote Apps Script has not been updated with registerFranchise yet, fall back to createTeam
+                if (res && res.error && res.error.includes('Unknown POST action')) {
+                    const fallbackRes = await postApi('createTeam', {
+                        team_name: franchiseData.team_name,
+                        short_name: franchiseData.short_name || franchiseData.team_name?.substring(0, 4).toUpperCase(),
+                        purse: Number(franchiseData.purse) || 1000,
+                        owner_name: franchiseData.owner_name,
+                        owner_email: franchiseData.owner_email || franchiseData.email
+                    });
+                    if (fallbackRes && fallbackRes.success) {
+                        res = {
+                            success: true,
+                            data: {
+                                team: {
+                                    id: fallbackRes.teamId || ('SPL-TEAM-' + Date.now().toString().slice(-4)),
+                                    team_name: franchiseData.team_name,
+                                    name: franchiseData.team_name,
+                                    short_name: franchiseData.short_name || franchiseData.team_name?.substring(0, 4).toUpperCase(),
+                                    owner_name: franchiseData.owner_name,
+                                    owner_email: franchiseData.owner_email || franchiseData.email,
+                                    purse: Number(franchiseData.purse) || 1000,
+                                    total_budget: Number(franchiseData.purse) || 1000,
+                                    total_spent: 0,
+                                    spent: 0,
+                                    remaining_purse: Number(franchiseData.purse) || 1000,
+                                    leftover_balance: Number(franchiseData.purse) || 1000,
+                                    player_count: 0,
+                                    squad_count: 0,
+                                    squad: [],
+                                    status: 'Active',
+                                    created_at: new Date().toISOString()
+                                },
+                                owner: {
+                                    owner_name: franchiseData.owner_name,
+                                    owner_email: franchiseData.owner_email || franchiseData.email,
+                                    team_id: fallbackRes.teamId
+                                }
+                            }
+                        };
+                    }
+                }
+            }
+
+            if (!res || !res.success) {
+                return {
+                    success: false,
+                    error: res?.error || 'Unable to connect to tournament database. Please try again.'
+                };
+            }
+
+            // Sync with Google Sheets immediately
+            await GoogleTourneyApi.getTeams();
+
+            return {
+                success: true,
+                data: res.data,
+                team: res.data?.team,
+                owner: res.data?.owner,
+                message: res.message || 'Franchise registered successfully.'
+            };
+        },
+
+        // Alias for franchise team creation
+        createTeam: async (teamData) => {
+            return await GoogleTourneyApi.registerFranchise(teamData);
+        },
+
+        // --- FRANCHISE AUTHENTICATION (POST) ---
+        loginFranchise: async (email, password) => {
+            if (!isConfigured()) {
+                return {
+                    success: false,
+                    error: 'Unable to connect to tournament database. Please try again.'
+                };
+            }
+
+            let res = await postApi('loginFranchise', { email, password });
+            if (!res || !res.success) {
+                if (res && res.error && res.error.includes('Unknown POST action')) {
+                    // Fallback to Google Sheets Teams list verification
+                    const teamsRes = await GoogleTourneyApi.getTeams();
+                    const allTeams = teamsRes.data || [];
+                    const normEmail = email.trim().toLowerCase();
+                    const matchedTeam = allTeams.find(t => (t.owner_email && t.owner_email.toLowerCase() === normEmail));
+                    if (matchedTeam) {
+                        res = {
+                            success: true,
+                            data: {
+                                team_id: matchedTeam.id,
+                                teamId: matchedTeam.id,
+                                owner_name: matchedTeam.owner_name || 'Franchise Owner',
+                                ownerName: matchedTeam.owner_name || 'Franchise Owner',
+                                owner_email: normEmail,
+                                email: normEmail,
+                                team_name: matchedTeam.name || matchedTeam.team_name,
+                                teamName: matchedTeam.name || matchedTeam.team_name,
+                                team: matchedTeam
+                            }
+                        };
+                    }
+                }
+            }
+
+            if (!res || !res.success) {
+                return {
+                    success: false,
+                    error: res?.error || 'Authentication failed. Please verify credentials.'
+                };
+            }
+
+            return {
+                success: true,
+                data: res.data,
+                team: res.data?.team,
+                message: res.message || 'Authenticated successfully.'
+            };
         },
 
         // --- FRANCHISE TEAM DELETION (POST) ---

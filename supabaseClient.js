@@ -407,153 +407,62 @@ const UniBoxDb = {
 
     // --- FRANCHISE TEAM OWNER AUTHENTICATION & PORTAL METHODS ---
     registerTeamOwner: async (ownerData) => {
-        const { ownerName, email, password, phone, teamMode, existingTeamId, customTeamName, department, logo, color } = ownerData;
+        const { ownerName, email, password, phone, teamMode, existingTeamId, customTeamName, department, logo, color, budget } = ownerData;
 
         if (!ownerName || !email || !password) {
             return { success: false, error: 'Owner name, email, and password are required.' };
         }
 
         const normalizedEmail = email.trim().toLowerCase();
-        const passwordHash = await UniBoxDb.hashPassword(password);
 
-        // Fetch current teams
-        let currentTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
-        if (!currentTeams.length) {
-            currentTeams = DEFAULT_TEAMS.map(t => ({ ...t }));
-        }
-
-        // Check if an owner with this email already exists
-        const emailExists = currentTeams.some(t => t.owner_email && t.owner_email.toLowerCase() === normalizedEmail);
-        if (emailExists) {
-            return { success: false, error: 'A franchise owner is already registered with this email address.' };
-        }
-
-        let targetTeam = null;
-
-        if (teamMode === 'claim') {
-            const teamIdx = currentTeams.findIndex(t => t.id === existingTeamId);
-            if (teamIdx === -1) {
-                return { success: false, error: 'Selected franchise was not found.' };
-            }
-            if (currentTeams[teamIdx].owner_email) {
-                return { success: false, error: `The ${currentTeams[teamIdx].name} franchise has already been claimed by another owner.` };
-            }
-
-            currentTeams[teamIdx] = {
-                ...currentTeams[teamIdx],
+        // 1. Authoritative: Google Sheets & Apps Script backend (DO NOT use localStorage as truth)
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
+            const teamPayload = {
                 owner_name: ownerName.trim(),
                 owner_email: normalizedEmail,
-                owner_phone: phone ? phone.trim() : null,
-                password_hash: passwordHash,
-                status: 'Active'
+                email: normalizedEmail,
+                password: password,
+                team_name: (customTeamName || ownerName + ' XI').trim(),
+                department: department || 'B.Tech',
+                logo: logo || '🏏',
+                purse: Number(budget) || 1000
             };
-            targetTeam = currentTeams[teamIdx];
-        } else {
-            // Custom franchise
-            if (!customTeamName || !department) {
-                return { success: false, error: 'Team name and department are required for custom franchise registration.' };
-            }
 
-            const nameExists = currentTeams.some(t => t.name.toLowerCase() === customTeamName.trim().toLowerCase());
-            if (nameExists) {
-                return { success: false, error: 'A franchise with this name already exists in the tournament.' };
-            }
-
-            const slug = customTeamName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-');
-            const customId = `team-${slug}-${Date.now().toString().slice(-4)}`;
-
-            const initialBudget = Number(ownerData.budget) || 1000;
-            targetTeam = {
-                id: customId,
-                name: customTeamName.trim(),
-                department: department.trim(),
-                logo: logo || '🏆',
-                color: color || '#a3e635',
-                total_budget: initialBudget,
-                spent: 0,
-                leftover_balance: initialBudget,
-                squad: [],
-                owner_name: ownerName.trim(),
-                owner_email: normalizedEmail,
-                owner_phone: phone ? phone.trim() : null,
-                password_hash: passwordHash,
-                status: 'Active',
-                created_at: new Date().toISOString()
-            };
-            currentTeams.push(targetTeam);
-        }
-
-        localStorage.setItem('unibox_teams', JSON.stringify(currentTeams));
-
-        // Sync to Supabase if ready
-        if (UniBoxDb.isReady()) {
-            try {
-                const teamPayload = {
-                    id: targetTeam.id,
-                    name: targetTeam.name,
-                    department: targetTeam.department,
-                    logo: targetTeam.logo,
-                    color: targetTeam.color,
-                    total_budget: targetTeam.total_budget,
-                    owner_name: targetTeam.owner_name,
-                    owner_email: targetTeam.owner_email,
-                    owner_phone: targetTeam.owner_phone,
-                    password_hash: targetTeam.password_hash,
-                    status: targetTeam.status
+            const googleRes = await window.GoogleTourneyApi.registerFranchise(teamPayload);
+            if (!googleRes || !googleRes.success) {
+                return {
+                    success: false,
+                    error: googleRes?.error || 'Franchise registration failed. Please try again.'
                 };
-
-                let { error: sbError } = await supabaseClient.from('teams').upsert([teamPayload], { onConflict: 'id' });
-                if (sbError && (sbError.code === 'PGRST204' || sbError.message?.includes('schema cache') || sbError.code === '42703')) {
-                    const basicPayload = {
-                        id: targetTeam.id,
-                        name: targetTeam.name,
-                        department: targetTeam.department,
-                        logo: targetTeam.logo,
-                        color: targetTeam.color,
-                        total_budget: targetTeam.total_budget
-                    };
-                    await supabaseClient.from('teams').upsert([basicPayload], { onConflict: 'id' });
-                }
-            } catch (err) {
-                console.warn('Supabase team upsert fallback to local storage:', err);
             }
+
+            const targetTeam = googleRes.data?.team || googleRes.team;
+
+            // Session data (store only necessary non-sensitive info: team_id, owner_name, owner_email, team_name)
+            const sessionData = {
+                email: normalizedEmail,
+                ownerName: targetTeam.owner_name || ownerName.trim(),
+                teamId: targetTeam.id,
+                teamName: targetTeam.name || targetTeam.team_name,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
+            sessionStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
+
+            // Broadcast registration event
+            UniBoxDb.broadcastAuctionEvent({
+                type: 'TEAM_OWNER_REGISTERED',
+                team: targetTeam,
+                ownerEmail: normalizedEmail
+            });
+
+            return { success: true, team: targetTeam, error: null };
         }
 
-        // Persist to team owners registry for resilient cross-tab and offline recovery
-        try {
-            const registry = JSON.parse(localStorage.getItem('unibox_team_owners_registry') || '{}');
-            const regData = {
-                owner_name: targetTeam.owner_name,
-                owner_email: normalizedEmail,
-                owner_phone: targetTeam.owner_phone,
-                password_hash: passwordHash,
-                team_id: targetTeam.id,
-                team_name: targetTeam.name
-            };
-            registry[targetTeam.id] = regData;
-            registry[targetTeam.name.toLowerCase()] = regData;
-            registry[normalizedEmail] = regData;
-            localStorage.setItem('unibox_team_owners_registry', JSON.stringify(registry));
-        } catch (e) {}
-
-        // Set session
-        const sessionData = {
-            email: normalizedEmail,
-            ownerName: targetTeam.owner_name,
-            teamId: targetTeam.id,
-            teamName: targetTeam.name,
-            timestamp: Date.now()
+        return {
+            success: false,
+            error: 'Unable to connect to tournament database. Please try again.'
         };
-        localStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
-
-        // Broadcast registration event
-        UniBoxDb.broadcastAuctionEvent({
-            type: 'TEAM_OWNER_REGISTERED',
-            team: targetTeam,
-            ownerEmail: normalizedEmail
-        });
-
-        return { success: true, team: targetTeam, error: null };
     },
 
     loginTeamOwner: async (email, password) => {
@@ -562,42 +471,38 @@ const UniBoxDb = {
         }
 
         const normalizedEmail = email.trim().toLowerCase();
-        const inputHash = await UniBoxDb.hashPassword(password);
 
-        // Fetch all teams
-        const { data: teams } = await UniBoxDb.getAllTeams();
-        const registry = JSON.parse(localStorage.getItem('unibox_team_owners_registry') || '{}');
-        const regEntry = registry[normalizedEmail];
-
-        let team = teams.find(t => t.owner_email && t.owner_email.toLowerCase() === normalizedEmail);
-        if (!team && regEntry) {
-            team = teams.find(t => t.id === regEntry.team_id || t.name.toLowerCase() === (regEntry.team_name || '').toLowerCase());
-            if (team) {
-                team.owner_name = team.owner_name || regEntry.owner_name;
-                team.owner_email = team.owner_email || regEntry.owner_email;
-                team.password_hash = team.password_hash || regEntry.password_hash;
+        // 1. Authoritative: Google Sheets & Apps Script backend (Franchise_Auth)
+        if (typeof window !== 'undefined' && window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
+            const googleRes = await window.GoogleTourneyApi.loginFranchise(normalizedEmail, password);
+            if (!googleRes || !googleRes.success) {
+                return {
+                    success: false,
+                    error: googleRes?.error || 'Authentication failed. Please verify credentials.'
+                };
             }
+
+            const authData = googleRes.data || {};
+            const team = authData.team || {};
+
+            // Session data: only non-sensitive info (team_id, owner_name, owner_email, team_name)
+            const sessionData = {
+                email: normalizedEmail,
+                ownerName: authData.owner_name || authData.ownerName || team.owner_name || 'Franchise Owner',
+                teamId: authData.team_id || authData.teamId || team.id,
+                teamName: authData.team_name || authData.teamName || team.name || team.team_name,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
+            sessionStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
+
+            return { success: true, team: team.id ? team : { id: sessionData.teamId, name: sessionData.teamName, ...team }, error: null };
         }
 
-        if (!team) {
-            return { success: false, error: 'No franchise owner found with this email. Please register first.' };
-        }
-
-        if (team.password_hash && team.password_hash !== inputHash) {
-            return { success: false, error: 'Incorrect password. Please verify your credentials.' };
-        }
-
-        // Set session
-        const sessionData = {
-            email: normalizedEmail,
-            ownerName: team.owner_name || regEntry?.owner_name || 'Franchise Owner',
-            teamId: team.id,
-            teamName: team.name,
-            timestamp: Date.now()
+        return {
+            success: false,
+            error: 'Unable to connect to tournament database. Please try again.'
         };
-        localStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
-
-        return { success: true, team, error: null };
     },
 
     getTeamOwnerSession: () => {
@@ -609,7 +514,10 @@ const UniBoxDb = {
     },
 
     logoutTeamOwner: () => {
-        localStorage.removeItem('unibox_team_owner_session');
+        try {
+            localStorage.removeItem('unibox_team_owner_session');
+            sessionStorage.removeItem('unibox_team_owner_session');
+        } catch (e) {}
     },
 
     getTeamByOwnerEmail: async (email) => {

@@ -337,7 +337,7 @@
                             return;
                         }
 
-                        showAlert(`Authenticated as ${res.team.name} Owner! Redirecting...`, true);
+                        showAlert(`Authenticated as ${res.team.team_name || res.team.name || 'Franchise'} Owner! Redirecting...`, true);
                         setTimeout(() => {
                             window.location.replace('index.html');
                         }, 500);
@@ -410,7 +410,7 @@
                             return;
                         }
 
-                        showAlert(`Franchise "${res.team.name}" registered successfully! Redirecting to hub...`, true);
+                        showAlert(`Franchise "${res.team.team_name || res.team.name}" registered successfully! Redirecting to hub...`, true);
                         setTimeout(() => {
                             window.location.replace('index.html');
                         }, 600);

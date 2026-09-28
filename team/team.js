@@ -152,22 +152,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 4. LOAD FRANCHISE DATA & SQUAD
     async function loadFranchiseData() {
-        if (!window.UniBoxDb) return;
+        if (!window.UniBoxDb && !window.GoogleTourneyApi) return;
 
         try {
-            // Fetch all teams with computed leftover budgets
-            const { data: teams } = await window.UniBoxDb.getAllTeams();
-            const email = session.email.toLowerCase();
+            // Fetch all teams from authoritative Google Sheets source
+            const { data: teams } = window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()
+                ? await window.GoogleTourneyApi.getTeams()
+                : await window.UniBoxDb.getAllTeams();
 
-            // Find this owner's team
-            let team = teams.find(t => t.owner_email && t.owner_email.toLowerCase() === email);
+            const allT = Array.isArray(teams) ? teams : [];
+            const email = (session.email || '').trim().toLowerCase();
+            const teamId = (session.teamId || '').trim();
 
-            // Fallback match by teamId or teamName if owner_email not matched yet
-            if (!team && session.teamId) {
-                team = teams.find(t => t.id === session.teamId);
+            // PART 12: Primary association by team_id
+            let team = null;
+            if (teamId) {
+                team = allT.find(t => String(t.id).trim().toLowerCase() === teamId.toLowerCase());
+            }
+            if (!team && email) {
+                team = allT.find(t => t.owner_email && t.owner_email.toLowerCase() === email);
             }
             if (!team && session.teamName) {
-                team = teams.find(t => t.name.toLowerCase() === session.teamName.toLowerCase());
+                team = allT.find(t => (t.name || t.team_name || '').toLowerCase() === session.teamName.toLowerCase());
             }
 
             if (!team) {
@@ -179,8 +185,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             currentSquad = team.squad || [];
 
             // Also fetch all tournament players for the live auction watcher
-            const { data: allPlayers } = await window.UniBoxDb.getAllPlayers();
-            allTournamentPlayers = allPlayers || [];
+            const playersRes = window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()
+                ? await window.GoogleTourneyApi.getPlayers()
+                : await window.UniBoxDb.getAllPlayers();
+            allTournamentPlayers = (playersRes && playersRes.data) || [];
 
             // Render components
             renderHeader();
@@ -199,8 +207,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!currentTeam) return;
 
         if (headerLogo) headerLogo.textContent = currentTeam.logo || '🏏';
-        if (headerName) headerName.textContent = currentTeam.name;
-        if (headerDept) headerDept.textContent = currentTeam.department;
+        if (headerName) headerName.textContent = currentTeam.team_name || currentTeam.name || 'My Franchise';
+        if (headerDept) headerDept.textContent = currentTeam.short_name || currentTeam.department || 'SPL';
         if (headerOwner) headerOwner.textContent = currentTeam.owner_name || session.ownerName || 'Franchise Owner';
 
         // Update ambient glow color if custom color specified
@@ -213,9 +221,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderHUD() {
         if (!currentTeam) return;
 
-        const leftover = Number(currentTeam.leftover_balance) || 0;
-        const total = Number(currentTeam.total_budget) || 100;
-        const spent = Number(currentTeam.spent) || 0;
+        const leftover = Number(currentTeam.leftover_balance ?? currentTeam.remaining_purse ?? 1000);
+        const total = Number(currentTeam.total_budget ?? currentTeam.purse ?? 1000);
+        const spent = Number(currentTeam.spent ?? currentTeam.total_spent ?? 0);
         const squadCount = currentSquad.length;
 
         if (hudLeftover) hudLeftover.textContent = `${leftover.toFixed(1)} Pts`;
