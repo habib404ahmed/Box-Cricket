@@ -52,7 +52,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    // State Variables
+    // Centralized State
+    const teamState = {
+        currentTeam: null,
+        currentSquad: [],
+        allTournamentPlayers: [],
+        activeTab: 'squad',
+        isSyncing: false,
+        lastSyncStateSig: '',
+        lastOwnerDataSig: '',
+        isFirstLoad: true
+    };
+
     let currentTeam = null;
     let currentSquad = [];
     let allTournamentPlayers = [];
@@ -95,6 +106,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const logoutBtn = document.getElementById('owner-logout-btn');
     const switchToAuctionBtn = document.getElementById('switch-to-auction-btn');
 
+    // Progressive Shell Render: Show known session info immediately
+    if (session.teamName && headerName) headerName.textContent = session.teamName;
+    if (session.ownerName && headerOwner) headerOwner.textContent = session.ownerName;
+
     // 2. LOGOUT HANDLER
     if (logoutBtn) {
         logoutBtn.addEventListener('click', (e) => {
@@ -119,6 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 3. TAB SWITCHING
     function setTab(tab) {
         activeTab = tab;
+        teamState.activeTab = tab;
         if (tab === 'squad') {
             viewTabSquad.className = 'px-5 py-2.5 rounded-2xl text-xs font-black transition-all bg-lime-400 text-slate-950 shadow-lg shadow-lime-400/20 cursor-pointer';
             viewTabAuction.className = 'px-5 py-2.5 rounded-2xl text-xs font-bold transition-all text-slate-400 hover:text-white bg-slate-900 border border-slate-800 cursor-pointer';
@@ -144,29 +160,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (refreshBtn) {
         refreshBtn.addEventListener('click', async () => {
             if (refreshIcon) refreshIcon.classList.add('animate-spin');
-            await loadFranchiseData();
+            await loadFranchiseData(true);
             setTimeout(() => refreshIcon?.classList.remove('animate-spin'), 400);
             showToast('Franchise data refreshed!', 'info');
         });
     }
 
-    let lastOwnerDataSig = '';
+    // Render lightweight skeleton cards while loading initial squad
+    function renderSquadSkeletons() {
+        if (!squadGrid || teamState.currentSquad.length > 0) return;
+        squadGrid.innerHTML = [1, 2, 3].map(() => `
+            <div class="rounded-3xl bg-slate-900/60 border border-slate-800 p-5 space-y-4 animate-pulse shadow-xl">
+                <div class="flex items-start gap-3.5 mb-3">
+                    <div class="w-14 h-14 rounded-2xl bg-slate-800 shrink-0"></div>
+                    <div class="min-w-0 flex-1 space-y-2">
+                        <div class="h-4 bg-slate-800 rounded w-3/4"></div>
+                        <div class="h-3 bg-slate-800 rounded w-1/2"></div>
+                    </div>
+                </div>
+                <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                    <div class="h-5 bg-slate-800 rounded w-20"></div>
+                    <div class="h-4 bg-slate-800 rounded w-24"></div>
+                </div>
+            </div>
+        `).join('');
+    }
 
-    // 4. LOAD FRANCHISE DATA & SQUAD (Requirement 18: Real-Time Auto Sync)
+    // 4. LOAD FRANCHISE DATA & SQUAD (Smart Real-Time Auto Sync with zero DOM churn)
     async function loadFranchiseData(force = false) {
         if (!window.UniBoxDb && !window.GoogleTourneyApi) return;
+        if (teamState.isSyncing) return;
+        if (!force && document.hidden) return;
 
+        teamState.isSyncing = true;
         try {
-            // Fetch all teams from authoritative Google Sheets source
-            const { data: teams } = window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()
-                ? await window.GoogleTourneyApi.getTeams()
-                : await window.UniBoxDb.getAllTeams();
+            // Lightweight 1-second check: verify sync state signature before fetching full datasets
+            if (!force && window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getSyncState === 'function') {
+                const syncRes = await window.GoogleTourneyApi.getSyncState();
+                if (syncRes && syncRes.success && syncRes.data) {
+                    const sig = `${syncRes.data.teamsCount}_${syncRes.data.playersCount}_${syncRes.data.lastUpdated}`;
+                    if (sig === teamState.lastSyncStateSig) {
+                        return; // Zero changes in Google Sheets, 0 network overhead, 0 DOM manipulation!
+                    }
+                    teamState.lastSyncStateSig = sig;
+                }
+            }
 
-            const allT = Array.isArray(teams) ? teams : [];
+            // Parallel fetch of teams and players (Requirement 7)
+            const [teamsResult, playersResult] = await Promise.all([
+                (window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured())
+                    ? window.GoogleTourneyApi.getTeams()
+                    : (window.UniBoxDb ? window.UniBoxDb.getAllTeams() : Promise.resolve({ data: [] })),
+                (window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured())
+                    ? window.GoogleTourneyApi.getPlayers()
+                    : (window.UniBoxDb ? window.UniBoxDb.getAllPlayers() : Promise.resolve({ data: [] }))
+            ]);
+
+            const allT = Array.isArray(teamsResult?.data) ? teamsResult.data : [];
             const email = (session.email || '').trim().toLowerCase();
             const teamId = (session.teamId || '').trim();
 
-            // PART 12: Primary association by team_id
             let team = null;
             if (teamId) {
                 team = allT.find(t => String(t.id).trim().toLowerCase() === teamId.toLowerCase());
@@ -178,18 +231,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 team = allT.find(t => (t.name || t.team_name || '').toLowerCase() === session.teamName.toLowerCase());
             }
 
-            if (!team) {
-                return;
-            }
+            if (!team) return;
 
+            teamState.currentTeam = team;
+            teamState.currentSquad = team.squad || [];
             currentTeam = team;
             currentSquad = team.squad || [];
 
-            // Also fetch all tournament players for the live auction watcher
-            const playersRes = window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()
-                ? await window.GoogleTourneyApi.getPlayers()
-                : await window.UniBoxDb.getAllPlayers();
-            allTournamentPlayers = (playersRes && playersRes.data) || [];
+            teamState.allTournamentPlayers = (playersResult && playersResult.data) || [];
+            allTournamentPlayers = teamState.allTournamentPlayers;
 
             const currentSig = JSON.stringify({
                 id: team.id,
@@ -197,21 +247,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                 purse: team.purse,
                 spent: team.total_spent,
                 leftover: team.remaining_purse,
+                squadCount: (team.squad || []).length,
                 squad: (team.squad || []).map(p => ({ id: p.id, sold_price: p.sold_price })),
-                poolCount: allTournamentPlayers.length
+                poolCount: teamState.allTournamentPlayers.length
             });
 
-            if (force || currentSig !== lastOwnerDataSig) {
-                lastOwnerDataSig = currentSig;
+            if (force || currentSig !== teamState.lastOwnerDataSig) {
+                teamState.lastOwnerDataSig = currentSig;
                 renderHeader();
                 renderHUD();
                 renderSquadGrid();
-                if (activeTab === 'auction') {
+                if (teamState.activeTab === 'auction') {
                     renderAuctionWatcherView();
                 }
             }
         } catch (err) {
             console.error('Failed to load franchise data:', err);
+        } finally {
+            teamState.isSyncing = false;
+            teamState.isFirstLoad = false;
         }
     }
 
@@ -332,7 +386,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="flex items-start gap-3.5 mb-3">
                             <div class="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center text-xl shadow-inner">
                                 ${photo 
-                                    ? `<img src="${photo}" alt="${name}" class="w-full h-full object-cover">` 
+                                    ? `<img src="${photo}" alt="${name}" loading="lazy" class="w-full h-full object-cover" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\'text-slate-500 font-bold\'>${name.charAt(0)}</span>';">` 
                                     : `<span class="text-slate-500 font-bold">${name.charAt(0)}</span>`}
                             </div>
                             <div class="min-w-0 flex-1">
@@ -550,13 +604,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 3500);
     }
 
-    // Initial load
-    await loadFranchiseData(true);
+    // Progressive Shell Render: Show skeletons immediately before network returns
+    renderSquadSkeletons();
 
-    // Requirement 18: Real-Time 1-Second Auto-Refresh for Franchise Owner
-    setInterval(async () => {
-        try {
-            await loadFranchiseData(false);
-        } catch (e) {}
-    }, 1000);
+    // Initial progressive load
+    loadFranchiseData(true);
+
+    // Smart 1-Second Background Auto-Sync
+    let teamRefreshTimer = null;
+    function startTeamAutoSync() {
+        if (teamRefreshTimer) clearInterval(teamRefreshTimer);
+        teamRefreshTimer = setInterval(async () => {
+            try {
+                await loadFranchiseData(false);
+            } catch (e) {}
+        }, 1000);
+    }
+
+    function stopTeamAutoSync() {
+        if (teamRefreshTimer) {
+            clearInterval(teamRefreshTimer);
+            teamRefreshTimer = null;
+        }
+    }
+
+    startTeamAutoSync();
+
+    // Pause polling when tab is inactive/hidden to conserve battery and CPU
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopTeamAutoSync();
+        } else {
+            loadFranchiseData(false);
+            startTeamAutoSync();
+        }
+    });
+
+    window.addEventListener('beforeunload', () => {
+        stopTeamAutoSync();
+    });
 });
+

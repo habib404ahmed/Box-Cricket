@@ -1049,72 +1049,99 @@ function updateTableSummary() {
     }
 }
 
-// 7. Action Handlers: Update Clearance Status
+// 7. Action Handlers: Update Clearance Status (Optimistic UI with Rollback)
 async function handleStatusUpdate(playerId, newStatus) {
+    const player = allPlayers.find(p => (p.id === playerId || p.email === playerId));
+    if (!player) return;
+    const playerName = player.full_name || player.name || 'Athlete';
+    const previousStatus = player.status || 'Registered';
+
+    // 1. Immediately apply optimistic state change locally
+    player.status = newStatus;
+    if (newStatus === 'Approved') {
+        const cleanId = String(playerId).toLowerCase();
+        recentlyApprovedPlayerIds.set(cleanId, Date.now());
+        if (player.original_id) recentlyApprovedPlayerIds.set(String(player.original_id).toLowerCase(), Date.now());
+        if (player.email) recentlyApprovedPlayerIds.set(String(player.email).toLowerCase(), Date.now());
+        selectedAthleteIds.delete(playerId);
+        if (player.id) selectedAthleteIds.delete(player.id);
+        if (player.email) selectedAthleteIds.delete(player.email);
+    }
+
+    if (activeModalPlayer && (activeModalPlayer.id === playerId || activeModalPlayer.email === playerId)) {
+        activeModalPlayer.status = newStatus;
+        updateModalBadges();
+    }
+
+    // 2. Render UI immediately (Zero waiting for Google Sheets)
+    updateMetrics();
+    applyFilters();
+    showToast(`${playerName} marked as ${newStatus}!`, 'success');
+
+    // 3. Background server synchronization with rollback on failure
     try {
-        const player = allPlayers.find(p => (p.id === playerId || p.email === playerId));
-        const playerName = player ? (player.full_name || player.name) : 'Athlete';
-
-        if (newStatus === 'Approved') {
-            const cleanId = String(playerId).toLowerCase();
-            recentlyApprovedPlayerIds.set(cleanId, Date.now());
-            if (player?.original_id) recentlyApprovedPlayerIds.set(String(player.original_id).toLowerCase(), Date.now());
-            if (player?.email) recentlyApprovedPlayerIds.set(String(player.email).toLowerCase(), Date.now());
-            selectedAthleteIds.delete(playerId);
-            if (player?.id) selectedAthleteIds.delete(player.id);
-            if (player?.email) selectedAthleteIds.delete(player.email);
-        }
-
         if (window.UniBoxDb) {
-            await window.UniBoxDb.updatePlayerStatus(playerId, newStatus);
+            const res = await window.UniBoxDb.updatePlayerStatus(playerId, newStatus);
+            if (res && res.success === false) {
+                throw new Error(res.error || 'Server rejected status update');
+            }
         }
-
-        if (player) {
-            player.status = newStatus;
-        }
-
-        updateMetrics();
-        applyFilters();
-
+    } catch (err) {
+        console.error('Failed to persist player status to backend, rolling back:', err);
+        // Rollback optimistic state
+        player.status = previousStatus;
         if (activeModalPlayer && (activeModalPlayer.id === playerId || activeModalPlayer.email === playerId)) {
-            activeModalPlayer.status = newStatus;
+            activeModalPlayer.status = previousStatus;
             updateModalBadges();
         }
-
-        showToast(`${playerName} marked as ${newStatus}!`, 'success');
-    } catch (err) {
-        console.error('Error updating player status:', err);
-        showToast('Failed to update status in database', 'error');
+        updateMetrics();
+        applyFilters();
+        showToast(`Failed to update ${playerName}: ${err.message || 'Network error'}. Rolled back.`, 'error');
     }
 }
 
-// 8. Action Handlers: Delete Player
+// 8. Action Handlers: Delete Player (Optimistic UI with Rollback)
 async function handleDeletePlayer(playerId) {
     const player = allPlayers.find(p => (p.id === playerId || p.email === playerId));
-    const playerName = player ? (player.full_name || player.name) : 'Athlete';
+    if (!player) return;
+    const playerName = player.full_name || player.name || 'Athlete';
 
     if (!confirm(`Are you sure you want to delete the registration record for ${playerName}? This action cannot be undone.`)) {
         return;
     }
 
+    // 1. Save backup for rollback
+    const playerBackup = { ...player };
+    const originalIndex = allPlayers.indexOf(player);
+
+    // 2. Immediately remove from local state and UI
+    allPlayers = allPlayers.filter(p => p.id !== playerId && p.email !== playerId);
+    if (activeModalPlayer && (activeModalPlayer.id === playerId || activeModalPlayer.email === playerId)) {
+        closeAthleteModal();
+    }
+    updateMetrics();
+    applyFilters();
+    showToast(`Registration for ${playerName} deleted.`, 'info');
+
+    // 3. Background delete synchronization
     try {
         if (window.UniBoxDb) {
-            await window.UniBoxDb.deletePlayer(playerId);
+            const res = await window.UniBoxDb.deletePlayer(playerId);
+            if (res && res.success === false) {
+                throw new Error(res.error || 'Failed to delete record on Google Sheets');
+            }
         }
-
-        allPlayers = allPlayers.filter(p => p.id !== playerId && p.email !== playerId);
+    } catch (err) {
+        console.error('Failed to delete player from database, restoring:', err);
+        // Rollback optimistic delete
+        if (originalIndex >= 0) {
+            allPlayers.splice(originalIndex, 0, playerBackup);
+        } else {
+            allPlayers.push(playerBackup);
+        }
         updateMetrics();
         applyFilters();
-        await loadTeamsData();
-
-        if (activeModalPlayer && (activeModalPlayer.id === playerId || activeModalPlayer.email === playerId)) {
-            closeAthleteModal();
-        }
-
-        showToast(`Registration for ${playerName} deleted.`, 'info');
-    } catch (err) {
-        console.error('Error deleting player:', err);
-        showToast('Failed to delete player from database', 'error');
+        showToast(`Could not delete ${playerName} from backend: ${err.message || 'Error'}. Restored.`, 'error');
     }
 }
 
@@ -1492,7 +1519,7 @@ function updatePurchaseBalancePreview() {
     }
 }
 
-// Execute player purchase and reflect balance in real time
+// Execute player purchase and reflect balance in real time (Optimistic UI with Rollback)
 async function handleExecutePurchase(e) {
     e.preventDefault();
     if (!activePurchasePlayer || !window.UniBoxDb) return;
@@ -1504,62 +1531,120 @@ async function handleExecutePurchase(e) {
     const playerId = activePurchasePlayer.id || activePurchasePlayer.email;
     const playerName = activePurchasePlayer.full_name || activePurchasePlayer.name;
 
+    const targetTeam = allTeams.find(t => String(t.id).trim() === String(teamId).trim());
+    if (!targetTeam) {
+        showToast('Selected franchise team not found.', 'error');
+        return;
+    }
+
+    const total = Number(targetTeam.purse ?? targetTeam.total_budget ?? 1000);
+    const currentSpent = Number(targetTeam.spent ?? targetTeam.total_spent ?? 0);
+    const leftover = total - currentSpent;
+    if (soldPrice > leftover) {
+        showToast(`Cannot sell for ${soldPrice} Pts. Remaining purse is only ${leftover.toFixed(1)} Pts.`, 'error');
+        return;
+    }
+
+    // 1. Save backups for rollback
+    const playerBackup = { ...activePurchasePlayer };
+    const teamBackup = { ...targetTeam };
+    const targetTeamName = targetTeam.name || targetTeam.team_name || 'Franchise';
+
+    // 2. Immediately update local player state
+    activePurchasePlayer.auction_status = 'Sold';
+    activePurchasePlayer.sold_to_team = targetTeamName;
+    activePurchasePlayer.sold_to_team_id = targetTeam.id;
+    activePurchasePlayer.sold_price = soldPrice;
+    activePurchasePlayer.status = 'Approved';
+
+    // 3. Immediately update local team state & purse
+    targetTeam.total_spent = currentSpent + soldPrice;
+    targetTeam.spent = targetTeam.total_spent;
+    targetTeam.remaining_purse = Math.max(0, total - targetTeam.total_spent);
+    targetTeam.leftover_balance = targetTeam.remaining_purse;
+    targetTeam.squad_count = (Number(targetTeam.squad_count) || (targetTeam.squad ? targetTeam.squad.length : 0)) + 1;
+    if (!targetTeam.squad) targetTeam.squad = [];
+    targetTeam.squad.push({ ...activePurchasePlayer });
+
+    // 4. Close modal and update UI immediately
+    closePurchaseModal();
+    renderTeamBalanceHUD();
+    renderRosterTable();
+    updateMetrics();
+
+    showToast(`🎉 ${playerName} purchased by ${targetTeamName} for ${soldPrice} Points! Remaining Purse: ${targetTeam.remaining_purse.toFixed(1)} Points`, 'success');
+
+    // 5. Background synchronization with backend
     try {
-        const result = await window.UniBoxDb.purchasePlayer({
+        await window.UniBoxDb.purchasePlayer({
             playerIdOrEmail: playerId,
             teamId: teamId,
             soldPrice: soldPrice
         });
-
-        // Update local player object
-        activePurchasePlayer.auction_status = 'Sold';
-        activePurchasePlayer.sold_to_team = result.team.name;
-        activePurchasePlayer.sold_to_team_id = result.team.id;
-        activePurchasePlayer.sold_price = soldPrice;
-        activePurchasePlayer.status = 'Approved';
-
-        closePurchaseModal();
-
-        // Refresh teams and table immediately for real-time reflection
-        await loadTeamsData();
-        renderRosterTable();
-
-        showToast(`🎉 ${playerName} purchased by ${result.team.name} for ${soldPrice} Points! Remaining Purse: ${result.team.leftover_balance.toFixed(1)} Points`, 'success');
     } catch (err) {
-        console.error('Purchase failed:', err);
-        showToast(err.message || 'Failed to complete player purchase', 'error');
+        console.error('Purchase failed on backend, rolling back:', err);
+        Object.assign(activePurchasePlayer, playerBackup);
+        Object.assign(targetTeam, teamBackup);
+        renderTeamBalanceHUD();
+        renderRosterTable();
+        updateMetrics();
+        showToast(`Purchase failed on backend: ${err.message || 'Network error'}. Rolled back.`, 'error');
     }
 }
 
-// Revoke purchase & refund team balance in real time
+// Revoke purchase & refund team balance in real time (Optimistic UI with Rollback)
 async function handleRevokePurchase(playerId) {
     const player = allPlayers.find(p => (p.id === playerId || p.email === playerId));
-    const playerName = player ? (player.full_name || player.name) : 'Athlete';
-    const teamName = player?.sold_to_team || 'the franchise';
-    const price = player?.sold_price || 0;
+    if (!player) return;
+    const playerName = player.full_name || player.name || 'Athlete';
+    const teamName = player.sold_to_team || 'the franchise';
+    const price = Number(player.sold_price) || 0;
 
     if (!confirm(`Are you sure you want to revoke the purchase of ${playerName}? ${price} Points will be immediately refunded to ${teamName}'s leftover balance.`)) {
         return;
     }
 
+    // 1. Save backups for rollback
+    const playerBackup = { ...player };
+    const targetTeam = allTeams.find(t => t.name === player.sold_to_team || t.id === player.sold_to_team_id);
+    const teamBackup = targetTeam ? { ...targetTeam } : null;
+
+    // 2. Immediately reset player in memory
+    player.auction_status = 'Upcoming';
+    delete player.sold_to_team;
+    delete player.sold_to_team_id;
+    delete player.sold_price;
+
+    // 3. Immediately refund team purse
+    if (targetTeam) {
+        const total = Number(targetTeam.purse ?? targetTeam.total_budget ?? 1000);
+        targetTeam.total_spent = Math.max(0, (Number(targetTeam.total_spent ?? targetTeam.spent ?? 0)) - price);
+        targetTeam.spent = targetTeam.total_spent;
+        targetTeam.remaining_purse = Math.min(total, (Number(targetTeam.remaining_purse ?? targetTeam.leftover_balance ?? 0)) + price);
+        targetTeam.leftover_balance = targetTeam.remaining_purse;
+        targetTeam.squad_count = Math.max(0, (Number(targetTeam.squad_count) || 1) - 1);
+        if (targetTeam.squad) {
+            targetTeam.squad = targetTeam.squad.filter(p => p.id !== playerId && p.email !== playerId);
+        }
+    }
+
+    // 4. Immediately update UI
+    renderTeamBalanceHUD();
+    renderRosterTable();
+    showToast(`Sale revoked. ${price} Points refunded to ${teamName}!`, 'info');
+
+    // 5. Background sync
     try {
         if (window.UniBoxDb) {
             await window.UniBoxDb.revokePlayerPurchase(playerId);
         }
-
-        if (player) {
-            player.auction_status = 'Upcoming';
-            delete player.sold_to_team;
-            delete player.sold_to_team_id;
-            delete player.sold_price;
-        }
-
-        await loadTeamsData();
-        renderRosterTable();
-        showToast(`Sale revoked. ${price} Points refunded to ${teamName}!`, 'info');
     } catch (err) {
-        console.error('Revoke failed:', err);
-        showToast('Failed to revoke purchase', 'error');
+        console.error('Revoke failed on backend, rolling back:', err);
+        Object.assign(player, playerBackup);
+        if (targetTeam && teamBackup) Object.assign(targetTeam, teamBackup);
+        renderTeamBalanceHUD();
+        renderRosterTable();
+        showToast(`Failed to revoke purchase on backend: ${err.message || 'Error'}. Rolled back.`, 'error');
     }
 }
 
@@ -1681,6 +1766,41 @@ async function handleDeleteTeam(rawTeamId, btnElement = null) {
 
     isDeletingTeam = true;
 
+    // 1. Save backups for rollback
+    const teamBackup = { ...team };
+    const originalIndex = allTeams.indexOf(team);
+
+    // 2. Immediately remove from local state and UI (Optimistic UI)
+    pendingOrDeletedTeamIds.add(String(team.id).trim());
+    if (cleanTeamId) pendingOrDeletedTeamIds.add(cleanTeamId);
+
+    try {
+        const deletedSet = new Set(JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]'));
+        deletedSet.add(String(team.id).trim());
+        if (cleanTeamId) deletedSet.add(cleanTeamId);
+        localStorage.setItem('unibox_deleted_teams', JSON.stringify([...deletedSet]));
+    } catch (e) {}
+
+    allTeams = allTeams.filter(t => 
+        String(t.id).trim() !== String(team.id).trim() && 
+        String(t.id).trim() !== cleanTeamId
+    );
+
+    try {
+        localStorage.setItem('unibox_teams', JSON.stringify(allTeams));
+    } catch (e) {}
+
+    lastTeamsSignature = computeTeamsSignature(allTeams);
+    renderTeamBalanceHUD();
+
+    if (activeSquadTeamId && (String(activeSquadTeamId).trim() === String(team.id).trim() || String(activeSquadTeamId).trim() === cleanTeamId)) {
+        closeTeamSquadModal();
+    }
+    if (statDepts) statDepts.textContent = allTeams.length;
+
+    showToast(`Franchise "${team.name}" deleted.`, 'info');
+
+    // 3. Background server synchronization with rollback on failure
     try {
         let res;
         if (window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
@@ -1693,63 +1813,29 @@ async function handleDeleteTeam(rawTeamId, btnElement = null) {
             throw new Error(res.error || 'Failed to delete franchise team from Google Sheets.');
         }
 
-        // ==============================================================================
-        // SUCCESS: IMMEDIATELY UPDATE FRONTEND STATE & DOM (NO PAGE RELOAD)
-        // ==============================================================================
-
-        // 1. Register ID in the guard set so ongoing/in-flight 1s polling cannot revive it (Step 10)
-        pendingOrDeletedTeamIds.add(String(team.id).trim());
-        if (cleanTeamId) pendingOrDeletedTeamIds.add(cleanTeamId);
-
-        try {
-            const deletedSet = new Set(JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]'));
-            deletedSet.add(String(team.id).trim());
-            if (cleanTeamId) deletedSet.add(cleanTeamId);
-            localStorage.setItem('unibox_deleted_teams', JSON.stringify([...deletedSet]));
-        } catch (e) {}
-
-        // 2. Immediately remove from local state (Step 2 & 3)
-        allTeams = allTeams.filter(t => 
-            String(t.id).trim() !== String(team.id).trim() && 
-            String(t.id).trim() !== cleanTeamId
-        );
-
-        try {
-            localStorage.setItem('unibox_teams', JSON.stringify(allTeams));
-        } catch (e) {}
-
-        // 3. Immediately re-render franchise cards (0ms DOM update, Step 2 & 5)
-        lastTeamsSignature = computeTeamsSignature(allTeams);
-        renderTeamBalanceHUD();
-
-        // 4. Close squad modal only if open for this specific deleted team (Step 8)
-        if (activeSquadTeamId && (String(activeSquadTeamId).trim() === String(team.id).trim() || String(activeSquadTeamId).trim() === cleanTeamId)) {
-            closeTeamSquadModal();
-        }
-
-        // 5. Update count KPI immediately (Step 9)
-        if (statDepts) {
-            statDepts.textContent = allTeams.length;
-        }
-
-        showToast(`Franchise "${team.name}" deleted successfully`, 'success');
-
-        // 6. Background verification against Google Sheets (Step 3 & 6)
         refreshTeamsInBackground();
 
     } catch (err) {
-        console.error('Delete team failed:', err);
-        showToast(err.message || 'Unable to delete franchise', 'error');
-        alert(err.message || 'Unable to delete franchise');
-
-        // Restore button state on error
+        console.error('Delete team failed on backend, rolling back:', err);
+        // Rollback optimistic deletion
+        pendingOrDeletedTeamIds.delete(String(team.id).trim());
+        if (cleanTeamId) pendingOrDeletedTeamIds.delete(cleanTeamId);
+        if (originalIndex >= 0) {
+            allTeams.splice(originalIndex, 0, teamBackup);
+        } else {
+            allTeams.push(teamBackup);
+        }
+        lastTeamsSignature = computeTeamsSignature(allTeams);
+        renderTeamBalanceHUD();
+        if (statDepts) statDepts.textContent = allTeams.length;
+        showToast(err.message || 'Unable to delete franchise from Google Sheets. Restored.', 'error');
+    } finally {
+        isDeletingTeam = false;
         if (targetBtn) {
             targetBtn.disabled = false;
             targetBtn.style.pointerEvents = '';
             targetBtn.innerHTML = originalBtnHtml;
         }
-    } finally {
-        isDeletingTeam = false;
     }
 }
 
@@ -2540,77 +2626,55 @@ async function handleConfirmApproveSelected() {
     isBulkApproving = true;
     const submitBtn = document.getElementById('confirm-approve-selected-submit-btn');
     const originalText = submitBtn ? submitBtn.innerHTML : '';
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `
-            <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-            <span>Approving ${selectedIds.length}...</span>
-        `;
-    }
 
+    // 1. Save backups for rollback
+    const backups = new Map();
+    const idSet = new Set(selectedIds.map(x => String(x).toLowerCase()));
+    allPlayers.forEach(p => {
+        const pid = String(p.id || p.original_id || '').toLowerCase();
+        const pemail = String(p.email || '').toLowerCase();
+        if (idSet.has(pid) || idSet.has(pemail)) {
+            if (String(p.status || '').toLowerCase() !== 'rejected') {
+                backups.set(p, p.status || 'Registered');
+                p.status = 'Approved';
+                recentlyApprovedPlayerIds.set(p.id.toLowerCase(), Date.now());
+                if (p.original_id) recentlyApprovedPlayerIds.set(String(p.original_id).toLowerCase(), Date.now());
+                if (p.email) recentlyApprovedPlayerIds.set(String(p.email).toLowerCase(), Date.now());
+            }
+        }
+    });
+
+    const approvedCount = backups.size;
+
+    // 2. Immediately close modal and update UI
+    clearAthleteSelection();
+    closeApproveSelectedModal();
+    updateMetrics();
+    applyFilters();
+    showToast(`Approved ${approvedCount} selected athlete${approvedCount === 1 ? '' : 's'}!`, 'success');
+
+    // 3. Background bulk write to Google Sheets with rollback on failure
     try {
         let res;
         if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.approvePlayers === 'function') {
             res = await window.GoogleTourneyApi.approvePlayers(selectedIds);
         } else {
-            res = { success: true, data: { approvedCount: selectedIds.length, skippedCount: 0, notFoundCount: 0 } };
+            res = { success: true, data: { approvedCount } };
         }
 
-        if (!res || !res.success) {
-            showToast(res?.error || 'Unable to approve athletes. Please try again.', 'error');
-            return;
+        if (res && res.success === false) {
+            throw new Error(res.error || 'Failed to persist bulk approvals to Google Sheets.');
         }
-
-        const data = res.data || {};
-        const approvedCount = Number(data.approvedCount ?? selectedIds.length);
-        const skippedCount = Number(data.skippedCount ?? 0);
-        const notFoundCount = Number(data.notFoundCount ?? 0);
-
-        // Immediate UI Update (Requirement 5, 11)
-        const idSet = new Set(selectedIds.map(x => String(x).toLowerCase()));
-        allPlayers.forEach(p => {
-            const pid = String(p.id || p.original_id || '').toLowerCase();
-            const pemail = String(p.email || '').toLowerCase();
-            if (idSet.has(pid) || idSet.has(pemail)) {
-                if (String(p.status || '').toLowerCase() !== 'rejected') {
-                    p.status = 'Approved';
-                    recentlyApprovedPlayerIds.set(p.id.toLowerCase(), Date.now());
-                    if (p.original_id) recentlyApprovedPlayerIds.set(String(p.original_id).toLowerCase(), Date.now());
-                    if (p.email) recentlyApprovedPlayerIds.set(String(p.email).toLowerCase(), Date.now());
-                }
-            }
-        });
-
-        // Audit Logging (Requirement 20)
-        console.log('[AUDIT] Admin Action: BULK_APPROVE', {
-            target: 'selected',
-            count: approvedCount,
-            skipped: skippedCount,
-            notFound: notFoundCount,
-            timestamp: new Date().toISOString()
-        });
-
-        // Clear selection (Requirement 13)
-        clearAthleteSelection();
-        closeApproveSelectedModal();
-
-        updateMetrics();
-        applyFilters();
-
-        if (skippedCount > 0 || notFoundCount > 0) {
-            showToast(`Approved: ${approvedCount} | Skipped: ${skippedCount} | Failed: ${notFoundCount}`, 'info');
-        } else {
-            showToast(`Successfully approved ${approvedCount} athlete${approvedCount === 1 ? '' : 's'}!`, 'success');
-        }
-
-        // Background synchronization with Google Sheets (Requirement 11, 21)
-        setTimeout(() => {
-            refreshAdminData(true);
-        }, 1200);
 
     } catch (err) {
-        console.error('Bulk approve selected error:', err);
-        showToast('Unable to approve athletes. Please try again.', 'error');
+        console.error('Bulk approve selected error on backend, rolling back:', err);
+        // Rollback optimistic state
+        backups.forEach((prevStatus, p) => {
+            p.status = prevStatus;
+        });
+        updateMetrics();
+        applyFilters();
+        showToast(`Unable to approve athletes on Google Sheets: ${err.message || 'Error'}. Rolled back.`, 'error');
     } finally {
         isBulkApproving = false;
         if (submitBtn) {
@@ -2664,65 +2728,50 @@ async function handleConfirmApproveAll() {
     isBulkApproving = true;
     const submitBtn = document.getElementById('confirm-approve-all-submit-btn');
     const originalText = submitBtn ? submitBtn.innerHTML : '';
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `
-            <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-            <span>Approving...</span>
-        `;
-    }
 
+    // 1. Save backups for rollback
+    const backups = new Map();
+    allPlayers.forEach(p => {
+        if (isAthleteEligibleForApproval(p)) {
+            backups.set(p, p.status || 'Registered');
+            p.status = 'Approved';
+            recentlyApprovedPlayerIds.set(p.id.toLowerCase(), Date.now());
+            if (p.original_id) recentlyApprovedPlayerIds.set(String(p.original_id).toLowerCase(), Date.now());
+            if (p.email) recentlyApprovedPlayerIds.set(String(p.email).toLowerCase(), Date.now());
+        }
+    });
+
+    const approvedCount = backups.size;
+
+    // 2. Immediately close modal and update UI
+    clearAthleteSelection();
+    closeApproveAllModal();
+    updateMetrics();
+    applyFilters();
+    showToast(`Approved all ${approvedCount} pending athlete${approvedCount === 1 ? '' : 's'}!`, 'success');
+
+    // 3. Background bulk write to Google Sheets with rollback on failure
     try {
         let res;
         if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.approveAllPlayers === 'function') {
             res = await window.GoogleTourneyApi.approveAllPlayers();
         } else {
-            res = { success: true, data: { approvedCount: pendingAthletes.length, skippedCount: 0 } };
+            res = { success: true, data: { approvedCount } };
         }
 
-        if (!res || !res.success) {
-            showToast(res?.error || 'Unable to approve athletes. Please try again.', 'error');
-            return;
+        if (res && res.success === false) {
+            throw new Error(res.error || 'Failed to persist bulk approvals to Google Sheets.');
         }
-
-        const data = res.data || {};
-        const approvedCount = Number(data.approvedCount ?? pendingAthletes.length);
-        const skippedCount = Number(data.skippedCount ?? 0);
-
-        // Immediate UI Update (Requirement 8, 9, 11)
-        allPlayers.forEach(p => {
-            if (isAthleteEligibleForApproval(p)) {
-                p.status = 'Approved';
-                recentlyApprovedPlayerIds.set(p.id.toLowerCase(), Date.now());
-                if (p.original_id) recentlyApprovedPlayerIds.set(String(p.original_id).toLowerCase(), Date.now());
-                if (p.email) recentlyApprovedPlayerIds.set(String(p.email).toLowerCase(), Date.now());
-            }
-        });
-
-        // Audit Logging (Requirement 20)
-        console.log('[AUDIT] Admin Action: BULK_APPROVE', {
-            target: 'all',
-            count: approvedCount,
-            skipped: skippedCount,
-            timestamp: new Date().toISOString()
-        });
-
-        clearAthleteSelection();
-        closeApproveAllModal();
-
-        updateMetrics();
-        applyFilters();
-
-        showToast(`Approved all ${approvedCount} pending athlete${approvedCount === 1 ? '' : 's'}!`, 'success');
-
-        // Background synchronization with Google Sheets (Requirement 11, 21)
-        setTimeout(() => {
-            refreshAdminData(true);
-        }, 1200);
 
     } catch (err) {
-        console.error('Approve all error:', err);
-        showToast('Unable to approve athletes. Please try again.', 'error');
+        console.error('Approve all error on backend, rolling back:', err);
+        // Rollback optimistic state
+        backups.forEach((prevStatus, p) => {
+            p.status = prevStatus;
+        });
+        updateMetrics();
+        applyFilters();
+        showToast(`Unable to approve athletes on Google Sheets: ${err.message || 'Error'}. Rolled back.`, 'error');
     } finally {
         isBulkApproving = false;
         if (submitBtn) {

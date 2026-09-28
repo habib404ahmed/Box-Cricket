@@ -429,6 +429,33 @@
             return { data: found ? normalizePlayer(found) : null, error: found ? null : 'Athlete not found', source: 'cache' };
         },
 
+        // Fast & lightweight athlete count for public portal hero & counters
+        getAthleteCount: async (statusFilter = null) => {
+            if (_cachedPlayers && _cachedPlayers.length > 0) {
+                if (!statusFilter || statusFilter === 'ALL') {
+                    return { count: _cachedPlayers.length, success: true, source: 'cache' };
+                }
+                const filtered = _cachedPlayers.filter(p => String(p.status || '').toLowerCase() === String(statusFilter).toLowerCase());
+                return { count: filtered.length, success: true, source: 'cache' };
+            }
+            try {
+                const syncRes = await GoogleTourneyApi.getSyncState();
+                if (syncRes && syncRes.success && syncRes.data && syncRes.data.playersCount !== undefined) {
+                    if (!statusFilter || statusFilter === 'ALL') {
+                        return { count: syncRes.data.playersCount, success: true, source: 'google_sheets' };
+                    }
+                }
+            } catch (e) {}
+
+            const pRes = await GoogleTourneyApi.getPlayers();
+            const list = pRes.data || [];
+            if (!statusFilter || statusFilter === 'ALL') {
+                return { count: list.length, success: true, source: 'google_sheets' };
+            }
+            const filtered = list.filter(p => String(p.status || '').toLowerCase() === String(statusFilter).toLowerCase());
+            return { count: filtered.length, success: true, source: 'google_sheets' };
+        },
+
         // --- ATHLETE REGISTRATION (POST) ---
         registerPlayer: async (playerData) => {
             // Frontend validation: Branch restriction strictly BCA, B.Tech, BBA
