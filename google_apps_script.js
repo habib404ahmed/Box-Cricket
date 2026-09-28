@@ -1363,11 +1363,12 @@ function apiDeletePlayers(payload) {
  * STEP 20 — DELETE ALL PLAYERS (Requires confirmation === "DELETE")
  */
 function apiDeleteAllPlayers(payload) {
-  var confirmation = String(payload.confirmation || '').trim().toUpperCase();
-  if (confirmation !== 'DELETE' && confirmation !== 'DELETE ALL') {
+  var confirmation = String(payload.confirmation || '').trim();
+  // Step 2 & 19: Strict verification — only exactly "DELETE" is valid
+  if (confirmation !== 'DELETE') {
     return {
       success: false,
-      error: 'Security verification failed: Confirmation must be "DELETE" to execute bulk deletion.'
+      error: 'Security verification failed: Confirmation must be exactly "DELETE" to execute bulk deletion.'
     };
   }
 
@@ -1382,7 +1383,37 @@ function apiDeleteAllPlayers(payload) {
     sheet.deleteRows(2, lastRow - 1);
   }
 
-  // Update athlete_count in Settings sheet
+  SpreadsheetApp.flush();
+
+  // Step 17: Verify database result (Players data rows === 0)
+  var postCheckLastRow = sheet.getLastRow();
+  if (postCheckLastRow > 1) {
+    sheet.deleteRows(2, postCheckLastRow - 1);
+    SpreadsheetApp.flush();
+  }
+
+  var finalDataRows = Math.max(0, sheet.getLastRow() - 1);
+  if (finalDataRows !== 0) {
+    return {
+      success: false,
+      error: 'Database verification failed: ' + finalDataRows + ' athlete rows could not be removed.'
+    };
+  }
+
+  // Also check if there is a secondary/duplicate players sheet (e.g. Players vs Player_Auction_Roster)
+  // Ensure both are cleared so no ghost records remain
+  var allSheets = ss.getSheets();
+  for (var i = 0; i < allSheets.length; i++) {
+    var sName = allSheets[i].getName().toLowerCase();
+    if ((sName === 'players' || sName === 'player_auction_roster') && allSheets[i].getSheetId() !== sheet.getSheetId()) {
+      var otherLastRow = allSheets[i].getLastRow();
+      if (otherLastRow > 1) {
+        allSheets[i].deleteRows(2, otherLastRow - 1);
+      }
+    }
+  }
+
+  // Update athlete_count in Settings sheet to 0
   try {
     var settingsSheet = getOrCreateSheet(CONFIG.SHEETS.SETTINGS, HEADERS.SETTINGS);
     var sLastRow = settingsSheet.getLastRow();
@@ -1397,9 +1428,13 @@ function apiDeleteAllPlayers(payload) {
     }
   } catch (e) {}
 
-  Logger.log('[DELETE ALL] All athletes cleared from Google Sheets.');
+  Logger.log('[DELETE ALL] All athletes cleared from Google Sheets. Deleted count: ' + deletedCount);
   return {
     success: true,
+    data: {
+      deletedCount: deletedCount
+    },
+    deletedCount: deletedCount,
     deleted_count: deletedCount,
     count: deletedCount,
     message: 'All athlete registration records deleted successfully from Google Sheets.'

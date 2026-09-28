@@ -91,6 +91,8 @@ if (document.readyState === 'loading') {
 let adminRefreshInterval = null;
 let isRefreshingAdminData = false;
 let isDeletingTeam = false;
+let isDeletingAllPlayers = false;
+let lastDeleteAllTimestamp = 0;
 let lastPlayersSignature = '';
 let lastTeamsSignature = '';
 
@@ -192,7 +194,8 @@ function computeTeamsSignature(teams) {
 }
 
 async function refreshAdminData(forceRender = false) {
-    if (isRefreshingAdminData) return;
+    if (isRefreshingAdminData || isDeletingAllPlayers) return;
+    if (Date.now() - lastDeleteAllTimestamp < 4000) return;
     isRefreshingAdminData = true;
 
     try {
@@ -232,6 +235,10 @@ async function refreshAdminData(forceRender = false) {
         let hasPlayersChanged = false;
 
         if (Array.isArray(playersData)) {
+            // Guard against stale in-flight response that started before a Delete All action
+            if (Date.now() - lastDeleteAllTimestamp < 4000 && allPlayers.length === 0 && playersData.length > 0) {
+                return;
+            }
             const newPlayers = playersData.map(normalizePlayer).filter(Boolean);
             const newSig = computePlayersSignature(newPlayers);
 
@@ -548,6 +555,13 @@ function applyFilters() {
     updateTableSummary();
 }
 
+// Update table footer summary count (Step 10)
+function updateTableSummary() {
+    if (tableSummaryCount) {
+        tableSummaryCount.textContent = `Showing ${filteredPlayers.length} athlete${filteredPlayers.length === 1 ? '' : 's'}`;
+    }
+}
+
 // 6. Render Dynamic Roster Table Rows
 function renderRosterTable() {
     if (!allPlayers.length) {
@@ -556,8 +570,8 @@ function renderRosterTable() {
                 <td colspan="6" class="py-12 text-center text-slate-500">
                     <div class="flex flex-col items-center justify-center gap-2">
                         <span class="text-3xl">📋</span>
-                        <p class="text-sm font-bold text-slate-300">No athletes found</p>
-                        <p class="text-xs text-slate-500">No athlete registrations have been submitted to the tournament yet.</p>
+                        <p class="text-sm font-bold text-slate-300">NO ATHLETES REGISTERED</p>
+                        <p class="text-xs text-slate-500">There are currently no registered athletes.</p>
                     </div>
                 </td>
             </tr>
@@ -1641,7 +1655,8 @@ function bindEventListeners() {
     const bulkSubmit = document.getElementById('bulk-delete-submit-btn');
     if (bulkInput && bulkSubmit) {
         bulkInput.addEventListener('input', () => {
-            const isMatch = bulkInput.value.trim().toUpperCase() === 'DELETE ALL';
+            // Step 2 & 19: Only exactly 'DELETE' (case-sensitive) enables the button
+            const isMatch = bulkInput.value.trim() === 'DELETE';
             bulkSubmit.disabled = !isMatch;
             if (isMatch) {
                 bulkSubmit.classList.remove('cursor-not-allowed', 'opacity-50');
@@ -1674,7 +1689,7 @@ function bindEventListeners() {
 }
 
 // ==============================================================================
-// 16. BULK DELETE ATHLETES (Admin Command Center)
+// 16. BULK DELETE ATHLETES (Admin Command Center - Google Sheets Backend)
 // ==============================================================================
 function openBulkDeleteModal() {
     const modal = document.getElementById('bulk-delete-modal');
@@ -1711,9 +1726,11 @@ function closeBulkDeleteModal() {
 
 async function handleExecuteBulkDelete() {
     const inputEl = document.getElementById('bulk-delete-confirmation-input');
-    const confVal = inputEl ? inputEl.value.trim().toUpperCase() : '';
-    if (confVal !== 'DELETE' && confVal !== 'DELETE ALL') {
-        showToast('Please type DELETE to confirm', 'error');
+    const confVal = inputEl ? inputEl.value.trim() : '';
+
+    // Step 2 & 19: Strict safety confirmation — must be exactly "DELETE"
+    if (confVal !== 'DELETE') {
+        showToast('Please type DELETE exactly to confirm', 'error');
         return;
     }
 
@@ -1722,35 +1739,74 @@ async function handleExecuteBulkDelete() {
         submitBtn.disabled = true;
         submitBtn.innerHTML = `
             <div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            <span>Deleting Database Records...</span>
+            <span>Deleting...</span>
         `;
     }
 
+    isDeletingAllPlayers = true;
+
     try {
         const totalToDelete = allPlayers.length;
-        if (window.UniBoxDb && window.UniBoxDb.deleteAllPlayers) {
-            const res = await window.UniBoxDb.deleteAllPlayers();
-            if (!res.success) {
-                throw res.error || new Error('Failed to delete athletes from Supabase');
+
+        // Step 3, 4, 21: Call GoogleTourneyApi.deleteAllPlayers('DELETE') directly
+        let deleteRes = null;
+        if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.deleteAllPlayers === 'function') {
+            deleteRes = await window.GoogleTourneyApi.deleteAllPlayers('DELETE');
+            if (!deleteRes || !deleteRes.success) {
+                throw new Error(deleteRes?.error || 'Failed to delete all athletes from Google Sheets');
+            }
+        } else if (window.UniBoxDb && window.UniBoxDb.deleteAllPlayers) {
+            deleteRes = await window.UniBoxDb.deleteAllPlayers('DELETE');
+            if (!deleteRes || !deleteRes.success) {
+                throw new Error(deleteRes?.error || 'Failed to delete all athletes');
             }
         } else {
-            localStorage.setItem('unibox_players', '[]');
-            localStorage.removeItem('unibox_auction_players_cache');
+            throw new Error('Google Sheets backend is not connected');
         }
 
+        // Step 13: Mark timestamp to prevent stale in-flight polls from restoring data
+        lastDeleteAllTimestamp = Date.now();
+
+        // Step 10 & 11: Clear frontend player state immediately
         allPlayers = [];
         filteredPlayers = [];
+        window.allPlayers = [];
+        lastPlayersSignature = computePlayersSignature([]);
 
+        try {
+            localStorage.setItem('unibox_players', '[]');
+            localStorage.removeItem('unibox_auction_players_cache');
+        } catch (e) {}
+
+        // Immediate UI updates
         updateMetrics();
         applyFilters();
-        await loadTeamsData();
+        await loadTeamsData([]);
 
         closeBulkDeleteModal();
-        showToast(`Successfully deleted all ${totalToDelete} athlete records!`, 'success');
+        const deletedNum = deleteRes?.data?.deletedCount ?? deleteRes?.deletedCount ?? totalToDelete;
+        showToast(`Successfully deleted all ${deletedNum} athlete records from Google Sheets!`, 'success');
+
+        // Step 13: Perform a fresh query to confirm backend is empty
+        try {
+            if (window.GoogleTourneyApi) {
+                const fresh = await window.GoogleTourneyApi.getPlayers();
+                if (fresh && Array.isArray(fresh.data)) {
+                    allPlayers = fresh.data.map(normalizePlayer).filter(Boolean);
+                    window.allPlayers = allPlayers;
+                    lastPlayersSignature = computePlayersSignature(allPlayers);
+                    updateMetrics();
+                    applyFilters();
+                }
+            }
+        } catch (syncErr) {
+            console.warn('Post-delete verification sync notice:', syncErr);
+        }
     } catch (err) {
         console.error('Bulk delete error:', err);
-        showToast(`Bulk delete failed: ${err.message || 'Database error'}`, 'error');
+        showToast(`Unable to delete athletes: ${err.message || 'Database error'}`, 'error');
     } finally {
+        isDeletingAllPlayers = false;
         if (submitBtn) {
             submitBtn.disabled = false;
             submitBtn.innerHTML = `

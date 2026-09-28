@@ -548,9 +548,10 @@
         },
 
         deleteAllPlayers: async (confirmation = 'DELETE') => {
-            const cleanConf = String(confirmation || '').trim().toUpperCase();
-            if (cleanConf !== 'DELETE' && cleanConf !== 'DELETE ALL') {
-                return { success: false, error: 'Confirmation word DELETE is required.' };
+            const cleanConf = String(confirmation || '').trim();
+            // Step 2 & 19: Strict verification — only exactly "DELETE" is valid
+            if (cleanConf !== 'DELETE') {
+                return { success: false, error: 'Confirmation word must be exactly "DELETE".' };
             }
 
             if (!isConfigured()) {
@@ -558,8 +559,8 @@
             }
 
             const res = await postApi('deleteAllPlayers', { confirmation: 'DELETE' });
-            if (!res.success) {
-                return { success: false, error: res.error || 'Failed to bulk delete athletes from Google Sheets.' };
+            if (!res || !res.success) {
+                return { success: false, error: res?.error || 'Failed to bulk delete athletes from Google Sheets.' };
             }
 
             try {
@@ -567,7 +568,15 @@
                 localStorage.removeItem('unibox_auction_players_cache');
             } catch (e) {}
 
-            return { success: true };
+            const deletedCount = Number(res.data?.deletedCount ?? res.deletedCount ?? res.deleted_count ?? res.count ?? 0);
+            return {
+                success: true,
+                data: {
+                    deletedCount: deletedCount
+                },
+                deletedCount: deletedCount,
+                message: res.message || 'All athlete registration records deleted successfully from Google Sheets.'
+            };
         },
 
         // --- TEAMS (READ & WRITE) ---
