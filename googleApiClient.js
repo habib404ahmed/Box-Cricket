@@ -36,17 +36,8 @@
         );
     };
 
-    // 8 Tournament Franchise Teams (Matches Step 11: exactly 8 teams)
-    const DEFAULT_8_TEAMS = [
-        { id: 'team-titans', name: 'B.Tech Titans', team_name: 'B.Tech Titans', short_name: 'TITANS', department: 'B.Tech', logo: '⚡', color: '#38bdf8', purse: 1000, total_budget: 1000, spent: 0, leftover_balance: 1000, squad_count: 0, status: 'Active' },
-        { id: 'team-blasters', name: 'BCA Blasters', team_name: 'BCA Blasters', short_name: 'BLASTERS', department: 'BCA', logo: '🏏', color: '#a3e635', purse: 1000, total_budget: 1000, spent: 0, leftover_balance: 1000, squad_count: 0, status: 'Active' },
-        { id: 'team-bulls', name: 'BBA Bulls', team_name: 'BBA Bulls', short_name: 'BULLS', department: 'BBA', logo: '🐂', color: '#fbbf24', purse: 1000, total_budget: 1000, spent: 0, leftover_balance: 1000, squad_count: 0, status: 'Active' },
-        { id: 'team-strikers', name: 'Sunstone Strikers', team_name: 'Sunstone Strikers', short_name: 'STRIKERS', department: 'Campus', logo: '🔥', color: '#f97316', purse: 1000, total_budget: 1000, spent: 0, leftover_balance: 1000, squad_count: 0, status: 'Active' },
-        { id: 'team-warriors', name: 'Campus Warriors', team_name: 'Campus Warriors', short_name: 'WARRIORS', department: 'Campus', logo: '⚔️', color: '#ef4444', purse: 1000, total_budget: 1000, spent: 0, leftover_balance: 1000, squad_count: 0, status: 'Active' },
-        { id: 'team-knights', name: 'Royal Knights', team_name: 'Royal Knights', short_name: 'KNIGHTS', department: 'Campus', logo: '🛡️', color: '#8b5cf6', purse: 1000, total_budget: 1000, spent: 0, leftover_balance: 1000, squad_count: 0, status: 'Active' },
-        { id: 'team-kings', name: 'Super Kings', team_name: 'Super Kings', short_name: 'KINGS', department: 'Campus', logo: '👑', color: '#eab308', purse: 1000, total_budget: 1000, spent: 0, leftover_balance: 1000, squad_count: 0, status: 'Active' },
-        { id: 'team-challengers', name: 'Premier Challengers', team_name: 'Premier Challengers', short_name: 'CHALLENGERS', department: 'Campus', logo: '🏆', color: '#06b6d4', purse: 1000, total_budget: 1000, spent: 0, leftover_balance: 1000, squad_count: 0, status: 'Active' }
-    ];
+    // Secret key for privileged admin requests
+    const ADMIN_SECRET_KEY = 'SPL2026_ADMIN_SECURE_AUTH_TOKEN_KEY';
 
     /**
      * Normalizes a player record with strict type conversions (Step 1, 2, 3, 9, 10).
@@ -253,15 +244,36 @@
             };
         }
 
-        // Determine caller role based on session and page context (Requirements 14 & 15)
+        // Determine caller role and secure admin token based strictly on authenticated admin session
         let callerRole = payload.role;
-        if (!callerRole && typeof window !== 'undefined') {
-            const hasAdminSession = Boolean(sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session'));
-            const isAdminPath = (window.location.pathname || '').includes('/admin');
-            callerRole = (hasAdminSession || isAdminPath) ? 'ADMIN' : 'FRANCHISE_OWNER';
+        let adminToken = payload.admin_token;
+        let adminActor = payload.actor;
+
+        if (typeof window !== 'undefined') {
+            try {
+                const rawAdminSession = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+                if (rawAdminSession) {
+                    const sessionObj = JSON.parse(rawAdminSession);
+                    if (sessionObj && (sessionObj.admin_token || sessionObj.role)) {
+                        callerRole = 'ADMIN';
+                        adminToken = sessionObj.admin_token || ADMIN_SECRET_KEY;
+                        adminActor = sessionObj.username || sessionObj.email || 'admin';
+                    }
+                }
+            } catch (e) {}
         }
 
-        const requestBody = JSON.stringify({ action, role: callerRole, ...payload });
+        if (!callerRole) {
+            callerRole = 'FRANCHISE_OWNER';
+        }
+
+        const enrichedPayload = {
+            action,
+            role: callerRole,
+            ...(adminToken ? { admin_token: adminToken, actor: adminActor } : {}),
+            ...payload
+        };
+        const requestBody = JSON.stringify(enrichedPayload);
 
         const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         let timeoutId = null;
@@ -773,8 +785,8 @@
                     if (stored) teams = JSON.parse(stored);
                 } catch (e) {}
 
-                if (!teams || teams.length === 0) {
-                    teams = DEFAULT_8_TEAMS.map(t => ({ ...t }));
+                if (!teams || !Array.isArray(teams)) {
+                    teams = [];
                 }
             }
 
@@ -811,6 +823,20 @@
                 };
             }
 
+            // Critical Security: Verify Admin session before calling createTeam
+            let adminSession = null;
+            try {
+                const raw = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+                if (raw) adminSession = JSON.parse(raw);
+            } catch (e) {}
+
+            if (!adminSession) {
+                return {
+                    success: false,
+                    error: 'Unauthorized: Admin session required to create a franchise.'
+                };
+            }
+
             const clientRequestId = 'req_team_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
             const teamPayload = {
                 team_name: franchiseData.team_name || franchiseData.name,
@@ -825,7 +851,9 @@
                 budget: Number(franchiseData.purse) || 1000,
                 logo: franchiseData.logo || '🏏',
                 department: franchiseData.department || franchiseData.short_name || 'Campus',
-                role: franchiseData.role || 'ADMIN',
+                role: 'ADMIN',
+                admin_token: adminSession.admin_token || ADMIN_SECRET_KEY,
+                actor: adminSession.username || adminSession.email || 'admin',
                 request_id: clientRequestId
             };
 

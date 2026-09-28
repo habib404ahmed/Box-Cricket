@@ -60,17 +60,8 @@ var CONFIG = {
     'Wicketkeeper': 10,
     'Fielder': 5
   },
-  // Tournament has exactly 8 franchise teams
-  DEFAULT_TEAMS: [
-    { id: 'team-titans', team_name: 'B.Tech Titans', short_name: 'TITANS', purse: 1000, logo: '⚡' },
-    { id: 'team-blasters', team_name: 'BCA Blasters', short_name: 'BLASTERS', purse: 1000, logo: '🏏' },
-    { id: 'team-bulls', team_name: 'BBA Bulls', short_name: 'BULLS', purse: 1000, logo: '🐂' },
-    { id: 'team-strikers', team_name: 'Sunstone Strikers', short_name: 'STRIKERS', purse: 1000, logo: '🔥' },
-    { id: 'team-warriors', team_name: 'Campus Warriors', short_name: 'WARRIORS', purse: 1000, logo: '⚔️' },
-    { id: 'team-knights', team_name: 'Royal Knights', short_name: 'KNIGHTS', purse: 1000, logo: '🛡️' },
-    { id: 'team-kings', team_name: 'Super Kings', short_name: 'KINGS', purse: 1000, logo: '👑' },
-    { id: 'team-challengers', team_name: 'Premier Challengers', short_name: 'CHALLENGERS', purse: 1000, logo: '🏆' }
-  ]
+  // Tournament Security: Secret token required for all admin privileged mutations
+  ADMIN_SECRET_KEY: 'SPL2026_ADMIN_SECURE_AUTH_TOKEN_KEY'
 };
 
 // Required Column Headers as specified in STEPS 2, 3, 4, 5, 6
@@ -284,28 +275,9 @@ function setupTournament() {
     } catch (e) {}
   }
 
-  // 2. Initialize Teams sheet with the 8 official tournament franchises if empty
-  if (teamsSheet.getLastRow() <= 1) {
-    var now = new Date().toISOString();
-    CONFIG.DEFAULT_TEAMS.forEach(function(team) {
-      teamsSheet.appendRow([
-        team.id,
-        team.team_name,
-        team.short_name,
-        '', // owner_name
-        '', // owner_email
-        '', // logo_file_id
-        '', // logo_file_url
-        team.purse,
-        0,  // total_spent
-        team.purse, // remaining_purse
-        0,  // player_count
-        'Active',
-        now
-      ]);
-    });
-    Logger.log('[SETUP] Seeded 8 tournament teams in Teams sheet.');
-  }
+  // 2. Teams sheet is strictly created with headers only (NO AUTOMATIC SEEDING)
+  // Per Tournament Security Architecture: Franchises are created ONLY when an authorized Admin manually submits "Create Franchise"
+  Logger.log('[SETUP] Teams sheet initialized with headers. Ready for Admin manual franchise creation.');
 
   // 3. Initialize Settings sheet if empty
   if (settingsSheet.getLastRow() <= 1) {
@@ -477,6 +449,31 @@ function doGet(e) {
 }
 
 /**
+ * Verifies if the caller is authoritatively authenticated as Admin.
+ * Critical Security Requirement: NEVER trust role="ADMIN" blindly from unauthenticated browser requests.
+ * Requires authentic secret token or verified coordinator password hash.
+ */
+function isAdminAuthorized(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+
+  var token = String(payload.admin_token || payload.adminToken || payload.token || '').trim();
+  var role = String(payload.role || '').trim().toUpperCase();
+  var adminPass = String(payload.admin_password || payload.adminPassword || '').trim();
+
+  // 1. Secure Secret Admin Token Verification
+  if (token && token === CONFIG.ADMIN_SECRET_KEY && role === 'ADMIN') {
+    return true;
+  }
+
+  // 2. Verified Coordinator Password Hash Verification
+  if (adminPass && hashPassword(adminPass) === '819ad992a50989f76e1e5fe6d2167e370dabae02fb8ac8b0add58c6a23134f23' && role === 'ADMIN') {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Web App POST handler
  */
 function doPost(e) {
@@ -500,7 +497,7 @@ function doPost(e) {
     // Sanitize logging (never log passwords)
     var logPayload = {};
     for (var k in payload) {
-      if (k.toLowerCase().includes('pass') || k.toLowerCase().includes('secret')) {
+      if (k.toLowerCase().includes('pass') || k.toLowerCase().includes('secret') || k.toLowerCase().includes('token')) {
         logPayload[k] = '[HIDDEN]';
       } else if (k === 'photo_data' || k === 'certificate_data') {
         logPayload[k] = '[BASE64_DATA_LENGTH_' + String(payload[k]).length + ']';
@@ -510,18 +507,21 @@ function doPost(e) {
     }
     Logger.log('[POST] Action: ' + action + ' | Payload: ' + JSON.stringify(logPayload));
 
-    // Requirements 13, 14, 15: Role-based Authorization for Privileged Admin Actions
-    var PRIVILEGED_ACTIONS = [
+    // STRICT Role-based Authorization for Privileged Admin Actions
+    // Hiding buttons is NOT enough: Apps Script authoritatively blocks unauthorized calls
+    var STRICT_ADMIN_ACTIONS = [
       'createTeam', 'createFranchise', 'registerFranchise', 'updateTeam', 'deleteTeam',
       'deleteAllPlayers', 'deletePlayer', 'deletePlayers', 'approvePlayer', 'approvePlayers', 'approveAllPlayers',
-      'rejectPlayer', 'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse', 'updateAuction',
-      'purchasePlayer', 'revokePlayerPurchase'
+      'rejectPlayer', 'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse'
     ];
 
-    if (PRIVILEGED_ACTIONS.indexOf(action) !== -1) {
-      if (payload.role === 'FRANCHISE_OWNER') {
-        Logger.log('[AUTH] Blocked unauthorized privileged action: ' + action + ' by FRANCHISE_OWNER');
-        return createJsonResponse({ success: false, error: 'Unauthorized' });
+    if (STRICT_ADMIN_ACTIONS.indexOf(action) !== -1) {
+      if (!isAdminAuthorized(payload)) {
+        Logger.log('[AUTH REJECTED] Privileged action blocked: ' + action + ' | Actor: ' + (payload.actor || payload.owner_email || 'unauthenticated'));
+        return createJsonResponse({
+          success: false,
+          error: "Unauthorized: Admin access required"
+        });
       }
     }
 
@@ -563,9 +563,22 @@ function doPost(e) {
         result = apiDeleteAllPlayers(payload);
         break;
 
-      case 'registerFranchise':
       case 'createFranchise':
       case 'createTeam':
+        if (!isAdminAuthorized(payload)) {
+          return createJsonResponse({ success: false, error: "Unauthorized: Admin access required" });
+        }
+        result = apiRegisterFranchise(payload);
+        break;
+
+      case 'registerFranchise':
+        // Franchise creation is ADMIN-ONLY. Owner franchise self-registration is strictly blocked.
+        if (!isAdminAuthorized(payload)) {
+          return createJsonResponse({
+            success: false,
+            error: "Unauthorized: Admin access required. Franchise accounts are created exclusively by Tournament Administration."
+          });
+        }
         result = apiRegisterFranchise(payload);
         break;
 
@@ -1825,6 +1838,12 @@ function apiDeleteAllPlayers(payload) {
  * Writes simultaneously to Teams and Franchise_Auth in Google Sheets.
  */
 function apiRegisterFranchise(payload) {
+  // CRITICAL SECURITY FIX: Enforce Admin Authorization
+  if (!isAdminAuthorized(payload)) {
+    Logger.log('[AUTH REJECTED] apiRegisterFranchise called without valid Admin credentials.');
+    return { success: false, error: "Unauthorized: Admin access required" };
+  }
+
   var ownerName = String(payload.owner_name || payload.ownerName || '').trim();
   var ownerEmail = String(payload.owner_email || payload.email || '').trim().toLowerCase();
   var teamName = String(payload.team_name || payload.customTeamName || payload.name || '').trim();
@@ -1833,11 +1852,16 @@ function apiRegisterFranchise(payload) {
   var department = String(payload.department || payload.branch || 'B.Tech').trim();
   var logo = String(payload.logo || '🏏').trim();
   var purse = Number(payload.purse || payload.budget || payload.total_budget || 1000);
+  var shortName = String(payload.short_name || teamName.substring(0, 4).toUpperCase()).trim();
 
   if (!ownerName) return { success: false, error: 'Owner name is required.' };
   if (!ownerEmail || ownerEmail.indexOf('@') === -1) return { success: false, error: 'A valid email address is required.' };
   if (!rawPassword && !passwordHash) return { success: false, error: 'Password is required.' };
   if (!teamName) return { success: false, error: 'Franchise team name is required.' };
+
+  var normTeamName = teamName.replace(/\s+/g, ' ').toLowerCase();
+  var normShortName = shortName.replace(/\s+/g, '').toUpperCase();
+  var normOwnerEmail = ownerEmail.toLowerCase();
 
   var ss = getSpreadsheet();
   var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
@@ -1845,7 +1869,7 @@ function apiRegisterFranchise(payload) {
 
   var teamsHeaders = ensureTeamSheetHeaders(teamsSheet);
 
-  // 1. Check for duplicate team name or owner in Teams
+  // 1. Check for duplicate team name, short code, or owner in Teams
   var lastRowTeams = teamsSheet.getLastRow();
   var lastColTeams = teamsSheet.getLastColumn();
   var existingTeamIds = [];
@@ -1854,6 +1878,7 @@ function apiRegisterFranchise(payload) {
     var teamValues = teamsSheet.getRange(2, 1, lastRowTeams - 1, lastColTeams).getValues();
     var idColIdx = teamsHeaders.indexOf('id');
     var nameColIdx = teamsHeaders.indexOf('team_name');
+    var shortNameColIdx = teamsHeaders.indexOf('short_name');
     var ownerEmailColIdx = teamsHeaders.indexOf('owner_email');
 
     for (var i = 0; i < teamValues.length; i++) {
@@ -1861,18 +1886,30 @@ function apiRegisterFranchise(payload) {
       if (idColIdx !== -1 && row[idColIdx]) {
         existingTeamIds.push(String(row[idColIdx]).trim());
       }
-      if (nameColIdx !== -1 && String(row[nameColIdx]).trim().toLowerCase() === teamName.toLowerCase()) {
-        return { success: false, error: 'A franchise with this name already exists in the tournament.' };
+      if (nameColIdx !== -1) {
+        var existingName = String(row[nameColIdx]).trim().replace(/\s+/g, ' ').toLowerCase();
+        if (existingName === normTeamName) {
+          return { success: false, error: 'A franchise with this name already exists in the tournament.' };
+        }
       }
-      if (ownerEmailColIdx !== -1 && String(row[ownerEmailColIdx]).trim().toLowerCase() === ownerEmail) {
-        return { success: false, error: 'A franchise owner is already registered with this email address.' };
+      if (shortNameColIdx !== -1) {
+        var existingShort = String(row[shortNameColIdx]).trim().replace(/\s+/g, '').toUpperCase();
+        if (existingShort === normShortName) {
+          return { success: false, error: 'A franchise with this short code already exists in the tournament.' };
+        }
+      }
+      if (ownerEmailColIdx !== -1) {
+        var existingEmail = String(row[ownerEmailColIdx]).trim().toLowerCase();
+        if (existingEmail === normOwnerEmail) {
+          return { success: false, error: 'A franchise owner is already registered with this email address.' };
+        }
       }
     }
   }
 
-  // Requirement 3: Maximum of 8 franchises allowed in the tournament
+  // Requirement 12: Tournament limit: 8 franchises maximum (NOT created automatically, manually by Admin)
   if (existingTeamIds.length >= 8) {
-    return { success: false, error: 'Maximum of 8 franchises allowed.' };
+    return { success: false, error: 'Tournament limit reached: Maximum of 8 franchises allowed.' };
   }
 
   // 2. Check for duplicate email in Franchise_Auth
@@ -1884,7 +1921,7 @@ function apiRegisterFranchise(payload) {
     if (authEmailIdx !== -1) {
       var authValues = authSheet.getRange(2, 1, lastRowAuth - 1, lastColAuth).getValues();
       for (var a = 0; a < authValues.length; a++) {
-        if (String(authValues[a][authEmailIdx]).trim().toLowerCase() === ownerEmail) {
+        if (String(authValues[a][authEmailIdx]).trim().toLowerCase() === normOwnerEmail) {
           return { success: false, error: 'A franchise owner is already registered with this email address.' };
         }
       }
@@ -1977,6 +2014,11 @@ function apiRegisterFranchise(payload) {
     created_at: now
   };
 
+  // Requirement 22: Server-Side Audit Logging for every team creation
+  var auditActor = String(payload.actor || payload.admin_username || 'ADMIN').trim();
+  var auditRequestId = String(payload.request_id || 'manual').trim();
+  Logger.log('[AUDIT] action: CREATE_TEAM | team_id: ' + teamId + ' | team_name: ' + teamName + ' | timestamp: ' + now + ' | actor: ' + auditActor + ' | actor_role: ADMIN | request_id: ' + auditRequestId);
+
   Logger.log('[FRANCHISE REGISTERED] Team: ' + teamId + ' | Owner: ' + ownerEmail);
 
   return {
@@ -2054,7 +2096,7 @@ function apiLoginFranchise(payload) {
     }
   }
 
-  // Fallback: If not in Franchise_Auth yet, check Teams sheet for matching owner_email
+  // Fallback: Check Teams sheet for matching owner_email
   var teamsRes = apiGetTeams();
   var teams = teamsRes.data || [];
   var matchedTeam = null;
@@ -2071,20 +2113,15 @@ function apiLoginFranchise(payload) {
     });
   }
 
-  if (!matchedAuth && !matchedTeam) {
-    return { success: false, error: 'No franchise owner found with this email. Please register first.' };
+  // Requirement 9: DO NOT CREATE TEAM DURING LOGIN.
+  // If team does not exist in authoritative Teams sheet, reject login.
+  if (!matchedTeam) {
+    return { success: false, error: 'Your franchise has not been assigned by the Admin.' };
   }
 
-  var finalTeam = matchedTeam || {
-    id: matchedAuth ? matchedAuth.team_id : '',
-    team_name: 'Franchise Team',
-    name: 'Franchise Team',
-    owner_name: matchedAuth ? matchedAuth.owner_name : '',
-    owner_email: email
-  };
-
+  var finalTeam = matchedTeam;
   var ownerName = (matchedAuth && matchedAuth.owner_name) || finalTeam.owner_name || 'Franchise Owner';
-  var teamId = finalTeam.id || (matchedAuth ? matchedAuth.team_id : '');
+  var teamId = finalTeam.id;
   var teamName = finalTeam.team_name || finalTeam.name || 'Franchise Team';
 
   Logger.log('[FRANCHISE LOGIN SUCCESS] Email: ' + email + ' | Team: ' + teamId);

@@ -43,18 +43,6 @@ const DEFAULT_ROLE_BASE_PRICES = {
     'Fielder': 5
 };
 
-// 4. DEFAULT TOURNAMENT TEAMS (Purse: 1000 Points each — Exactly 8 Tournament Franchises)
-const DEFAULT_TEAMS = [
-    { id: 'team-titans', name: 'B.Tech Titans', team_name: 'B.Tech Titans', short_name: 'TITANS', department: 'B.Tech', logo: '⚡', color: '#38bdf8', total_budget: 1000, purse: 1000 },
-    { id: 'team-blasters', name: 'BCA Blasters', team_name: 'BCA Blasters', short_name: 'BLASTERS', department: 'BCA', logo: '🏏', color: '#a3e635', total_budget: 1000, purse: 1000 },
-    { id: 'team-bulls', name: 'BBA Bulls', team_name: 'BBA Bulls', short_name: 'BULLS', department: 'BBA', logo: '🐂', color: '#fbbf24', total_budget: 1000, purse: 1000 },
-    { id: 'team-strikers', name: 'Sunstone Strikers', team_name: 'Sunstone Strikers', short_name: 'STRIKERS', department: 'Campus', logo: '🔥', color: '#f97316', total_budget: 1000, purse: 1000 },
-    { id: 'team-warriors', name: 'Campus Warriors', team_name: 'Campus Warriors', short_name: 'WARRIORS', department: 'Campus', logo: '⚔️', color: '#ef4444', total_budget: 1000, purse: 1000 },
-    { id: 'team-knights', name: 'Royal Knights', team_name: 'Royal Knights', short_name: 'KNIGHTS', department: 'Campus', logo: '🛡️', color: '#8b5cf6', total_budget: 1000, purse: 1000 },
-    { id: 'team-kings', name: 'Super Kings', team_name: 'Super Kings', short_name: 'KINGS', department: 'Campus', logo: '👑', color: '#eab308', total_budget: 1000, purse: 1000 },
-    { id: 'team-challengers', name: 'Premier Challengers', team_name: 'Premier Challengers', short_name: 'CHALLENGERS', department: 'Campus', logo: '🏆', color: '#06b6d4', total_budget: 1000, purse: 1000 }
-];
-
 // BroadcastChannel for instant multi-tab zero-latency realtime synchronization
 const auctionChannel = (typeof window !== 'undefined' && typeof window.BroadcastChannel !== 'undefined')
     ? new BroadcastChannel('unibox_auction_sync')
@@ -203,8 +191,8 @@ const UniBoxDb = {
         } catch (e) {}
 
         const deletedIds = JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]');
-        if (!teams || teams.length === 0) {
-            teams = DEFAULT_TEAMS.filter(t => !deletedIds.includes(t.id)).map(t => ({ ...t }));
+        if (!teams || !Array.isArray(teams)) {
+            teams = [];
             localStorage.setItem('unibox_teams', JSON.stringify(teams));
         } else if (deletedIds.length > 0) {
             teams = teams.filter(t => !deletedIds.includes(t.id));
@@ -245,20 +233,6 @@ const UniBoxDb = {
                             password_hash: t.password_hash || localMatch?.password_hash || regMatch?.password_hash || null,
                             status: t.status || localMatch?.status || 'Active'
                         };
-                    });
-
-                    // Preserve any local custom teams not yet in Supabase
-                    localTeams.forEach(lt => {
-                        if (!teams.some(t => t.id === lt.id) && !deletedIds.includes(lt.id)) {
-                            teams.push(lt);
-                        }
-                    });
-
-                    // Ensure default league franchises are present unless explicitly deleted
-                    DEFAULT_TEAMS.forEach(dt => {
-                        if (!teams.some(t => t.id === dt.id || (t.name && t.name.toLowerCase() === dt.name.toLowerCase())) && !deletedIds.includes(dt.id)) {
-                            teams.push({ ...dt, spent: 0, leftover_balance: dt.total_budget, squad: [] });
-                        }
                     });
 
                     localStorage.setItem('unibox_teams', JSON.stringify(teams));
@@ -406,62 +380,11 @@ const UniBoxDb = {
     },
 
     // --- FRANCHISE TEAM OWNER AUTHENTICATION & PORTAL METHODS ---
-    registerTeamOwner: async (ownerData) => {
-        const { ownerName, email, password, phone, teamMode, existingTeamId, customTeamName, department, logo, color, budget } = ownerData;
-
-        if (!ownerName || !email || !password) {
-            return { success: false, error: 'Owner name, email, and password are required.' };
-        }
-
-        const normalizedEmail = email.trim().toLowerCase();
-
-        // 1. Authoritative: Google Sheets & Apps Script backend (DO NOT use localStorage as truth)
-        if (typeof window !== 'undefined' && window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
-            const teamPayload = {
-                owner_name: ownerName.trim(),
-                owner_email: normalizedEmail,
-                email: normalizedEmail,
-                password: password,
-                team_name: (customTeamName || ownerName + ' XI').trim(),
-                department: department || 'B.Tech',
-                logo: logo || '🏏',
-                purse: Number(budget) || 1000
-            };
-
-            const googleRes = await window.GoogleTourneyApi.registerFranchise(teamPayload);
-            if (!googleRes || !googleRes.success) {
-                return {
-                    success: false,
-                    error: googleRes?.error || 'Franchise registration failed. Please try again.'
-                };
-            }
-
-            const targetTeam = googleRes.data?.team || googleRes.team;
-
-            // Session data (store only necessary non-sensitive info: team_id, owner_name, owner_email, team_name)
-            const sessionData = {
-                email: normalizedEmail,
-                ownerName: targetTeam.owner_name || ownerName.trim(),
-                teamId: targetTeam.id,
-                teamName: targetTeam.name || targetTeam.team_name,
-                timestamp: Date.now()
-            };
-            localStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
-            sessionStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
-
-            // Broadcast registration event
-            UniBoxDb.broadcastAuctionEvent({
-                type: 'TEAM_OWNER_REGISTERED',
-                team: targetTeam,
-                ownerEmail: normalizedEmail
-            });
-
-            return { success: true, team: targetTeam, error: null };
-        }
-
+    // Owner self-registration of franchises is strictly prohibited (Requirements 7 & 8)
+    registerTeamOwner: async () => {
         return {
             success: false,
-            error: 'Unable to connect to tournament database. Please try again.'
+            error: 'Franchise registration by owners is disabled. Franchise accounts and credentials are created exclusively by Tournament Administration.'
         };
     },
 
@@ -485,6 +408,14 @@ const UniBoxDb = {
             const authData = googleRes.data || {};
             const team = authData.team || {};
 
+            // Requirement 9: DO NOT CREATE TEAM DURING LOGIN.
+            if (!team || !team.id) {
+                return {
+                    success: false,
+                    error: 'Your franchise has not been assigned by the Admin.'
+                };
+            }
+
             // Session data: only non-sensitive info (team_id, owner_name, owner_email, team_name)
             const sessionData = {
                 email: normalizedEmail,
@@ -496,7 +427,7 @@ const UniBoxDb = {
             localStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
             sessionStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));
 
-            return { success: true, team: team.id ? team : { id: sessionData.teamId, name: sessionData.teamName, ...team }, error: null };
+            return { success: true, team: team, error: null };
         }
 
         return {
@@ -1356,7 +1287,7 @@ const UniBoxDb = {
                 const { data, error } = await query;
                 if (!error && data) {
                     if (data.password_hash === inputHash) {
-                        return { success: true, admin: data, error: null, source: 'supabase' };
+                        return { success: true, admin: { ...data, admin_token: 'SPL2026_ADMIN_SECURE_AUTH_TOKEN_KEY' }, error: null, source: 'supabase' };
                     } else {
                         return { success: false, error: 'Incorrect coordinator password.', source: 'supabase' };
                     }
@@ -1371,7 +1302,7 @@ const UniBoxDb = {
         if ((trimmed.toLowerCase() === 'admin' || trimmed.toLowerCase() === 'admin@unibox.com') && inputHash === defaultHash) {
             return {
                 success: true,
-                admin: { username: 'admin', email: 'admin@unibox.com', role: 'Lead Coordinator' },
+                admin: { username: 'admin', email: 'admin@unibox.com', role: 'Lead Coordinator', admin_token: 'SPL2026_ADMIN_SECURE_AUTH_TOKEN_KEY' },
                 error: null,
                 source: 'default'
             };

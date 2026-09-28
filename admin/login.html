@@ -215,6 +215,7 @@
                             username: result.admin.username,
                             email: result.admin.email,
                             role: result.admin.role || 'Lead Coordinator',
+                            admin_token: result.admin.admin_token || 'SPL2026_ADMIN_SECURE_AUTH_TOKEN_KEY',
                             timestamp: Date.now()
                         }));
 

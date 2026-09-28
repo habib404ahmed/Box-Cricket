@@ -516,15 +516,20 @@ function renderTeamBalanceHUD() {
         statDepts.textContent = allTeams.length;
     }
 
-    // Exactly 8 Franchises limit (Requirement 3)
+    // Exactly 8 Franchises limit & Admin Authorization verification (Requirements 3 & 18)
     const createBtn = document.getElementById('btn-create-franchise');
+    const hasAdminSession = Boolean(sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session'));
     if (createBtn) {
-        if (allTeams.length >= 8) {
+        if (!hasAdminSession) {
+            createBtn.style.display = 'none';
+        } else if (allTeams.length >= 8) {
+            createBtn.style.display = 'inline-flex';
             createBtn.disabled = true;
             createBtn.innerHTML = `<span>🔒 8 / 8 FRANCHISES</span>`;
             createBtn.title = 'Maximum of 8 franchises reached';
             createBtn.className = 'text-xs font-black text-slate-400 bg-slate-800/80 border border-slate-700 px-4 py-2.5 rounded-xl cursor-not-allowed opacity-60 uppercase tracking-wider flex items-center gap-2 shadow-none';
         } else {
+            createBtn.style.display = 'inline-flex';
             createBtn.disabled = false;
             createBtn.innerHTML = `<span>➕ Create Franchise (${allTeams.length}/8)</span>`;
             createBtn.title = 'Create a new franchise';
@@ -2378,35 +2383,36 @@ async function handleCreateFranchiseSubmit(event) {
         let createdTeam = null;
         let isSuccess = Boolean(res && res.success);
 
-        // Verification check (Requirements 6, 7, 9 & 21)
-        // If response wasn't directly confirmed, check whether Google Sheets write actually succeeded before showing error
+        // If response wasn't directly confirmed due to network timeout, verify with Google Sheets
         if (!isSuccess) {
-            console.warn('[CREATE FRANCHISE] Response unconfirmed. Checking Google Sheets...');
-            if (submitBtnText) submitBtnText.textContent = 'Verifying with Google Sheets...';
-            try {
-                const checkRes = await window.GoogleTourneyApi.getTeams();
-                const fetchedTeams = Array.isArray(checkRes?.data) ? checkRes.data : [];
-                const matched = fetchedTeams.find(t => 
-                    (t.team_name && t.team_name.trim().toLowerCase() === teamName.toLowerCase()) ||
-                    (t.owner_email && t.owner_email.trim().toLowerCase() === ownerEmail)
-                );
-                if (matched) {
-                    isSuccess = true;
-                    createdTeam = matched;
-                    console.log('[CREATE FRANCHISE] Team verified in Google Sheets:', matched.id);
+            if (res?.isTimeout || !res) {
+                console.warn('[CREATE FRANCHISE] Network timeout. Checking Google Sheets...');
+                if (submitBtnText) submitBtnText.textContent = 'Verifying with Google Sheets...';
+                try {
+                    const checkRes = await window.GoogleTourneyApi.getTeams();
+                    const fetchedTeams = Array.isArray(checkRes?.data) ? checkRes.data : [];
+                    const matched = fetchedTeams.find(t => 
+                        (t.team_name && t.team_name.trim().toLowerCase() === teamName.toLowerCase()) ||
+                        (t.owner_email && t.owner_email.trim().toLowerCase() === ownerEmail)
+                    );
+                    if (matched) {
+                        isSuccess = true;
+                        createdTeam = matched;
+                        console.log('[CREATE FRANCHISE] Team verified in Google Sheets:', matched.id);
+                    }
+                } catch (checkErr) {
+                    console.error('[CREATE FRANCHISE] Verification check failed:', checkErr);
                 }
-            } catch (checkErr) {
-                console.error('[CREATE FRANCHISE] Verification check failed:', checkErr);
             }
-        }
 
-        if (!isSuccess) {
-            const errorMsg = res?.isTimeout
-                ? 'Unable to confirm franchise creation. Please check the Admin panel and Google Sheets before trying again.'
-                : (res?.error || 'Failed to create franchise in Google Sheets.');
-            showAlert(errorMsg);
-            if (submitBtnText) submitBtnText.textContent = 'Creation Failed';
-            return;
+            if (!isSuccess) {
+                const errorMsg = res?.isTimeout
+                    ? 'Unable to confirm franchise creation. Please check the Admin panel and Google Sheets before trying again.'
+                    : (res?.error || 'Failed to create franchise in Google Sheets.');
+                showAlert(errorMsg);
+                if (submitBtnText) submitBtnText.textContent = 'Creation Failed';
+                return;
+            }
         }
 
         createdTeam = createdTeam || res.data?.team || res.team || res.data || {
