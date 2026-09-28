@@ -92,6 +92,7 @@ let adminRefreshInterval = null;
 let isRefreshingAdminData = false;
 let isDeletingTeam = false;
 let isDeletingAllPlayers = false;
+let isCreatingFranchise = false;
 let lastDeleteAllTimestamp = 0;
 let lastPlayersSignature = '';
 let lastTeamsSignature = '';
@@ -217,7 +218,7 @@ function computeTeamsSignature(teams) {
 }
 
 async function refreshAdminData(forceRender = false) {
-    if (isRefreshingAdminData || isDeletingAllPlayers) return;
+    if (isRefreshingAdminData || isDeletingAllPlayers || isCreatingFranchise) return;
     if (Date.now() - lastDeleteAllTimestamp < 4000) return;
     isRefreshingAdminData = true;
 
@@ -2001,6 +2002,7 @@ function openCertViewerFromRow(playerId) {
 function openCreateFranchiseModal() {
     const modal = document.getElementById('modal-create-franchise');
     if (!modal) return;
+    isCreatingFranchise = false;
     const alertBox = document.getElementById('create-franchise-alert');
     if (alertBox) alertBox.classList.add('hidden');
     
@@ -2012,6 +2014,16 @@ function openCreateFranchiseModal() {
     const purseInput = document.getElementById('new-team-purse');
     if (purseInput) purseInput.value = '1000';
 
+    const submitBtn = document.getElementById('btn-submit-create-franchise');
+    const submitBtnText = document.getElementById('btn-submit-create-franchise-text');
+    const spinner = document.getElementById('create-franchise-spinner');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-80', 'cursor-not-allowed');
+    }
+    if (submitBtnText) submitBtnText.textContent = 'Create Franchise & Credentials';
+    if (spinner) spinner.classList.add('hidden');
+
     modal.classList.remove('hidden');
     modal.classList.add('flex');
     document.body.classList.add('overflow-hidden');
@@ -2022,6 +2034,7 @@ function openCreateFranchiseModal() {
 }
 
 function closeCreateFranchiseModal() {
+    isCreatingFranchise = false;
     const modal = document.getElementById('modal-create-franchise');
     if (modal) {
         modal.classList.add('hidden');
@@ -2031,13 +2044,19 @@ function closeCreateFranchiseModal() {
 }
 
 async function handleCreateFranchiseSubmit(event) {
-    if (event) event.preventDefault();
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
     
+    if (isCreatingFranchise) return;
+
     const alertBox = document.getElementById('create-franchise-alert');
     const alertText = document.getElementById('create-franchise-alert-text');
     const alertIcon = document.getElementById('create-franchise-alert-icon');
     const spinner = document.getElementById('create-franchise-spinner');
     const submitBtn = document.getElementById('btn-submit-create-franchise');
+    const submitBtnText = document.getElementById('btn-submit-create-franchise-text');
 
     const showAlert = (msg, isSuccess = false) => {
         if (!alertBox || !alertText) return;
@@ -2072,8 +2091,14 @@ async function handleCreateFranchiseSubmit(event) {
         return;
     }
 
+    // Set loading state (Requirements 8 & 9)
+    isCreatingFranchise = true;
     if (spinner) spinner.classList.remove('hidden');
-    if (submitBtn) submitBtn.disabled = true;
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add('opacity-80', 'cursor-not-allowed');
+    }
+    if (submitBtnText) submitBtnText.textContent = 'Creating...';
     if (alertBox) alertBox.classList.add('hidden');
 
     try {
@@ -2097,26 +2122,95 @@ async function handleCreateFranchiseSubmit(event) {
         };
 
         const res = await window.GoogleTourneyApi.createTeam(payload);
-        if (!res || !res.success) {
-            showAlert(res?.error || 'Failed to create franchise in Google Sheets.');
+        
+        let createdTeam = null;
+        let isSuccess = Boolean(res && res.success);
+
+        // Verification on timeout (Requirements 6, 7 & 21)
+        // If request timed out, check whether Google Sheets write actually succeeded before showing error
+        if (!isSuccess && res?.isTimeout) {
+            console.warn('[CREATE FRANCHISE] Request timed out. Verifying with Google Sheets...');
+            if (submitBtnText) submitBtnText.textContent = 'Verifying with Google Sheets...';
+            try {
+                const checkRes = await window.GoogleTourneyApi.getTeams();
+                const fetchedTeams = Array.isArray(checkRes?.data) ? checkRes.data : [];
+                const matched = fetchedTeams.find(t => 
+                    (t.team_name && t.team_name.trim().toLowerCase() === teamName.toLowerCase()) ||
+                    (t.owner_email && t.owner_email.trim().toLowerCase() === ownerEmail)
+                );
+                if (matched) {
+                    isSuccess = true;
+                    createdTeam = matched;
+                    console.log('[CREATE FRANCHISE] Team verified in Google Sheets despite timeout:', matched.id);
+                }
+            } catch (checkErr) {
+                console.error('[CREATE FRANCHISE] Verification check failed:', checkErr);
+            }
+        }
+
+        if (!isSuccess) {
+            const errorMsg = res?.isTimeout
+                ? 'Unable to confirm franchise creation. Please check the Admin panel and Google Sheets before trying again.'
+                : (res?.error || 'Failed to create franchise in Google Sheets.');
+            showAlert(errorMsg);
+            if (submitBtnText) submitBtnText.textContent = 'Creation Failed';
             return;
         }
 
-        showAlert(`Franchise "${teamName}" created successfully!`, true);
-        
-        // Immediately refresh teams HUD
-        await loadTeamsData();
-        showToast(`Franchise "${teamName}" created with login ID: ${ownerEmail}`, 'success');
+        createdTeam = createdTeam || res.data?.team || res.team || res.data || {
+            id: 'SPL-TEAM-' + Date.now().toString().slice(-4),
+            team_name: teamName,
+            name: teamName,
+            short_name: shortName,
+            owner_name: ownerName,
+            owner_email: ownerEmail,
+            logo: logo,
+            purse: purse,
+            total_budget: purse,
+            total_spent: 0,
+            spent: 0,
+            remaining_purse: purse,
+            leftover_balance: purse,
+            player_count: 0,
+            squad_count: 0,
+            status: 'Active'
+        };
 
+        // Requirement 8: Set button text on success
+        if (submitBtnText) submitBtnText.textContent = '✓ Created Successfully';
+        showAlert(`Franchise "${teamName}" created successfully!`, true);
+
+        // Requirement 11 & 17: Immediately update Admin state and render HUD without waiting
+        if (createdTeam && !allTeams.some(t => t.id === createdTeam.id || (t.team_name && t.team_name.toLowerCase() === teamName.toLowerCase()))) {
+            allTeams.push(createdTeam);
+        }
+        renderTeamBalanceHUD();
+
+        // Close modal immediately and show toast
+        closeCreateFranchiseModal();
+        showToast(`✓ FRANCHISE CREATED: "${teamName}" (Login ID: ${ownerEmail})`, 'success');
+
+        // Requirement 10 & 11: Background team refresh WITHOUT awaiting it!
         setTimeout(() => {
-            closeCreateFranchiseModal();
-        }, 800);
+            loadTeamsData();
+        }, 600);
+
     } catch (err) {
         console.error('Error creating franchise:', err);
         showAlert(err.message || 'Unable to connect to tournament database. Please try again.');
+        if (submitBtnText) submitBtnText.textContent = 'Creation Failed';
     } finally {
+        isCreatingFranchise = false;
         if (spinner) spinner.classList.add('hidden');
-        if (submitBtn) submitBtn.disabled = false;
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-80', 'cursor-not-allowed');
+        }
+        setTimeout(() => {
+            if (submitBtnText && submitBtnText.textContent !== 'Creating...') {
+                submitBtnText.textContent = 'Create Franchise & Credentials';
+            }
+        }, 1200);
     }
 }
 

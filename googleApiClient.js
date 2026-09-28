@@ -201,8 +201,9 @@
     /**
      * Executes POST request to Google Apps Script Web App
      * Note: Sends body as text/plain JSON to avoid browser CORS preflight blocks with Google Apps Script
+     * Features 30-second timeout guard and safe text-to-JSON parsing
      */
-    async function postApi(action, payload = {}) {
+    async function postApi(action, payload = {}, timeoutMs = 30000) {
         if (!isConfigured()) {
             return {
                 configured: false,
@@ -221,6 +222,14 @@
 
         const requestBody = JSON.stringify({ action, role: callerRole, ...payload });
 
+        const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        let timeoutId = null;
+        if (controller && timeoutMs > 0) {
+            timeoutId = setTimeout(() => {
+                controller.abort();
+            }, timeoutMs);
+        }
+
         try {
             const response = await fetch(GOOGLE_SCRIPT_WEB_APP_URL, {
                 method: 'POST',
@@ -229,18 +238,41 @@
                 headers: {
                     'Content-Type': 'text/plain;charset=utf-8'
                 },
-                body: requestBody
+                body: requestBody,
+                signal: controller ? controller.signal : undefined
             });
+
+            if (timeoutId) clearTimeout(timeoutId);
 
             if (!response.ok) {
                 throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
             }
 
-            const json = await response.json();
+            // Safe text extraction before JSON parsing (Requirement 12)
+            const rawText = await response.text();
+            console.log(`[GOOGLE API] POST ${action} Status: ${response.status}, Length: ${rawText.length}`);
+
+            let json;
+            try {
+                json = JSON.parse(rawText);
+            } catch (parseErr) {
+                console.error(`[GOOGLE API] POST ${action} invalid JSON:`, rawText.substring(0, 150));
+                throw new Error('Invalid JSON response from Google Apps Script Web App.');
+            }
+
             return { configured: true, ...json };
         } catch (err) {
-            console.error(`[GOOGLE API] POST ${action} failed:`, err);
-            return { configured: true, success: false, error: err.message || String(err) };
+            if (timeoutId) clearTimeout(timeoutId);
+            const isTimeout = err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'));
+            console.error(`[GOOGLE API] POST ${action} failed:`, isTimeout ? `Timed out after ${Math.round(timeoutMs / 1000)}s` : err.message);
+            return {
+                configured: true,
+                success: false,
+                isTimeout: Boolean(isTimeout),
+                error: isTimeout
+                    ? `Request timed out after ${Math.round(timeoutMs / 1000)} seconds.`
+                    : (err.message || String(err))
+            };
         }
     }
 
@@ -742,17 +774,26 @@
             if (!res || !res.success) {
                 return {
                     success: false,
+                    isTimeout: Boolean(res?.isTimeout),
                     error: res?.error || 'Unable to connect to tournament database. Please try again.'
                 };
             }
 
-            // Sync with Google Sheets immediately
-            await GoogleTourneyApi.getTeams();
+            const teamObj = res.data?.team || res.team || res.data;
+
+            // Update local cache non-blockingly
+            try {
+                let localTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
+                if (teamObj && !localTeams.some(t => t.id === teamObj.id || (t.team_name && t.team_name === teamObj.team_name))) {
+                    localTeams.push(teamObj);
+                    localStorage.setItem('unibox_teams', JSON.stringify(localTeams));
+                }
+            } catch (e) {}
 
             return {
                 success: true,
-                data: res.data,
-                team: res.data?.team,
+                data: res.data || { team: teamObj },
+                team: teamObj,
                 owner: res.data?.owner,
                 message: res.message || 'Franchise registered successfully.'
             };
