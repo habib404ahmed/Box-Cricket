@@ -58,36 +58,29 @@ const toastBanner = document.getElementById('toast-banner');
 const toastIcon = document.getElementById('toast-icon');
 const toastMessage = document.getElementById('toast-message');
 
-// Initialize Admin Dashboard with lifecycle check
-let isDashboardInitialized = false;
-async function initAdminDashboard() {
-    if (isDashboardInitialized) return;
-    isDashboardInitialized = true;
-
-    initDbStatus();
-    bindEventListeners();
-    initRealtimeAuctionSync();
-
-    // Independent parallel loaders — one failure must not block the other
-    await Promise.allSettled([
-        loadRosterData(true),
-        loadTeamsData()
-    ]);
-
-    // Start background auto-refresh every 1 second (1000ms)
-    startAutoRefresh();
-}
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initAdminDashboard);
-} else {
-    // DOM already loaded or interactive
-    initAdminDashboard();
-}
-
 // ==============================================================================
-// 1. BACKGROUND AUTO-REFRESH CONTROLLER (1000ms Interval)
+// ADMIN CENTRALIZED IN-MEMORY STATE (Requirement 4)
 // ==============================================================================
+const adminState = {
+    players: [],
+    teams: [],
+    auction: {},
+    stats: {
+        totalRegistered: 0,
+        verifiedCount: 0,
+        pendingCount: 0,
+        rejectedCount: 0,
+        auctionCount: 0,
+        totalFranchises: 0
+    },
+    lastSyncTimestamp: null,
+    isInitialLoaded: false,
+    playersSignature: '',
+    teamsSignature: '',
+    lastFullSyncTime: 0
+};
+
+let syncGeneration = 0;
 let adminRefreshInterval = null;
 let isRefreshingAdminData = false;
 let isDeletingTeam = false;
@@ -120,6 +113,139 @@ const pendingOrDeletedTeamIds = new Set(
     })()
 );
 
+// Skeletons for independent, non-blocking section rendering (Requirement 3)
+function renderRosterSkeletonRows() {
+    return Array.from({ length: 5 }).map(() => `
+        <tr class="animate-pulse">
+            <td class="p-4"><div class="w-4 h-4 bg-slate-800/80 rounded"></div></td>
+            <td class="p-4"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-xl bg-slate-800/80 shrink-0"></div><div class="space-y-1.5"><div class="w-28 h-3.5 bg-slate-800/80 rounded"></div><div class="w-20 h-2.5 bg-slate-800/40 rounded"></div></div></div></td>
+            <td class="p-4"><div class="w-24 h-5 bg-slate-800/80 rounded-lg"></div></td>
+            <td class="p-4"><div class="w-20 h-5 bg-slate-800/80 rounded-lg"></div></td>
+            <td class="p-4"><div class="w-16 h-5 bg-slate-800/80 rounded-full"></div></td>
+            <td class="p-4"><div class="w-16 h-5 bg-slate-800/80 rounded-md"></div></td>
+            <td class="p-4"><div class="w-20 h-7 bg-slate-800/80 rounded-xl"></div></td>
+        </tr>
+    `).join('');
+}
+
+function renderTeamsSkeletonCards() {
+    return Array.from({ length: 5 }).map(() => `
+        <div class="p-4 rounded-2xl bg-[#08111F]/50 border border-sky-950/60 animate-pulse space-y-3">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-slate-800/80"></div>
+                <div class="space-y-1"><div class="w-20 h-3 bg-slate-800/80 rounded"></div><div class="w-14 h-2.5 bg-slate-800/40 rounded"></div></div>
+            </div>
+            <div class="space-y-1.5"><div class="w-full h-2 bg-slate-800/80 rounded-full"></div><div class="w-24 h-2.5 bg-slate-800/80 rounded"></div></div>
+        </div>
+    `).join('');
+}
+
+// Live Status Badge Indicator (Requirement 14)
+function updateLiveStatus(status, extraText = '') {
+    const dbStatusBadge = document.getElementById('db-status-badge');
+    const dbStatusText = document.getElementById('db-status-text');
+    if (!dbStatusBadge || !dbStatusText) return;
+
+    dbStatusBadge.classList.remove('hidden');
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    if (status === 'live') {
+        dbStatusBadge.className = 'hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#08111F] border border-emerald-500/30 text-[11px] font-bold text-emerald-400';
+        dbStatusText.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 inline-block mr-1"></span> LIVE • ${timeStr}`;
+    } else if (status === 'syncing') {
+        dbStatusBadge.className = 'hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#08111F] border border-sky-500/30 text-[11px] font-bold text-sky-400';
+        dbStatusText.innerHTML = `<span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse inline-block mr-1"></span> SYNCING...`;
+    } else if (status === 'connection_issue') {
+        dbStatusBadge.className = 'hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#08111F] border border-amber-500/30 text-[11px] font-bold text-amber-400';
+        dbStatusText.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 inline-block mr-1"></span> ⚠ CONNECTION ISSUE`;
+    }
+}
+
+// Initialize Admin Dashboard with non-blocking parallel shell (Requirement 2 & 3)
+let isDashboardInitialized = false;
+async function initAdminDashboard() {
+    if (isDashboardInitialized) return;
+    isDashboardInitialized = true;
+
+    initDbStatus();
+    bindEventListeners();
+    initRealtimeAuctionSync();
+
+    // Show non-blocking skeleton loaders immediately (Requirement 3)
+    if (rosterTableBody && !allPlayers.length) {
+        rosterTableBody.innerHTML = renderRosterSkeletonRows();
+    }
+    if (teamsHudContainer && !allTeams.length) {
+        teamsHudContainer.innerHTML = renderTeamsSkeletonCards();
+    }
+
+    // Parallel Initial Data Load (Requirement 2)
+    try {
+        const playersPromise = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function')
+            ? window.GoogleTourneyApi.getPlayers()
+            : (window.UniBoxDb ? window.UniBoxDb.getAllPlayers() : Promise.resolve({ data: [] }));
+
+        const teamsPromise = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getTeams === 'function')
+            ? window.GoogleTourneyApi.getTeams()
+            : (window.UniBoxDb ? window.UniBoxDb.getAllTeams() : Promise.resolve({ data: [] }));
+
+        const [playersRes, teamsRes] = await Promise.allSettled([playersPromise, teamsPromise]);
+
+        // Process Players
+        if (playersRes.status === 'fulfilled' && playersRes.value && (playersRes.value.success || Array.isArray(playersRes.value.data))) {
+            const raw = Array.isArray(playersRes.value.data) ? playersRes.value.data : [];
+            const normalized = raw.map(normalizePlayer).filter(Boolean);
+            adminState.players = normalized;
+            allPlayers = normalized;
+            window.allPlayers = allPlayers;
+            adminState.playersSignature = computePlayersSignature(allPlayers);
+            lastPlayersSignature = adminState.playersSignature;
+        }
+
+        // Process Teams
+        if (teamsRes.status === 'fulfilled' && teamsRes.value && (teamsRes.value.success || Array.isArray(teamsRes.value.data))) {
+            const rawTeams = Array.isArray(teamsRes.value.data) ? teamsRes.value.data : [];
+            const filteredTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
+            adminState.teams = filteredTeams;
+            allTeams = filteredTeams;
+            adminState.teamsSignature = computeTeamsSignature(allTeams);
+            lastTeamsSignature = adminState.teamsSignature;
+        }
+
+        adminState.lastFullSyncTime = Date.now();
+        adminState.isInitialLoaded = true;
+
+        // Render UI sections immediately from single in-memory state
+        updateMetrics();
+        applyFilters();
+        renderTeamBalanceHUD();
+        updateLiveStatus('live');
+    } catch (initErr) {
+        console.error('[ADMIN INIT] Error during initial parallel load:', initErr);
+        updateLiveStatus('connection_issue');
+    }
+
+    // Start background auto-refresh every 1 second (1000ms)
+    startAutoRefresh();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAdminDashboard);
+} else {
+    initAdminDashboard();
+}
+
+// Tab Visibility optimization: Pause polling when hidden, immediate sync when visible (Requirement 31)
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        if (adminState.isInitialLoaded) {
+            refreshAdminData(false);
+        }
+    }
+});
+
 // Central player normalizer conforming to Step 3 specification
 function normalizePlayer(player) {
     if (!player || typeof player !== 'object') return null;
@@ -127,16 +253,14 @@ function normalizePlayer(player) {
     const id = String(player?.id ?? player?.original_id ?? "").trim();
     const createdAt = String(player?.created_at ?? "").trim() || new Date().toISOString();
     const fullName = String(player?.full_name ?? player?.name ?? "").trim();
-    // Step 2 & 3: enrollment_no MUST ALWAYS be a normalized string
     const enrollment = String(player?.enrollment_no ?? "").trim();
     const department = String(player?.department ?? player?.branch ?? "").trim();
     const email = String(player?.email ?? "").trim();
-    // Step 9: mobile_number MUST ALWAYS be a string
     const mobile = String(player?.mobile_number ?? player?.phone ?? "").trim();
     const gender = String(player?.gender ?? "Male").trim();
     const playerRole = String(player?.player_role ?? player?.role ?? "All-Rounder").trim();
     let status = String(player?.status ?? "Registered").trim();
-    
+
     // Protect newly approved athletes from stale in-flight 1s background polling
     const pid = id.toLowerCase();
     const pemail = email.toLowerCase();
@@ -146,7 +270,7 @@ function normalizePlayer(player) {
     ) {
         status = 'Approved';
     }
-    // Step 10: base_price numeric
+
     const basePrice = Number(player?.base_price ?? 0) || 15;
     const soldTo = String(player?.sold_to_team ?? "").trim();
     const soldPrice = (player?.sold_price !== undefined && player?.sold_price !== null && player?.sold_price !== '' && !isNaN(Number(player?.sold_price)))
@@ -217,57 +341,78 @@ function computeTeamsSignature(teams) {
     })));
 }
 
+// 1. FAST BACKGROUND AUTO-REFRESH CONTROLLER (Requirement 7, 8, 9, 10, 11)
 async function refreshAdminData(forceRender = false) {
-    if (isRefreshingAdminData || isDeletingAllPlayers || isCreatingFranchise) return;
+    if (isRefreshingAdminData || isDeletingAllPlayers || isCreatingFranchise || isBulkApproving) return;
+    if (document.visibilityState === 'hidden') return;
     if (Date.now() - lastDeleteAllTimestamp < 4000) return;
+
     isRefreshingAdminData = true;
+    const currentGeneration = ++syncGeneration;
 
     try {
-        let playersData = null;
-        let teamsData = null;
+        const now = Date.now();
+        const timeSinceFullSync = now - (adminState.lastFullSyncTime || 0);
 
-        // Step 17: Prefer Google Apps Script / Google Sheets
-        if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function') {
-            const [playersRes, teamsRes] = await Promise.allSettled([
-                window.GoogleTourneyApi.getPlayers(),
-                window.GoogleTourneyApi.getTeams(allPlayers)
-            ]);
-
-            if (playersRes.status === 'fulfilled' && playersRes.value && (playersRes.value.success || Array.isArray(playersRes.value.data))) {
-                playersData = playersRes.value.data;
+        // Fast-path: Check lightweight metadata syncState (Requirement 8)
+        let syncState = null;
+        if (!forceRender && window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getSyncState === 'function') {
+            const syncRes = await window.GoogleTourneyApi.getSyncState();
+            if (syncRes && syncRes.success && syncRes.data) {
+                syncState = syncRes.data;
             }
-            if (teamsRes.status === 'fulfilled' && teamsRes.value && (teamsRes.value.success || Array.isArray(teamsRes.value.data))) {
-                teamsData = teamsRes.value.data;
-            }
-        } else if (window.UniBoxDb) {
-            const [playersRes, teamsRes] = await Promise.allSettled([
-                window.UniBoxDb.getAllPlayers(),
-                window.UniBoxDb.getAllTeams(allPlayers)
-            ]);
-
-            if (playersRes.status === 'fulfilled' && playersRes.value && !playersRes.value.error) {
-                playersData = playersRes.value.data;
-            }
-            if (teamsRes.status === 'fulfilled' && teamsRes.value && !teamsRes.value.error) {
-                teamsData = teamsRes.value.data;
-            }
-        } else {
-            playersData = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-            teamsData = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
         }
 
-        let hasPlayersChanged = false;
+        // If syncState matches our in-memory counts and not due for periodic 15s check: zero network download!
+        if (syncState && !forceRender && timeSinceFullSync < 15000) {
+            const expectedPlayersCount = syncState.playersCount;
+            const expectedTeamsCount = syncState.teamsCount;
 
-        if (Array.isArray(playersData)) {
-            // Guard against stale in-flight response that started before a Delete All action
-            if (Date.now() - lastDeleteAllTimestamp < 4000 && allPlayers.length === 0 && playersData.length > 0) {
+            const currentPlayersCount = adminState.players.length;
+            const currentTeamsCount = adminState.teams.length;
+
+            if (expectedPlayersCount === currentPlayersCount && expectedTeamsCount === currentTeamsCount) {
+                // Zero changes! Do not download full datasets, zero DOM work!
+                updateLiveStatus('live');
                 return;
             }
-            const newPlayers = playersData.map(normalizePlayer).filter(Boolean);
+        }
+
+        // Changed detected or verification due: download only what is needed in parallel
+        const needPlayers = forceRender || !syncState || syncState.playersCount !== adminState.players.length || timeSinceFullSync >= 15000;
+        const needTeams = forceRender || !syncState || syncState.teamsCount !== adminState.teams.length || timeSinceFullSync >= 15000;
+
+        let playersPromise = needPlayers
+            ? (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function' ? window.GoogleTourneyApi.getPlayers() : window.UniBoxDb?.getAllPlayers())
+            : Promise.resolve({ success: true, data: adminState.players });
+
+        let teamsPromise = needTeams
+            ? (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getTeams === 'function' ? window.GoogleTourneyApi.getTeams(allPlayers) : window.UniBoxDb?.getAllTeams(allPlayers))
+            : Promise.resolve({ success: true, data: adminState.teams });
+
+        const [playersRes, teamsRes] = await Promise.allSettled([playersPromise, teamsPromise]);
+
+        // Discard stale out-of-order response (Requirement 11)
+        if (currentGeneration !== syncGeneration) return;
+
+        adminState.lastFullSyncTime = now;
+        let hasPlayersChanged = false;
+
+        // Ingest players if fetched
+        if (playersRes.status === 'fulfilled' && playersRes.value && (playersRes.value.success || Array.isArray(playersRes.value.data))) {
+            const rawPlayers = Array.isArray(playersRes.value.data) ? playersRes.value.data : [];
+            // Guard against stale response during delete-all
+            if (Date.now() - lastDeleteAllTimestamp < 4000 && allPlayers.length === 0 && rawPlayers.length > 0) {
+                return;
+            }
+
+            const newPlayers = rawPlayers.map(normalizePlayer).filter(Boolean);
             const newSig = computePlayersSignature(newPlayers);
 
-            if (forceRender || newSig !== lastPlayersSignature) {
+            if (forceRender || newSig !== adminState.playersSignature) {
+                adminState.playersSignature = newSig;
                 lastPlayersSignature = newSig;
+                adminState.players = newPlayers;
                 allPlayers = newPlayers;
                 window.allPlayers = allPlayers;
                 hasPlayersChanged = true;
@@ -276,20 +421,25 @@ async function refreshAdminData(forceRender = false) {
             }
         }
 
-        if (Array.isArray(teamsData)) {
-            const newTeams = teamsData.filter(
-                t => !pendingOrDeletedTeamIds.has(String(t.id).trim())
-            );
+        // Ingest teams if fetched
+        if (teamsRes.status === 'fulfilled' && teamsRes.value && (teamsRes.value.success || Array.isArray(teamsRes.value.data))) {
+            const rawTeams = Array.isArray(teamsRes.value.data) ? teamsRes.value.data : [];
+            const newTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
             const newTeamSig = computeTeamsSignature(newTeams);
 
-            if (forceRender || hasPlayersChanged || newTeamSig !== lastTeamsSignature) {
+            if (forceRender || hasPlayersChanged || newTeamSig !== adminState.teamsSignature) {
+                adminState.teamsSignature = newTeamSig;
                 lastTeamsSignature = newTeamSig;
+                adminState.teams = newTeams;
                 allTeams = newTeams;
                 renderTeamBalanceHUD();
             }
         }
+
+        updateLiveStatus('live');
     } catch (err) {
         console.warn('[BACKGROUND REFRESH] Error refreshing admin data:', err);
+        updateLiveStatus('connection_issue');
     } finally {
         isRefreshingAdminData = false;
     }
@@ -309,33 +459,30 @@ function stopAutoRefresh() {
 
 // 2. Connection Status Badge
 function initDbStatus() {
-    const dbStatusBadge = document.getElementById('db-status-badge');
-    const dbStatusText = document.getElementById('db-status-text');
-
-    if (window.GoogleTourneyApi && window.GoogleTourneyApi.isConfigured()) {
-        dbStatusText.textContent = 'Google Sheets Live • 1s Auto-Refresh';
-        dbStatusBadge.classList.remove('hidden');
-    } else if (window.UniBoxDb && window.UniBoxDb.isReady()) {
-        dbStatusText.textContent = 'Backend Live • 1s Auto-Refresh';
-        dbStatusBadge.classList.remove('hidden');
-    } else {
-        dbStatusText.textContent = 'Google Sheets Ready • 1s Auto-Refresh';
-        dbStatusBadge.classList.remove('hidden');
-    }
+    updateLiveStatus('live');
 }
 
 // 3. Load Teams Data & Live Leftover Balance HUD
 async function loadTeamsData(providedPlayers = null) {
     try {
-        if (window.UniBoxDb) {
+        if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getTeams === 'function') {
+            const res = await window.GoogleTourneyApi.getTeams(providedPlayers || allPlayers);
+            if (res.success && Array.isArray(res.data)) {
+                allTeams = res.data.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
+                adminState.teams = allTeams;
+            }
+        } else if (window.UniBoxDb) {
             const { data } = await window.UniBoxDb.getAllTeams(providedPlayers || allPlayers);
             const rawTeams = Array.isArray(data) ? data : [];
             allTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
+            adminState.teams = allTeams;
         } else {
             const rawTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
             allTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
+            adminState.teams = allTeams;
         }
         lastTeamsSignature = computeTeamsSignature(allTeams);
+        adminState.teamsSignature = lastTeamsSignature;
         renderTeamBalanceHUD();
     } catch (err) {
         console.error('Error loading team data:', err);
@@ -738,9 +885,9 @@ function renderRosterTable() {
             </div>
         `;
 
-        // Avatar Image or Fallback initials
+        // Avatar Image with Lazy Loading & Fallback initials (Requirement 24)
         const avatarHtml = photo
-            ? `<img src="${photo}" alt="${name}" class="w-10 h-10 rounded-xl object-cover border border-slate-700 shrink-0">`
+            ? `<img src="${photo}" alt="${name}" loading="lazy" class="w-10 h-10 rounded-xl object-cover border border-slate-700 shrink-0" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.classList.remove('hidden');"><div class="hidden w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 font-bold text-xs shrink-0">${name.substring(0, 2).toUpperCase()}</div>`
             : `<div class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 font-bold text-xs shrink-0">${name.substring(0, 2).toUpperCase()}</div>`;
 
         // Purchase / Refund Action Button (Premium sports-management control style)
@@ -1717,12 +1864,16 @@ function showToast(message, type = 'success') {
 }
 
 function bindEventListeners() {
-    searchInput?.addEventListener('input', applyFilters);
+    let searchDebounceTimer = null;
+    searchInput?.addEventListener('input', () => {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(applyFilters, 180);
+    });
     deptFilter?.addEventListener('change', applyFilters);
     roleFilter?.addEventListener('change', applyFilters);
     statusFilter?.addEventListener('change', applyFilters);
     auctionFilter?.addEventListener('change', applyFilters);
-    refreshBtn?.addEventListener('click', () => loadRosterData(true));
+    refreshBtn?.addEventListener('click', () => refreshAdminData(true));
     exportCsvBtn?.addEventListener('click', exportRosterToCsv);
 
     modalApproveBtn?.addEventListener('click', () => {
@@ -2607,4 +2758,6 @@ window.adminLogout = adminLogout;
 window.refreshAdminData = refreshAdminData;
 window.startAutoRefresh = startAutoRefresh;
 window.stopAutoRefresh = stopAutoRefresh;
+window.adminState = adminState;
+window.initAdminDashboard = initAdminDashboard;
 

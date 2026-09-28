@@ -163,10 +163,14 @@
         };
     }
 
+    let _inFlightGetRequests = new Map();
+    let _cachedPlayers = null;
+    let _cachedTeams = null;
+
     /**
      * Executes GET request to Google Apps Script Web App
      */
-    async function getApi(action, queryParams = {}) {
+    async function getApi(action, queryParams = {}, timeoutMs = 15000) {
         if (!isConfigured()) {
             return {
                 configured: false,
@@ -178,24 +182,61 @@
         const params = new URLSearchParams({ action, ...queryParams });
         const endpoint = `${GOOGLE_SCRIPT_WEB_APP_URL}?${params.toString()}`;
 
-        try {
-            const response = await fetch(endpoint, {
-                method: 'GET',
-                mode: 'cors',
-                redirect: 'follow',
-                cache: 'no-cache'
-            });
+        // In-flight deduplication for identical concurrent GET queries
+        if (_inFlightGetRequests.has(endpoint)) {
+            return await _inFlightGetRequests.get(endpoint);
+        }
 
-            if (!response.ok) {
-                throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+        const reqPromise = (async () => {
+            const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            let timeoutId = null;
+            if (controller && timeoutMs > 0) {
+                timeoutId = setTimeout(() => controller.abort(), timeoutMs);
             }
 
-            const json = await response.json();
-            return { configured: true, ...json };
-        } catch (err) {
-            console.warn(`[GOOGLE API] GET ${action} failed:`, err);
-            return { configured: true, success: false, error: err.message || String(err) };
-        }
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    mode: 'cors',
+                    redirect: 'follow',
+                    cache: 'no-cache',
+                    signal: controller ? controller.signal : undefined
+                });
+
+                if (timeoutId) clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+                }
+
+                const rawText = await response.text();
+                let json;
+                try {
+                    json = JSON.parse(rawText);
+                } catch (parseErr) {
+                    console.warn(`[GOOGLE API] GET ${action} non-JSON response:`, rawText.substring(0, 100));
+                    throw new Error('Invalid JSON response from Google Apps Script Web App.');
+                }
+                return { configured: true, ...json };
+            } catch (err) {
+                if (timeoutId) clearTimeout(timeoutId);
+                const isTimeout = err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'));
+                if (action !== 'getSyncState' && action !== 'getAthleteCount') {
+                    console.warn(`[GOOGLE API] GET ${action} failed:`, isTimeout ? 'Timed out' : (err.message || String(err)));
+                }
+                return {
+                    configured: true,
+                    success: false,
+                    isTimeout: Boolean(isTimeout),
+                    error: isTimeout ? `Request timed out (${Math.round(timeoutMs/1000)}s).` : (err.message || String(err))
+                };
+            } finally {
+                _inFlightGetRequests.delete(endpoint);
+            }
+        })();
+
+        _inFlightGetRequests.set(endpoint, reqPromise);
+        return await reqPromise;
     }
 
     /**
@@ -315,6 +356,12 @@
             }
         },
 
+        // --- 1-SECOND LIGHTWEIGHT SYNC STATE (Requirement 8) ---
+        getSyncState: async () => {
+            if (!isConfigured()) return { success: false, configured: false };
+            return await getApi('getSyncState', {}, 8000);
+        },
+
         // --- PLAYERS (READ) ---
         getPlayers: async () => {
             if (isConfigured()) {
@@ -334,6 +381,8 @@
                             return norm;
                         }).filter(Boolean);
 
+                        _cachedPlayers = normalized;
+
                         try {
                             localStorage.setItem('unibox_players', JSON.stringify(normalized));
                         } catch (e) {}
@@ -350,6 +399,7 @@
             try {
                 const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
                 const normalized = (Array.isArray(localPlayers) ? localPlayers : []).map(normalizePlayer).filter(Boolean);
+                _cachedPlayers = normalized;
                 return { success: true, data: normalized, error: null, source: 'cache' };
             } catch (e) {
                 return { success: true, data: [], error: null, source: 'cache' };
@@ -682,7 +732,7 @@
             let source = 'cache';
 
             if (isConfigured()) {
-                const res = await getApi('getTeams');
+                const res = await getApi('getTeams', { skipSquadCalc: 'true' });
                 if (res.success && Array.isArray(res.data)) {
                     // Respect the authoritative Google Sheet team roster directly
                     teams = res.data;
@@ -701,14 +751,22 @@
                 }
             }
 
-            // Calculate spent & squad from players
+            // Calculate spent & squad from in-memory / provided players — NEVER trigger a separate network fetch!
             let players = providedPlayers;
             if (!players || !Array.isArray(players) || players.length === 0) {
-                const { data } = await GoogleTourneyApi.getPlayers();
-                players = data;
+                if (_cachedPlayers && _cachedPlayers.length > 0) {
+                    players = _cachedPlayers;
+                } else {
+                    try {
+                        players = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                    } catch (e) {
+                        players = [];
+                    }
+                }
             }
 
             const enriched = teams.map(t => normalizeTeam(t, players)).filter(Boolean);
+            _cachedTeams = enriched;
 
             try {
                 localStorage.setItem('unibox_teams', JSON.stringify(enriched));

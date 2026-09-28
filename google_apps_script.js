@@ -435,6 +435,11 @@ function doGet(e) {
         result = apiGetAthleteCount(params);
         break;
 
+      case 'getSyncState':
+      case 'syncState':
+        result = apiGetSyncState(params);
+        break;
+
       case 'getPlayers':
         result = apiGetPlayers(params);
         break;
@@ -573,6 +578,11 @@ function doPost(e) {
         result = apiGetTeams(payload);
         break;
 
+      case 'getSyncState':
+      case 'syncState':
+        result = apiGetSyncState(payload);
+        break;
+
       case 'getTeam':
         result = apiGetTeam(payload);
         break;
@@ -656,6 +666,37 @@ function apiGetAthleteCount(params) {
     success: true,
     count: filteredCount,
     data: { total: total, filtered: filteredCount, status: statusFilter }
+  };
+}
+
+/**
+ * STEP 30 — ULTRA-FAST SYNCHRONIZATION STATE API (Requirement 8)
+ * Returns sheet row counts, last modified stamps, and lightweight metadata for 1s polling.
+ * Avoids reading or parsing large data ranges, responding in < 50ms!
+ */
+function apiGetSyncState(params) {
+  var ss = getSpreadsheet();
+  var playersSheet = getPlayersSheet();
+  var teamsSheet = ss.getSheetByName(CONFIG.SHEETS.TEAMS);
+  var auctionSheet = ss.getSheetByName(CONFIG.SHEETS.AUCTION);
+
+  var playersLastRow = playersSheet ? playersSheet.getLastRow() : 0;
+  var teamsLastRow = teamsSheet ? teamsSheet.getLastRow() : 0;
+  var auctionLastRow = auctionSheet ? auctionSheet.getLastRow() : 0;
+
+  var playersCount = Math.max(0, playersLastRow - 1);
+  var teamsCount = Math.max(0, teamsLastRow - 1);
+
+  return {
+    success: true,
+    data: {
+      playersCount: playersCount,
+      playersLastRow: playersLastRow,
+      teamsCount: teamsCount,
+      teamsLastRow: teamsLastRow,
+      auctionLastRow: auctionLastRow,
+      serverTime: new Date().toISOString()
+    }
   };
 }
 
@@ -882,9 +923,12 @@ function apiGetTeams(params) {
   var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
   var teams = [];
 
-  // Read players to compute live squad and spent balance accurately
-  var playersRes = apiGetPlayers();
-  var allPlayers = playersRes.data || [];
+  // Read players to compute live squad and spent balance accurately (skip if client already has players)
+  var allPlayers = [];
+  if (!params || !params.skipSquadCalc) {
+    var playersRes = apiGetPlayers();
+    allPlayers = playersRes.data || [];
+  }
 
   // Read Franchise_Auth if available to resolve owner if missing in Teams row
   var authMap = {};
@@ -967,6 +1011,11 @@ function apiGetTeams(params) {
     team.squad = squad;
     team.status = String(team.status || 'Active').trim();
     team.created_at = team.created_at || new Date().toISOString();
+
+    // Security: never return password or secret hashes
+    delete team.password;
+    delete team.password_hash;
+    delete team.rawPassword;
 
     teams.push(team);
   }
