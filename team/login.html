@@ -90,16 +90,13 @@
                     </p>
                 </div>
 
-                <!-- Tab Switcher -->
-                <div class="flex p-1 bg-[#050816]/80 border border-sky-950/80 rounded-xl mb-6">
-                    <button type="button" id="tab-btn-login"
-                        class="flex-1 py-2.5 rounded-lg text-xs font-black transition-all bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md cursor-pointer">
-                        Sign In
-                    </button>
-                    <button type="button" id="tab-btn-register"
-                        class="flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 cursor-pointer">
-                        Register Franchise
-                    </button>
+                <!-- Coordinator Provisioning Notice -->
+                <div class="mb-6 p-3.5 rounded-xl bg-[#08111F] border border-sky-900/60 flex items-center gap-3 text-xs text-slate-300">
+                    <span class="text-xl">🛡️</span>
+                    <div>
+                        <div class="font-bold text-white">Admin-Provisioned Portal</div>
+                        <div class="text-[11px] text-slate-400">Franchise accounts and credentials are created exclusively by Tournament Administration.</div>
+                    </div>
                 </div>
 
                 <!-- Error / Success Alert Box -->
@@ -108,11 +105,11 @@
                     <span id="auth-alert-text">Error message here.</span>
                 </div>
 
-                <!-- ===== TAB 1: LOGIN FORM ===== -->
+                <!-- ===== LOGIN FORM ===== -->
                 <form id="owner-login-form" class="space-y-4">
                     <div>
                         <label for="login-email" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                            Franchise Owner Email
+                            Franchise Owner Email (Login ID)
                         </label>
                         <input type="email" id="login-email" placeholder="owner@franchise.com" autocomplete="email"
                             class="input-premium" required>
@@ -134,89 +131,6 @@
                         class="btn-gold w-full mt-2 text-sm gap-2">
                         <span>Enter Franchise Hub</span>
                         <svg id="login-spinner" class="hidden w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                        </svg>
-                    </button>
-                </form>
-
-                <!-- ===== TAB 2: REGISTER FRANCHISE FORM ===== -->
-                <form id="owner-register-form" class="hidden space-y-3">
-                    <!-- Owner Name + Team Name Row -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label for="reg-owner-name" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                Owner Full Name *
-                            </label>
-                            <input type="text" id="reg-owner-name" placeholder="Vikram Singh" maxlength="100" autocomplete="name"
-                                pattern="^[A-Za-zÀ-ÿ' -]{2,100}$"
-                                class="input-premium text-sm" required>
-                        </div>
-                        <div>
-                            <label for="reg-team-name" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                Franchise Name *
-                            </label>
-                            <input type="text" id="reg-team-name" placeholder="Tech Titans"
-                                class="input-premium text-sm" required>
-                        </div>
-                    </div>
-
-                    <!-- Department + Team Logo -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label for="reg-dept" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                Department *
-                            </label>
-                            <select id="reg-dept" class="input-premium text-sm" required>
-                                <option value="" disabled selected>Select Branch</option>
-                                <option value="BCA">BCA</option>
-                                <option value="B.Tech">B.Tech</option>
-                                <option value="BBA">BBA</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label for="reg-logo" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                Team Emoji Logo *
-                            </label>
-                            <input type="text" id="reg-logo" placeholder="e.g. 🦅 or ⚡" maxlength="4"
-                                class="input-premium text-sm text-center text-2xl" required>
-                        </div>
-                    </div>
-
-                    <!-- Email + Password Row -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label for="reg-email" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                Email *
-                            </label>
-                            <input type="email" id="reg-email" placeholder="owner@team.com" autocomplete="email"
-                                class="input-premium text-sm" required>
-                        </div>
-                        <div>
-                            <label for="reg-password" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                Password *
-                            </label>
-                            <input type="password" id="reg-password" placeholder="••••••••" minlength="6" autocomplete="new-password"
-                                class="input-premium text-sm" required>
-                        </div>
-                    </div>
-
-                    <!-- Initial Purse -->
-                    <div>
-                        <label for="reg-budget" class="block mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                            Initial Franchise Purse (Points) *
-                        </label>
-                        <div class="relative">
-                            <input type="number" id="reg-budget" placeholder="e.g. 1000" min="100" step="50"
-                                class="input-premium text-sm pr-12 font-bold" required>
-                            <span class="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none text-slate-400 text-xs font-bold">Pts</span>
-                        </div>
-                    </div>
-
-                    <button type="submit" id="register-submit-btn"
-                        class="btn-gold w-full mt-2 text-sm gap-2">
-                        <span>Register Franchise</span>
-                        <svg id="register-spinner" class="hidden w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                         </svg>
@@ -245,10 +159,7 @@
     <script src="/supabaseClient.js" onerror="this.onerror=null; this.src='../supabaseClient.js';"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const tabBtnLogin = document.getElementById('tab-btn-login');
-            const tabBtnRegister = document.getElementById('tab-btn-register');
             const formLogin = document.getElementById('owner-login-form');
-            const formRegister = document.getElementById('owner-register-form');
             const alertBox = document.getElementById('auth-alert-box');
             const alertIcon = document.getElementById('auth-alert-icon');
             const alertText = document.getElementById('auth-alert-text');
@@ -268,47 +179,6 @@
 
             function hideAlert() {
                 if (alertBox) alertBox.classList.add('hidden');
-            }
-
-            // Tab Switchers (Midnight Gold Accent)
-            tabBtnLogin?.addEventListener('click', () => {
-                tabBtnLogin.className = 'flex-1 py-2.5 rounded-lg text-xs font-black transition-all bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md cursor-pointer';
-                tabBtnRegister.className = 'flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 cursor-pointer';
-                formLogin?.classList.remove('hidden');
-                formRegister?.classList.add('hidden');
-                hideAlert();
-            });
-
-            tabBtnRegister?.addEventListener('click', () => {
-                tabBtnRegister.className = 'flex-1 py-2.5 rounded-lg text-xs font-black transition-all bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md cursor-pointer';
-                tabBtnLogin.className = 'flex-1 py-2.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200 cursor-pointer';
-                formRegister?.classList.remove('hidden');
-                formLogin?.classList.add('hidden');
-                hideAlert();
-            });
-
-            // Owner Full Name Strict Input Sanitization
-            const regOwnerNameInput = document.getElementById('reg-owner-name');
-            if (regOwnerNameInput) {
-                regOwnerNameInput.addEventListener('beforeinput', (e) => {
-                    if (e.data && /[^A-Za-zÀ-ÿ' -]/.test(e.data)) {
-                        e.preventDefault();
-                    }
-                });
-                regOwnerNameInput.addEventListener('keydown', (e) => {
-                    if (e.ctrlKey || e.altKey || e.metaKey || e.key.length > 1) return;
-                    if (!/^[A-Za-zÀ-ÿ' -]$/.test(e.key)) {
-                        e.preventDefault();
-                    }
-                });
-                regOwnerNameInput.addEventListener('input', () => {
-                    regOwnerNameInput.value = regOwnerNameInput.value
-                        .replace(/[^A-Za-zÀ-ÿ' -]/g, '')
-                        .replace(/\s{2,}/g, ' ');
-                });
-                regOwnerNameInput.addEventListener('blur', () => {
-                    regOwnerNameInput.value = regOwnerNameInput.value.trim().replace(/\s{2,}/g, ' ');
-                });
             }
 
             // Login Form Submission
@@ -347,79 +217,6 @@
                 } catch (err) {
                     console.error('Owner login error:', err);
                     showAlert(err.message || 'Login failed. Please try again.');
-                } finally {
-                    if (spinner) spinner.classList.add('hidden');
-                    if (btn) btn.disabled = false;
-                }
-            });
-
-            // Registration Form Submission
-            formRegister?.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                hideAlert();
-
-                const ownerName = document.getElementById('reg-owner-name')?.value?.trim();
-                const customTeamName = document.getElementById('reg-team-name')?.value?.trim();
-                const department = document.getElementById('reg-dept')?.value;
-                const logo = document.getElementById('reg-logo')?.value?.trim() || '🏏';
-                const email = document.getElementById('reg-email')?.value?.trim();
-                const password = document.getElementById('reg-password')?.value;
-                const budget = Number(document.getElementById('reg-budget')?.value) || 1000;
-                const spinner = document.getElementById('register-spinner');
-                const btn = document.getElementById('register-submit-btn');
-
-                if (!ownerName || !customTeamName || !department || !email || !password) {
-                    showAlert('Please complete all required fields.');
-                    return;
-                }
-
-                if (/[0-9]/.test(ownerName)) {
-                    showAlert('Owner Full Name cannot contain numbers.');
-                    return;
-                }
-
-                if (/[^A-Za-zÀ-ÿ' -]/.test(ownerName)) {
-                    showAlert('Owner Full Name can only contain letters, spaces, hyphens and apostrophes.');
-                    return;
-                }
-
-                if (ownerName.length < 2) {
-                    showAlert('Owner Full Name must be at least 2 characters long.');
-                    return;
-                }
-
-                if (spinner) spinner.classList.remove('hidden');
-                if (btn) btn.disabled = true;
-
-                try {
-                    if (window.UniBoxDb) {
-                        const res = await window.UniBoxDb.registerTeamOwner({
-                            ownerName,
-                            email,
-                            password,
-                            teamMode: 'custom',
-                            customTeamName,
-                            department,
-                            logo,
-                            budget,
-                            color: '#F5C542'
-                        });
-
-                        if (!res.success) {
-                            showAlert(res.error || 'Registration failed.');
-                            return;
-                        }
-
-                        showAlert(`Franchise "${res.team.team_name || res.team.name}" registered successfully! Redirecting to hub...`, true);
-                        setTimeout(() => {
-                            window.location.replace('index.html');
-                        }, 600);
-                    } else {
-                        showAlert('Database service is not ready. Please refresh the page.');
-                    }
-                } catch (err) {
-                    console.error('Owner registration error:', err);
-                    showAlert(err.message || 'Registration failed. Check network or server connection.');
                 } finally {
                     if (spinner) spinner.classList.add('hidden');
                     if (btn) btn.disabled = false;

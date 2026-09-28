@@ -1904,6 +1904,123 @@ function openCertViewerFromRow(playerId) {
     }
 }
 
+// ===== CREATE FRANCHISE MODAL CONTROLLER =====
+function openCreateFranchiseModal() {
+    const modal = document.getElementById('modal-create-franchise');
+    if (!modal) return;
+    const alertBox = document.getElementById('create-franchise-alert');
+    if (alertBox) alertBox.classList.add('hidden');
+    
+    // Clear / reset inputs
+    const form = document.getElementById('create-franchise-form');
+    if (form) form.reset();
+    const logoInput = document.getElementById('new-team-logo');
+    if (logoInput) logoInput.value = '🏏';
+    const purseInput = document.getElementById('new-team-purse');
+    if (purseInput) purseInput.value = '1000';
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.body.classList.add('overflow-hidden');
+    
+    setTimeout(() => {
+        document.getElementById('new-team-name')?.focus();
+    }, 100);
+}
+
+function closeCreateFranchiseModal() {
+    const modal = document.getElementById('modal-create-franchise');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    document.body.classList.remove('overflow-hidden');
+}
+
+async function handleCreateFranchiseSubmit(event) {
+    if (event) event.preventDefault();
+    
+    const alertBox = document.getElementById('create-franchise-alert');
+    const alertText = document.getElementById('create-franchise-alert-text');
+    const alertIcon = document.getElementById('create-franchise-alert-icon');
+    const spinner = document.getElementById('create-franchise-spinner');
+    const submitBtn = document.getElementById('btn-submit-create-franchise');
+
+    const showAlert = (msg, isSuccess = false) => {
+        if (!alertBox || !alertText) return;
+        alertBox.className = isSuccess 
+            ? 'p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+            : 'p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5 bg-rose-500/15 border border-rose-500/30 text-rose-300';
+        if (alertIcon) alertIcon.textContent = isSuccess ? '✅' : '⚠️';
+        alertText.textContent = msg;
+        alertBox.classList.remove('hidden');
+    };
+
+    const teamName = document.getElementById('new-team-name')?.value?.trim();
+    const shortName = document.getElementById('new-team-short')?.value?.trim()?.toUpperCase();
+    const ownerName = document.getElementById('new-team-owner-name')?.value?.trim();
+    const ownerEmail = document.getElementById('new-team-owner-email')?.value?.trim()?.toLowerCase();
+    const password = document.getElementById('new-team-password')?.value;
+    const logo = document.getElementById('new-team-logo')?.value?.trim() || '🏏';
+    const purse = Number(document.getElementById('new-team-purse')?.value) || 1000;
+
+    if (!teamName || !shortName || !ownerName || !ownerEmail || !password) {
+        showAlert('Please complete all required fields.');
+        return;
+    }
+
+    if (password.length < 6) {
+        showAlert('Password must be at least 6 characters long.');
+        return;
+    }
+
+    if (spinner) spinner.classList.remove('hidden');
+    if (submitBtn) submitBtn.disabled = true;
+    if (alertBox) alertBox.classList.add('hidden');
+
+    try {
+        if (!window.GoogleTourneyApi || !window.GoogleTourneyApi.isConfigured()) {
+            showAlert('Tournament database is not configured. Please verify connection.');
+            return;
+        }
+
+        const payload = {
+            team_name: teamName,
+            name: teamName,
+            short_name: shortName,
+            department: shortName,
+            owner_name: ownerName,
+            owner_email: ownerEmail,
+            email: ownerEmail,
+            password: password,
+            logo: logo,
+            purse: purse
+        };
+
+        const res = await window.GoogleTourneyApi.createTeam(payload);
+        if (!res || !res.success) {
+            showAlert(res?.error || 'Failed to create franchise in Google Sheets.');
+            return;
+        }
+
+        showAlert(`Franchise "${teamName}" created successfully!`, true);
+        
+        // Immediately refresh teams HUD
+        await loadTeamsData();
+        showToast(`Franchise "${teamName}" created with login ID: ${ownerEmail}`, 'success');
+
+        setTimeout(() => {
+            closeCreateFranchiseModal();
+        }, 800);
+    } catch (err) {
+        console.error('Error creating franchise:', err);
+        showAlert(err.message || 'Unable to connect to tournament database. Please try again.');
+    } finally {
+        if (spinner) spinner.classList.add('hidden');
+        if (submitBtn) submitBtn.disabled = false;
+    }
+}
+
 // Global Exports
 window.openAthleteModal = openAthleteModal;
 window.closeAthleteModal = closeAthleteModal;
@@ -1931,6 +2048,9 @@ window.openCertViewerFromRow = openCertViewerFromRow;
 window.openBulkDeleteModal = openBulkDeleteModal;
 window.closeBulkDeleteModal = closeBulkDeleteModal;
 window.handleExecuteBulkDelete = handleExecuteBulkDelete;
+window.openCreateFranchiseModal = openCreateFranchiseModal;
+window.closeCreateFranchiseModal = closeCreateFranchiseModal;
+window.handleCreateFranchiseSubmit = handleCreateFranchiseSubmit;
 window.loadRosterData = loadRosterData;
 window.adminLogout = adminLogout;
 window.refreshAdminData = refreshAdminData;
