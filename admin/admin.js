@@ -105,6 +105,64 @@ const pendingOrDeletedTeamIds = new Set(
     })()
 );
 
+// Central player normalizer conforming to Step 3 specification
+function normalizePlayer(player) {
+    if (!player || typeof player !== 'object') return null;
+
+    const id = String(player?.id ?? player?.original_id ?? "").trim();
+    const createdAt = String(player?.created_at ?? "").trim() || new Date().toISOString();
+    const fullName = String(player?.full_name ?? player?.name ?? "").trim();
+    // Step 2 & 3: enrollment_no MUST ALWAYS be a normalized string
+    const enrollment = String(player?.enrollment_no ?? "").trim();
+    const department = String(player?.department ?? player?.branch ?? "").trim();
+    const email = String(player?.email ?? "").trim();
+    // Step 9: mobile_number MUST ALWAYS be a string
+    const mobile = String(player?.mobile_number ?? player?.phone ?? "").trim();
+    const gender = String(player?.gender ?? "Male").trim();
+    const playerRole = String(player?.player_role ?? player?.role ?? "All-Rounder").trim();
+    const status = String(player?.status ?? "Registered").trim();
+    // Step 10: base_price numeric
+    const basePrice = Number(player?.base_price ?? 0) || 15;
+    const soldTo = String(player?.sold_to_team ?? "").trim();
+    const soldPrice = (player?.sold_price !== undefined && player?.sold_price !== null && player?.sold_price !== '' && !isNaN(Number(player?.sold_price)))
+        ? Number(player?.sold_price)
+        : null;
+    const auctionStatus = (soldTo || (soldPrice !== null && soldPrice > 0)) ? 'Sold' : String(player?.auction_status ?? "Upcoming").trim();
+    const photoId = String(player?.photo_file_id ?? "").trim();
+    const photoUrl = String(player?.photo_file_url ?? player?.photo_data ?? player?.photo ?? "").trim();
+    const certId = String(player?.certificate_file_id ?? "").trim();
+    const certUrl = String(player?.certificate_file_url ?? player?.certificate_data ?? player?.certificate ?? "").trim();
+    const certName = String(player?.certificate_name ?? (certUrl ? "Attached Document" : "None attached")).trim();
+
+    return {
+        id: id || ('ath_' + (email || Date.now()).replace(/[^a-zA-Z0-9]/g, '_')),
+        original_id: String(player?.original_id ?? id).trim(),
+        created_at: createdAt,
+        full_name: fullName,
+        name: fullName,
+        enrollment_no: enrollment,
+        department: department,
+        branch: department,
+        email: email,
+        mobile_number: mobile,
+        phone: mobile,
+        gender: gender,
+        player_role: playerRole,
+        role: playerRole,
+        status: status,
+        base_price: basePrice,
+        auction_status: auctionStatus,
+        sold_to_team: soldTo,
+        sold_price: soldPrice,
+        photo_file_id: photoId,
+        photo_file_url: photoUrl,
+        photo_data: photoUrl,
+        certificate_file_id: certId,
+        certificate_file_url: certUrl,
+        certificate_name: certName
+    };
+}
+
 function computePlayersSignature(players) {
     if (!Array.isArray(players)) return '';
     return JSON.stringify(players.map(p => ({
@@ -138,59 +196,64 @@ async function refreshAdminData(forceRender = false) {
     isRefreshingAdminData = true;
 
     try {
-        if (window.UniBoxDb) {
+        let playersData = null;
+        let teamsData = null;
+
+        // Step 17: Prefer Google Apps Script / Google Sheets
+        if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function') {
+            const [playersRes, teamsRes] = await Promise.allSettled([
+                window.GoogleTourneyApi.getPlayers(),
+                window.GoogleTourneyApi.getTeams(allPlayers)
+            ]);
+
+            if (playersRes.status === 'fulfilled' && playersRes.value && playersRes.value.success) {
+                playersData = playersRes.value.data;
+            }
+            if (teamsRes.status === 'fulfilled' && teamsRes.value && teamsRes.value.success) {
+                teamsData = teamsRes.value.data;
+            }
+        } else if (window.UniBoxDb) {
             const [playersRes, teamsRes] = await Promise.allSettled([
                 window.UniBoxDb.getAllPlayers(),
                 window.UniBoxDb.getAllTeams(allPlayers)
             ]);
 
-            let hasPlayersChanged = false;
-
             if (playersRes.status === 'fulfilled' && playersRes.value && !playersRes.value.error) {
-                const rawData = playersRes.value.data;
-                const newPlayers = Array.isArray(rawData) ? rawData : [];
-                const newSig = computePlayersSignature(newPlayers);
-
-                if (forceRender || newSig !== lastPlayersSignature) {
-                    lastPlayersSignature = newSig;
-                    allPlayers = newPlayers;
-                    window.allPlayers = allPlayers;
-                    hasPlayersChanged = true;
-                    updateMetrics();
-                    applyFilters();
-                }
+                playersData = playersRes.value.data;
             }
-
             if (teamsRes.status === 'fulfilled' && teamsRes.value && !teamsRes.value.error) {
-                const rawTeams = teamsRes.value.data;
-                const newTeams = (Array.isArray(rawTeams) ? rawTeams : []).filter(
-                    t => !pendingOrDeletedTeamIds.has(String(t.id).trim())
-                );
-                const newTeamSig = computeTeamsSignature(newTeams);
-
-                if (forceRender || hasPlayersChanged || newTeamSig !== lastTeamsSignature) {
-                    lastTeamsSignature = newTeamSig;
-                    allTeams = newTeams;
-                    renderTeamBalanceHUD();
-                }
+                teamsData = teamsRes.value.data;
             }
         } else {
-            const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-            const localTeams = (JSON.parse(localStorage.getItem('unibox_teams') || '[]')).filter(
-                t => !pendingOrDeletedTeamIds.has(String(t.id).trim())
-            );
-            const newSig = computePlayersSignature(localPlayers);
+            playersData = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+            teamsData = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
+        }
+
+        let hasPlayersChanged = false;
+
+        if (Array.isArray(playersData)) {
+            const newPlayers = playersData.map(normalizePlayer).filter(Boolean);
+            const newSig = computePlayersSignature(newPlayers);
+
             if (forceRender || newSig !== lastPlayersSignature) {
                 lastPlayersSignature = newSig;
-                allPlayers = localPlayers;
+                allPlayers = newPlayers;
                 window.allPlayers = allPlayers;
+                hasPlayersChanged = true;
                 updateMetrics();
                 applyFilters();
             }
-            const newTeamSig = computeTeamsSignature(localTeams);
-            if (forceRender || newTeamSig !== lastTeamsSignature) {
+        }
+
+        if (Array.isArray(teamsData)) {
+            const newTeams = teamsData.filter(
+                t => !pendingOrDeletedTeamIds.has(String(t.id).trim())
+            );
+            const newTeamSig = computeTeamsSignature(newTeams);
+
+            if (forceRender || hasPlayersChanged || newTeamSig !== lastTeamsSignature) {
                 lastTeamsSignature = newTeamSig;
-                allTeams = localTeams;
+                allTeams = newTeams;
                 renderTeamBalanceHUD();
             }
         }
@@ -341,7 +404,27 @@ function renderTeamBalanceHUD() {
     }).join('');
 }
 
-// 3. Load Athletes from Supabase / UniBoxDb
+// Helper to display error card if loading fails
+function renderPlayerLoadError(err) {
+    rosterTableBody.innerHTML = `
+        <tr>
+            <td colspan="6" class="py-12 text-center">
+                <div class="max-w-md mx-auto p-6 rounded-2xl bg-[#08111F]/90 border border-rose-500/30 text-center space-y-3">
+                    <span class="text-3xl">⚠️</span>
+                    <h3 class="text-sm font-bold text-slate-200">Unable to Load Athletes</h3>
+                    <p class="text-xs text-slate-400">We couldn't retrieve tournament data from Google Sheets.</p>
+                    <p class="text-[11px] font-mono text-slate-500">${err?.message || 'Connection failed'}</p>
+                    <button type="button" onclick="loadRosterData(true)" class="btn-primary text-xs px-4 py-2 inline-flex items-center gap-1.5 mx-auto">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        Try Again
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+// 3. Load Athletes from Google Sheets / GoogleTourneyApi (Step 15, 16, 17)
 async function loadRosterData(showSpinner = true) {
     if (showSpinner && !allPlayers.length) {
         rosterTableBody.innerHTML = `
@@ -349,7 +432,7 @@ async function loadRosterData(showSpinner = true) {
                 <td colspan="6" class="py-12 text-center text-slate-500">
                     <div class="flex flex-col items-center justify-center gap-3">
                         <div class="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
-                        <p class="text-xs text-slate-400 font-medium">Fetching tournament athletes from Supabase...</p>
+                        <p class="text-xs text-slate-400 font-medium">Fetching tournament athletes from Google Sheets...</p>
                     </div>
                 </td>
             </tr>
@@ -359,15 +442,24 @@ async function loadRosterData(showSpinner = true) {
     if (refreshIcon) refreshIcon.classList.add('animate-spin');
 
     try {
-        if (window.UniBoxDb) {
+        let playersData = [];
+        // Step 17: Google Sheets is authoritative
+        if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function') {
+            const resp = await window.GoogleTourneyApi.getPlayers();
+            if (!resp || !resp.success) {
+                throw new Error(resp?.error || 'Failed to retrieve athletes from Google Sheets');
+            }
+            playersData = Array.isArray(resp.data) ? resp.data : [];
+        } else if (window.UniBoxDb) {
             const { data, error } = await window.UniBoxDb.getAllPlayers();
             if (error) throw error;
-            allPlayers = Array.isArray(data) ? data : [];
-            window.allPlayers = allPlayers;
+            playersData = Array.isArray(data) ? data : [];
         } else {
-            allPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-            window.allPlayers = allPlayers;
+            playersData = JSON.parse(localStorage.getItem('unibox_players') || '[]');
         }
+
+        allPlayers = playersData.map(normalizePlayer).filter(Boolean);
+        window.allPlayers = allPlayers;
 
         updateMetrics();
         applyFilters();
@@ -376,23 +468,8 @@ async function loadRosterData(showSpinner = true) {
         loadTeamsData(allPlayers);
     } catch (err) {
         console.error('Error loading roster data:', err);
-        showToast('Error loading roster data. Check database connection.', 'error');
-        rosterTableBody.innerHTML = `
-            <tr>
-                <td colspan="6" class="py-12 text-center">
-                    <div class="max-w-md mx-auto p-6 rounded-2xl bg-[#08111F]/90 border border-rose-500/30 text-center space-y-3">
-                        <span class="text-3xl">⚠️</span>
-                        <h3 class="text-sm font-bold text-slate-200">Unable to Load Athletes</h3>
-                        <p class="text-xs text-slate-400">We couldn't retrieve tournament data from the database.</p>
-                        <p class="text-[11px] font-mono text-slate-500">${err?.message || 'Connection failed'}</p>
-                        <button type="button" onclick="loadRosterData(true)" class="btn-primary text-xs px-4 py-2 inline-flex items-center gap-1.5 mx-auto">
-                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                            Try Again
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `;
+        showToast('Error loading roster data. Check Google Sheets connection.', 'error');
+        renderPlayerLoadError(err);
     } finally {
         if (refreshIcon) {
             setTimeout(() => refreshIcon.classList.remove('animate-spin'), 400);
@@ -400,12 +477,15 @@ async function loadRosterData(showSpinner = true) {
     }
 }
 
-// 4. Compute and Update KPI Metrics
+// 4. Compute and Update KPI Metrics (Step 8, 9)
 function updateMetrics() {
     const total = allPlayers.length;
-    const approved = allPlayers.filter(p => p.status === 'Approved').length;
-    const pending = allPlayers.filter(p => p.status === 'Registered' || !p.status).length;
-    const depts = new Set(allPlayers.map(p => (p.department || '').trim()).filter(Boolean));
+    const approved = allPlayers.filter(p => String(p.status || '').trim().toLowerCase() === 'approved').length;
+    const pending = allPlayers.filter(p => {
+        const s = String(p.status || '').trim().toLowerCase();
+        return s === 'registered' || s === 'pending' || !s;
+    }).length;
+    const depts = new Set(allPlayers.map(p => String(p.department || '').trim()).filter(Boolean));
 
     statTotal.textContent = total;
     statApproved.textContent = approved;
@@ -419,43 +499,47 @@ function updateMetrics() {
     statPendingBar.style.width = `${pendingPct}%`;
 }
 
-// 5. Filtering and Search Logic
+// 5. Filtering and Search Logic (Step 4, 5, 6, 7, 8)
 function applyFilters() {
-    const query = (searchInput?.value || '').toLowerCase().trim();
-    const dept = deptFilter?.value || 'ALL';
-    const role = roleFilter?.value || 'ALL';
-    const status = statusFilter?.value || 'ALL';
-    const auction = auctionFilter?.value || 'ALL';
+    const query = String(searchInput?.value || '').trim().toLowerCase();
+    const dept = String(deptFilter?.value || 'ALL').trim().toUpperCase();
+    const role = String(roleFilter?.value || 'ALL').trim();
+    const status = String(statusFilter?.value || 'ALL').trim();
+    const auction = String(auctionFilter?.value || 'ALL').trim();
 
     filteredPlayers = allPlayers.filter(player => {
-        const name = (player.full_name || player.name || '').toLowerCase();
-        const roll = (player.enrollment_no || '').toLowerCase();
-        const email = (player.email || '').toLowerCase();
-        const playerDept = (player.department || '').toLowerCase();
-        const playerRole = player.player_role || '';
-        const playerStatus = player.status || 'Registered';
-        const playerAuctionStatus = player.auction_status || (player.sold_to_team ? 'Sold' : 'Upcoming');
+        // Safe string normalization for all player properties
+        const name = String(player.full_name || player.name || '').toLowerCase();
+        const roll = String(player.enrollment_no || '').toLowerCase();
+        const email = String(player.email || '').toLowerCase();
+        const phone = String(player.mobile_number || player.phone || '').toLowerCase();
+        const playerDept = String(player.department || '').toLowerCase();
+        const playerRole = String(player.player_role || player.role || '');
+        const playerStatus = String(player.status || 'Registered');
+        const playerAuctionStatus = String(player.auction_status || (player.sold_to_team ? 'Sold' : 'Upcoming'));
 
-        // Search match
+        // Search match (Step 5: name, roll, email, phone, dept)
         const matchesQuery = !query || 
             name.includes(query) || 
             roll.includes(query) || 
             email.includes(query) || 
+            phone.includes(query) ||
             playerDept.includes(query);
 
-        // Department match
-        const matchesDept = dept === 'ALL' || (player.department || '').toUpperCase() === dept.toUpperCase();
+        // Department match (Step 6)
+        const matchesDept = dept === 'ALL' || String(player.department || '').trim().toUpperCase() === dept;
 
-        // Role match
-        const matchesRole = role === 'ALL' || playerRole === role;
+        // Role match (Step 7)
+        const matchesRole = role === 'ALL' || playerRole.toLowerCase() === role.toLowerCase();
 
-        // Status match
+        // Status match (Step 8)
+        const rawStatus = playerStatus.toLowerCase();
         const matchesStatus = status === 'ALL' || 
-            (status === 'Registered' && (playerStatus === 'Registered' || !playerStatus)) ||
-            playerStatus === status;
+            (status === 'Registered' && (rawStatus === 'registered' || rawStatus === 'pending' || !rawStatus)) ||
+            rawStatus === status.toLowerCase();
 
         // Auction match
-        const matchesAuction = auction === 'ALL' || playerAuctionStatus === auction;
+        const matchesAuction = auction === 'ALL' || playerAuctionStatus.toLowerCase() === auction.toLowerCase();
 
         return matchesQuery && matchesDept && matchesRole && matchesStatus && matchesAuction;
     });
@@ -1462,19 +1546,19 @@ function exportRosterToCsv() {
     const headers = ['Full Name', 'Enrollment No', 'Phone', 'Department', 'Email', 'Gender', 'Role', 'Base Points', 'Auction Status', 'Sold To Team', 'Purchase Points', 'Clearance Status', 'Registration Date'];
 
     const rows = dataToExport.map(p => [
-        `"${(p.full_name || p.name || '').replace(/"/g, '""')}"`,
-        `"${(p.enrollment_no || '').replace(/"/g, '""')}"`,
-        `"${(p.phone || '').replace(/"/g, '""')}"`,
-        `"${(p.department || '').replace(/"/g, '""')}"`,
-        `"${(p.email || '').replace(/"/g, '""')}"`,
-        `"${(p.gender || '').replace(/"/g, '""')}"`,
-        `"${(p.player_role || '').replace(/"/g, '""')}"`,
+        `"${String(p.full_name || p.name || '').replace(/"/g, '""')}"`,
+        `"${String(p.enrollment_no || '').replace(/"/g, '""')}"`,
+        `"${String(p.mobile_number || p.phone || '').replace(/"/g, '""')}"`,
+        `"${String(p.department || '').replace(/"/g, '""')}"`,
+        `"${String(p.email || '').replace(/"/g, '""')}"`,
+        `"${String(p.gender || '').replace(/"/g, '""')}"`,
+        `"${String(p.player_role || p.role || '').replace(/"/g, '""')}"`,
         `"${(p.base_price !== undefined ? p.base_price : '')}"`,
-        `"${(p.auction_status || (p.sold_to_team ? 'Sold' : 'Upcoming'))}"`,
-        `"${(p.sold_to_team || '')}"`,
+        `"${String(p.auction_status || (p.sold_to_team ? 'Sold' : 'Upcoming'))}"`,
+        `"${String(p.sold_to_team || '')}"`,
         `"${(p.sold_price !== undefined && p.sold_price !== null ? p.sold_price : '')}"`,
-        `"${(p.status || 'Registered')}"`,
-        `"${(p.created_at || new Date().toISOString())}"`
+        `"${String(p.status || 'Registered')}"`,
+        `"${String(p.created_at || new Date().toISOString())}"`
     ]);
 
     const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');

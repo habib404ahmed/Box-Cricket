@@ -559,36 +559,159 @@ function apiGetAthleteCount(params) {
 }
 
 /**
- * Retrieve all registered players
+ * Helper to obtain the authoritative Players sheet.
+ * Seamlessly resolves either 'Players' or 'Player_Auction_Roster' (Step 12).
+ */
+function getPlayersSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.PLAYERS);
+  var rosterSheet = ss.getSheetByName('Player_Auction_Roster');
+
+  if (rosterSheet && rosterSheet.getLastRow() > 1) {
+    if (!sheet || sheet.getLastRow() <= 1) {
+      try {
+        if (sheet && sheet.getLastRow() <= 1) {
+          ss.deleteSheet(sheet);
+        }
+        rosterSheet.setName(CONFIG.SHEETS.PLAYERS);
+        return rosterSheet;
+      } catch (e) {
+        return rosterSheet;
+      }
+    }
+  }
+
+  if (sheet) return sheet;
+  if (rosterSheet) return rosterSheet;
+  return getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
+}
+
+/**
+ * Retrieve all registered players (Step 1, 2, 11, 12, 13, 14)
+ * - Dynamic column header mapping (independent of hardcoded column indexes)
+ * - Strict type normalization (enrollment_no, mobile_number, strings, numbers)
+ * - Non-destructive duplicate ID handling for frontend rendering
  */
 function apiGetPlayers(params) {
-  var sheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
+  var sheet = getPlayersSheet();
   var lastRow = sheet.getLastRow();
   if (lastRow <= 1) {
     return { success: true, data: [] };
   }
 
-  var numCols = HEADERS.PLAYERS.length;
-  var values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
-  var players = [];
+  var dataRange = sheet.getDataRange().getValues();
+  if (!dataRange || dataRange.length <= 1) {
+    return { success: true, data: [] };
+  }
 
-  for (var i = 0; i < values.length; i++) {
-    var row = values[i];
-    var player = {};
-    for (var j = 0; j < numCols; j++) {
-      var key = HEADERS.PLAYERS[j];
-      player[key] = row[j] !== undefined && row[j] !== null ? row[j] : '';
+  // Step 11: Dynamic Header Mapping
+  var headerRow = dataRange[0].map(function(h) { return String(h || '').trim(); });
+  var colMap = {};
+  headerRow.forEach(function(h, idx) {
+    if (h) colMap[h] = idx;
+  });
+
+  // Helper to read column value by header name or fallback aliases
+  function getColVal(row, headerName, fallbackAliases) {
+    if (colMap[headerName] !== undefined) {
+      var v = row[colMap[headerName]];
+      if (v !== undefined && v !== null) return v;
     }
-    // Convenience aliases for existing frontend code
-    player.name = player.full_name;
-    player.phone = String(player.mobile_number || '');
-    player.mobile_number = String(player.mobile_number || '');
-    player.photo_data = player.photo_file_url || '';
-    player.photo = player.photo_file_url || '';
-    player.certificate_data = player.certificate_file_url || '';
-    player.certificate = player.certificate_name || (player.certificate_file_url ? 'Attached Document' : 'None attached');
+    if (fallbackAliases && fallbackAliases.length) {
+      for (var a = 0; a < fallbackAliases.length; a++) {
+        var alias = fallbackAliases[a];
+        if (colMap[alias] !== undefined) {
+          var av = row[colMap[alias]];
+          if (av !== undefined && av !== null) return av;
+        }
+      }
+    }
+    return '';
+  }
 
-    players.push(player);
+  var players = [];
+  var seenIds = {};
+
+  for (var i = 1; i < dataRange.length; i++) {
+    var row = dataRange[i];
+    // Skip completely empty rows
+    var hasData = row.some(function(cell) { return cell !== '' && cell !== null && cell !== undefined; });
+    if (!hasData) continue;
+
+    var rawId = String(getColVal(row, 'id', ['player_id', 'athlete_id']) || '').trim();
+    var rawName = String(getColVal(row, 'full_name', ['name', 'athlete_name']) || '').trim();
+    // Step 2: enrollment_no MUST ALWAYS be a normalized string
+    var rawEnroll = String(getColVal(row, 'enrollment_no', ['enrollment', 'roll_no', 'roll']) || '').trim();
+    var rawDept = String(getColVal(row, 'department', ['branch']) || '').trim();
+    var rawEmail = String(getColVal(row, 'email') || '').trim().toLowerCase();
+    // Step 9: mobile_number MUST ALWAYS be a normalized string
+    var rawMobile = String(getColVal(row, 'mobile_number', ['phone', 'mobile']) || '').trim();
+    var rawGender = String(getColVal(row, 'gender') || 'Male').trim();
+    var rawRole = String(getColVal(row, 'player_role', ['role']) || 'All-Rounder').trim();
+    var rawStatus = String(getColVal(row, 'status') || 'Registered').trim();
+    // Step 10: base_price and sold_price MUST be numbers
+    var rawBaseVal = getColVal(row, 'base_price', ['basePrice']);
+    var rawBase = (rawBaseVal !== '' && rawBaseVal !== null && !isNaN(Number(rawBaseVal)))
+      ? Number(rawBaseVal)
+      : (CONFIG.DEFAULT_ROLE_BASE_PRICES[rawRole] || 15);
+
+    var rawSoldTo = String(getColVal(row, 'sold_to_team', ['sold_team', 'team']) || '').trim();
+    var rawSoldPriceVal = getColVal(row, 'sold_price', ['soldPrice']);
+    var rawSoldPrice = (rawSoldPriceVal !== '' && rawSoldPriceVal !== null && !isNaN(Number(rawSoldPriceVal)))
+      ? Number(rawSoldPriceVal)
+      : null;
+    var rawAuctionStatus = (rawSoldTo || rawSoldPrice) ? 'Sold' : String(getColVal(row, 'auction_status') || 'Upcoming').trim();
+
+    var rawPhotoId = String(getColVal(row, 'photo_file_id') || '').trim();
+    var rawPhotoUrl = String(getColVal(row, 'photo_file_url', ['photo_data', 'photo']) || '').trim();
+    var rawCertId = String(getColVal(row, 'certificate_file_id') || '').trim();
+    var rawCertUrl = String(getColVal(row, 'certificate_file_url', ['certificate_data']) || '').trim();
+    var rawCertName = String(getColVal(row, 'certificate_name', ['certificate']) || '').trim();
+    if (!rawCertName && rawCertUrl) rawCertName = 'Attached Document';
+    else if (!rawCertName) rawCertName = 'None attached';
+
+    var rawCreatedAt = String(getColVal(row, 'created_at', ['timestamp']) || '').trim() || new Date().toISOString();
+
+    // Step 13 & 14: Non-destructive duplicate ID handling for frontend key stability
+    var finalId = rawId || ('SPL-ATH-' + ('000' + i).slice(-4));
+    seenIds[finalId] = (seenIds[finalId] || 0) + 1;
+    var displayId = finalId;
+    if (seenIds[finalId] > 1) {
+      displayId = finalId + '-D' + seenIds[finalId];
+    }
+
+    var playerObj = {
+      id: displayId,
+      original_id: finalId,
+      created_at: rawCreatedAt,
+      full_name: rawName,
+      name: rawName,
+      enrollment_no: rawEnroll,
+      department: rawDept,
+      branch: rawDept,
+      email: rawEmail,
+      mobile_number: rawMobile,
+      phone: rawMobile,
+      gender: rawGender,
+      player_role: rawRole,
+      role: rawRole,
+      status: rawStatus,
+      base_price: rawBase,
+      auction_status: rawAuctionStatus,
+      sold_to_team: rawSoldTo,
+      sold_price: rawSoldPrice,
+      photo_file_id: rawPhotoId,
+      photo_file_url: rawPhotoUrl,
+      photo_data: rawPhotoUrl,
+      photo: rawPhotoUrl,
+      certificate_file_id: rawCertId,
+      certificate_file_url: rawCertUrl,
+      certificate_data: rawCertUrl,
+      certificate_name: rawCertName,
+      certificate: rawCertName
+    };
+
+    players.push(playerObj);
   }
 
   return { success: true, data: players };
@@ -908,11 +1031,33 @@ function apiRegisterPlayer(payload) {
     certFileUrl = certSaved.fileUrl;
   }
 
-  // 7. STEP 10 — Generate Unique Player ID (Format: SPL-ATH-0001)
-  var athleteCount = Math.max(0, lastRow - 1);
-  var nextIndex = athleteCount + 1;
-  var paddedNumber = ('000' + nextIndex).slice(-4);
-  var playerId = payload.id || ('SPL-ATH-' + paddedNumber);
+  // 7. STEP 13 — Server-Side Unique Athlete ID Generation (Format: SPL-ATH-0001)
+  // Read existing IDs in the sheet, determine the highest numeric suffix, generate next unused ID
+  var existingIds = [];
+  if (lastRow > 1) {
+    var idColIdx = HEADERS.PLAYERS.indexOf('id');
+    var allRows = sheet.getRange(2, 1, lastRow - 1, HEADERS.PLAYERS.length).getValues();
+    for (var r = 0; r < allRows.length; r++) {
+      var eid = String(allRows[r][idColIdx] || '').trim();
+      if (eid) existingIds.push(eid);
+    }
+  }
+
+  var maxSuffix = 0;
+  existingIds.forEach(function(eid) {
+    var match = eid.match(/SPL-ATH-(\d+)/i);
+    if (match) {
+      var num = parseInt(match[1], 10);
+      if (num > maxSuffix) maxSuffix = num;
+    }
+  });
+
+  var nextNum = maxSuffix + 1;
+  var playerId = 'SPL-ATH-' + ('0000' + nextNum).slice(-4);
+  while (existingIds.indexOf(playerId) !== -1) {
+    nextNum++;
+    playerId = 'SPL-ATH-' + ('0000' + nextNum).slice(-4);
+  }
   var createdAt = new Date().toISOString();
 
   // 8. Prepare Row Matching Exact Headers
@@ -996,36 +1141,51 @@ function apiRegisterPlayer(payload) {
  * Update player record
  */
 function apiUpdatePlayer(payload) {
-  var id = payload.id || '';
-  var email = payload.email ? String(payload.email).trim().toLowerCase() : '';
+  var ss = getSpreadsheet();
+  var sheet = getPlayersSheet(ss);
+  if (!sheet) return { success: false, error: 'Players sheet not found.' };
 
-  if (!id && !email) {
-    return { success: false, error: 'Player ID or Email is required for update.' };
+  var id = String(payload.original_id || payload.id || '').replace(/-D\d+$/, '').trim();
+  var email = payload.email ? String(payload.email).trim().toLowerCase() : '';
+  var enroll = payload.enrollment_no ? String(payload.enrollment_no).trim() : '';
+
+  if (!id && !email && !enroll) {
+    return { success: false, error: 'Player ID, Email, or Enrollment is required for update.' };
   }
 
-  var sheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
   var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { success: false, error: 'Player not found.' };
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) return { success: false, error: 'Player not found.' };
 
-  var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.PLAYERS.length).getValues();
-  var idIdx = HEADERS.PLAYERS.indexOf('id');
-  var emailIdx = HEADERS.PLAYERS.indexOf('email');
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h).trim();
+  });
+
+  var idIdx = headerRow.indexOf('id');
+  var emailIdx = headerRow.indexOf('email');
+  var enrollIdx = headerRow.indexOf('enrollment_no');
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
-    if ((id && String(row[idIdx]).trim() === id) || (email && String(row[emailIdx]).trim().toLowerCase() === email)) {
+    var rowId = idIdx !== -1 ? String(row[idIdx]).trim() : '';
+    var rowEmail = emailIdx !== -1 ? String(row[emailIdx]).trim().toLowerCase() : '';
+    var rowEnroll = enrollIdx !== -1 ? String(row[enrollIdx]).trim() : '';
+
+    if ((id && rowId === id) || (email && rowEmail === email) || (enroll && rowEnroll === enroll)) {
       var rowNum = i + 2;
 
       // Handle photo update if Base64 provided
       if (payload.photo_data && !payload.photo_file_id) {
-        var photoSaved = saveBase64ToDrive(payload.photo_data, CONFIG.FOLDERS.PHOTOS, 'athlete_update_' + (row[idIdx] || ''));
+        var photoSaved = saveBase64ToDrive(payload.photo_data, CONFIG.FOLDERS.PHOTOS, 'athlete_update_' + rowId);
         payload.photo_file_id = photoSaved.fileId;
         payload.photo_file_url = photoSaved.fileUrl;
       }
 
-      // Update allowed fields
+      // Update allowed fields based on actual sheet headers
       for (var k in payload) {
-        var colIdx = HEADERS.PLAYERS.indexOf(k);
+        var colIdx = headerRow.indexOf(k);
         if (colIdx !== -1) {
           sheet.getRange(rowNum, colIdx + 1).setValue(payload[k]);
         }
@@ -1033,8 +1193,10 @@ function apiUpdatePlayer(payload) {
 
       // If mobile_number was passed as phone
       if (payload.phone && !payload.mobile_number) {
-        var mobCol = HEADERS.PLAYERS.indexOf('mobile_number') + 1;
-        sheet.getRange(rowNum, mobCol).setValue(String(payload.phone).replace(/\D/g, ''));
+        var mobCol = headerRow.indexOf('mobile_number');
+        if (mobCol !== -1) {
+          sheet.getRange(rowNum, mobCol + 1).setValue(String(payload.phone).replace(/\D/g, ''));
+        }
       }
 
       return { success: true, message: 'Player updated successfully in Google Sheet.' };
@@ -1048,31 +1210,52 @@ function apiUpdatePlayer(payload) {
  * STEP 18 & 19 — APPROVAL / REJECTION LOGIC
  */
 function apiSetPlayerStatus(payload, newStatus) {
-  var playerId = payload.id || payload.player_id || '';
-  var email = payload.email ? String(payload.email).trim().toLowerCase() : '';
+  var ss = getSpreadsheet();
+  var sheet = getPlayersSheet(ss);
+  if (!sheet) return { success: false, error: 'Players sheet not found.' };
 
-  if (!playerId && !email) {
-    return { success: false, error: 'Player ID or Email is required.' };
+  var id = String(payload.original_id || payload.id || payload.player_id || '').replace(/-D\d+$/, '').trim();
+  var email = payload.email ? String(payload.email).trim().toLowerCase() : '';
+  var enroll = payload.enrollment_no ? String(payload.enrollment_no).trim() : '';
+
+  if (!id && !email && !enroll) {
+    return { success: false, error: 'Player ID, Email, or Enrollment is required.' };
   }
 
-  var sheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
   var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { success: false, error: 'Player not found.' };
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) return { success: false, error: 'Player not found.' };
 
-  var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.PLAYERS.length).getValues();
-  var idIdx = HEADERS.PLAYERS.indexOf('id');
-  var emailIdx = HEADERS.PLAYERS.indexOf('email');
-  var statusIdx = HEADERS.PLAYERS.indexOf('status') + 1;
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h).trim();
+  });
+
+  var idIdx = headerRow.indexOf('id');
+  var emailIdx = headerRow.indexOf('email');
+  var enrollIdx = headerRow.indexOf('enrollment_no');
+  var statusIdx = headerRow.indexOf('status');
+
+  if (statusIdx === -1) {
+    // Add status column if not present
+    sheet.getRange(1, lastCol + 1).setValue('status');
+    statusIdx = lastCol;
+  }
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
-    if ((playerId && String(row[idIdx]).trim() === playerId) || (email && String(row[emailIdx]).trim().toLowerCase() === email)) {
+    var rowId = idIdx !== -1 ? String(row[idIdx]).trim() : '';
+    var rowEmail = emailIdx !== -1 ? String(row[emailIdx]).trim().toLowerCase() : '';
+    var rowEnroll = enrollIdx !== -1 ? String(row[enrollIdx]).trim() : '';
+
+    if ((id && rowId === id) || (email && rowEmail === email) || (enroll && rowEnroll === enroll)) {
       var rowNum = i + 2;
-      sheet.getRange(rowNum, statusIdx).setValue(newStatus);
-      Logger.log('[STATUS] Player ' + row[idIdx] + ' status updated to ' + newStatus);
+      sheet.getRange(rowNum, statusIdx + 1).setValue(newStatus);
+      Logger.log('[STATUS] Player ' + rowId + ' status updated to ' + newStatus);
       return {
         success: true,
-        id: row[idIdx],
+        id: rowId,
         status: newStatus,
         message: 'Status updated to ' + newStatus
       };
@@ -1086,26 +1269,41 @@ function apiSetPlayerStatus(payload, newStatus) {
  * STEP 20 — DELETE SINGLE PLAYER
  */
 function apiDeletePlayer(payload) {
-  var playerId = payload.id || payload.player_id || '';
-  var email = payload.email ? String(payload.email).trim().toLowerCase() : '';
+  var ss = getSpreadsheet();
+  var sheet = getPlayersSheet(ss);
+  if (!sheet) return { success: false, error: 'Players sheet not found.' };
 
-  if (!playerId && !email) {
-    return { success: false, error: 'Player ID or Email is required.' };
+  var id = String(payload.original_id || payload.id || payload.player_id || '').replace(/-D\d+$/, '').trim();
+  var email = payload.email ? String(payload.email).trim().toLowerCase() : '';
+  var enroll = payload.enrollment_no ? String(payload.enrollment_no).trim() : '';
+
+  if (!id && !email && !enroll) {
+    return { success: false, error: 'Player ID, Email, or Enrollment is required.' };
   }
 
-  var sheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
   var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { success: false, error: 'Player not found.' };
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) return { success: false, error: 'Player not found.' };
 
-  var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.PLAYERS.length).getValues();
-  var idIdx = HEADERS.PLAYERS.indexOf('id');
-  var emailIdx = HEADERS.PLAYERS.indexOf('email');
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h).trim();
+  });
+
+  var idIdx = headerRow.indexOf('id');
+  var emailIdx = headerRow.indexOf('email');
+  var enrollIdx = headerRow.indexOf('enrollment_no');
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
-    if ((playerId && String(row[idIdx]).trim() === playerId) || (email && String(row[emailIdx]).trim().toLowerCase() === email)) {
+    var rowId = idIdx !== -1 ? String(row[idIdx]).trim() : '';
+    var rowEmail = emailIdx !== -1 ? String(row[emailIdx]).trim().toLowerCase() : '';
+    var rowEnroll = enrollIdx !== -1 ? String(row[enrollIdx]).trim() : '';
+
+    if ((id && rowId === id) || (email && rowEmail === email) || (enroll && rowEnroll === enroll)) {
       sheet.deleteRow(i + 2);
-      Logger.log('[DELETE] Player ' + row[idIdx] + ' deleted from Google Sheet.');
+      Logger.log('[DELETE] Player ' + rowId + ' deleted from Google Sheet.');
       return { success: true, message: 'Athlete record deleted from Google Sheets.' };
     }
   }
@@ -1122,21 +1320,36 @@ function apiDeletePlayers(payload) {
     return { success: false, error: 'Array of player_ids is required.' };
   }
 
-  var sheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { success: true, count: 0 };
+  var ss = getSpreadsheet();
+  var sheet = getPlayersSheet(ss);
+  if (!sheet) return { success: false, error: 'Players sheet not found.' };
 
-  var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.PLAYERS.length).getValues();
-  var idIdx = HEADERS.PLAYERS.indexOf('id');
-  var emailIdx = HEADERS.PLAYERS.indexOf('email');
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) return { success: true, count: 0 };
+
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h).trim();
+  });
+
+  var idIdx = headerRow.indexOf('id');
+  var emailIdx = headerRow.indexOf('email');
+  var enrollIdx = headerRow.indexOf('enrollment_no');
+
+  var cleanedTargetIds = playerIds.map(function(pid) {
+    return String(pid).replace(/-D\d+$/, '').trim();
+  });
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
   // Delete from bottom to top to preserve index offsets
   var deletedCount = 0;
   for (var i = values.length - 1; i >= 0; i--) {
-    var rowId = String(values[i][idIdx]).trim();
-    var rowEmail = String(values[i][emailIdx]).trim().toLowerCase();
+    var rowId = idIdx !== -1 ? String(values[i][idIdx]).trim() : '';
+    var rowEmail = emailIdx !== -1 ? String(values[i][emailIdx]).trim().toLowerCase() : '';
+    var rowEnroll = enrollIdx !== -1 ? String(values[i][enrollIdx]).trim() : '';
 
-    if (playerIds.indexOf(rowId) !== -1 || playerIds.indexOf(rowEmail) !== -1) {
+    if (cleanedTargetIds.indexOf(rowId) !== -1 || playerIds.indexOf(rowEmail) !== -1 || playerIds.indexOf(rowEnroll) !== -1) {
       sheet.deleteRow(i + 2);
       deletedCount++;
     }
@@ -1158,7 +1371,10 @@ function apiDeleteAllPlayers(payload) {
     };
   }
 
-  var sheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
+  var ss = getSpreadsheet();
+  var sheet = getPlayersSheet(ss);
+  if (!sheet) return { success: false, error: 'Players sheet not found.' };
+
   var lastRow = sheet.getLastRow();
   var deletedCount = Math.max(0, lastRow - 1);
 
@@ -1184,8 +1400,9 @@ function apiDeleteAllPlayers(payload) {
   Logger.log('[DELETE ALL] All athletes cleared from Google Sheets.');
   return {
     success: true,
+    deleted_count: deletedCount,
     count: deletedCount,
-    message: 'All athlete records deleted from Google Sheets.'
+    message: 'All athlete registration records deleted successfully from Google Sheets.'
   };
 }
 

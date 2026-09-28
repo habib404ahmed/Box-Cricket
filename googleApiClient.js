@@ -49,45 +49,66 @@
     ];
 
     /**
-     * Normalizes a player record so both camelCase, snake_case, Google Drive URLs,
-     * and mobile_number/phone are consistently accessible.
+     * Normalizes a player record with strict type conversions (Step 1, 2, 3, 9, 10).
+     * Prevents any runtime exceptions like (player.enrollment_no || "").toLowerCase is not a function.
      */
-    function normalizePlayer(p) {
-        if (!p || typeof p !== 'object') return null;
+    function normalizePlayer(player) {
+        if (!player || typeof player !== 'object') return null;
 
-        const resolvedPhone = String(p.mobile_number || p.phone || '').trim();
-        const resolvedName = p.full_name || p.name || '';
-        const resolvedPhoto = p.photo_file_url || p.photo_data || p.photo || '';
-        const resolvedCertUrl = p.certificate_file_url || p.certificate_data || '';
-        const resolvedCertName = p.certificate_name || p.certificate || (resolvedCertUrl ? 'Attached Document' : 'None attached');
+        const id = String(player.id ?? player.original_id ?? "").trim();
+        const createdAt = String(player.created_at ?? "").trim() || new Date().toISOString();
+        const fullName = String(player.full_name ?? player.name ?? "").trim();
+        // Step 2: enrollment_no MUST ALWAYS be a string
+        const enrollment = String(player.enrollment_no ?? "").trim();
+        const dept = String(player.department ?? player.branch ?? "").trim();
+        const email = String(player.email ?? "").trim().toLowerCase();
+        // Step 9: mobile_number MUST ALWAYS be a string
+        const mobile = String(player.mobile_number ?? player.phone ?? "").trim();
+        const gender = String(player.gender ?? "Male").trim();
+        const role = String(player.player_role ?? player.role ?? "All-Rounder").trim();
+        const status = String(player.status ?? "Registered").trim();
+        // Step 10: base_price and sold_price numeric
+        const basePrice = Number(player.base_price ?? 0) || 15;
+        const soldTo = String(player.sold_to_team ?? "").trim();
+        const soldPrice = (player.sold_price !== undefined && player.sold_price !== null && player.sold_price !== '' && !isNaN(Number(player.sold_price)))
+            ? Number(player.sold_price)
+            : null;
+        const auctionStatus = (soldTo || soldPrice) ? 'Sold' : String(player.auction_status ?? "Upcoming").trim();
+        const photoId = String(player.photo_file_id ?? "").trim();
+        const photoUrl = String(player.photo_file_url ?? player.photo_data ?? player.photo ?? "").trim();
+        const certId = String(player.certificate_file_id ?? "").trim();
+        const certUrl = String(player.certificate_file_url ?? player.certificate_data ?? "").trim();
+        const certName = String(player.certificate_name ?? player.certificate ?? (certUrl ? "Attached Document" : "None attached")).trim();
 
         return {
-            ...p,
-            id: p.id || ('ath_' + (p.email || 'id').replace(/[^a-zA-Z0-9]/g, '_')),
-            name: resolvedName,
-            full_name: resolvedName,
-            phone: resolvedPhone,
-            mobile_number: resolvedPhone,
-            department: p.department || p.branch || '',
-            enrollment_no: p.enrollment_no || '',
-            email: p.email ? p.email.trim().toLowerCase() : '',
-            gender: p.gender || 'Male',
-            player_role: p.player_role || p.role || 'All-Rounder',
-            status: p.status || 'Registered',
-            base_price: (p.base_price !== undefined && p.base_price !== null && p.base_price !== '') ? Number(p.base_price) : 15,
-            sold_price: (p.sold_price !== undefined && p.sold_price !== null && p.sold_price !== '') ? Number(p.sold_price) : null,
-            sold_to_team: p.sold_to_team || null,
-            auction_status: (p.sold_to_team || p.sold_price) ? 'Sold' : (p.auction_status || 'Upcoming'),
-            photo_file_id: p.photo_file_id || '',
-            photo_file_url: p.photo_file_url || '',
-            photo_data: resolvedPhoto,
-            photo: resolvedPhoto,
-            certificate_file_id: p.certificate_file_id || '',
-            certificate_file_url: resolvedCertUrl,
-            certificate_data: resolvedCertUrl,
-            certificate: resolvedCertName,
-            certificate_name: resolvedCertName,
-            created_at: p.created_at || new Date().toISOString()
+            id: id || ('ath_' + (email || Date.now()).replace(/[^a-zA-Z0-9]/g, '_')),
+            original_id: String(player.original_id ?? id).trim(),
+            created_at: createdAt,
+            full_name: fullName,
+            name: fullName,
+            enrollment_no: enrollment,
+            department: dept,
+            branch: dept,
+            email: email,
+            mobile_number: mobile,
+            phone: mobile,
+            gender: gender,
+            player_role: role,
+            role: role,
+            status: status,
+            base_price: basePrice,
+            auction_status: auctionStatus,
+            sold_to_team: soldTo,
+            sold_price: soldPrice,
+            photo_file_id: photoId,
+            photo_file_url: photoUrl,
+            photo_data: photoUrl,
+            photo: photoUrl,
+            certificate_file_id: certId,
+            certificate_file_url: certUrl,
+            certificate_data: certUrl,
+            certificate_name: certName,
+            certificate: certName
         };
     }
 
@@ -256,19 +277,42 @@
         // --- PLAYERS (READ) ---
         getPlayers: async () => {
             if (isConfigured()) {
-                const res = await getApi('getPlayers');
-                if (res.success && Array.isArray(res.data)) {
-                    const normalized = res.data.map(normalizePlayer);
-                    try {
-                        localStorage.setItem('unibox_players', JSON.stringify(normalized));
-                    } catch (e) {}
-                    return { data: normalized, error: null, source: 'google_sheets' };
+                try {
+                    const res = await getApi('getPlayers');
+                    if (res && res.success && Array.isArray(res.data)) {
+                        const seenIds = new Map();
+                        const normalized = res.data.map(p => {
+                            const norm = normalizePlayer(p);
+                            if (!norm) return null;
+                            const baseId = norm.id;
+                            const count = (seenIds.get(baseId) || 0) + 1;
+                            seenIds.set(baseId, count);
+                            if (count > 1) {
+                                norm.id = `${baseId}-D${count}`;
+                            }
+                            return norm;
+                        }).filter(Boolean);
+
+                        try {
+                            localStorage.setItem('unibox_players', JSON.stringify(normalized));
+                        } catch (e) {}
+                        return { success: true, data: normalized, error: null, source: 'google_sheets' };
+                    } else if (res && res.error) {
+                        console.error('[PLAYERS] GoogleTourneyApi getPlayers error:', res.error);
+                    }
+                } catch (apiErr) {
+                    console.error('[PLAYERS] getPlayers network error:', apiErr);
                 }
             }
 
             // Fallback
-            const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]').map(normalizePlayer);
-            return { data: localPlayers, error: null, source: 'cache' };
+            try {
+                const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                const normalized = (Array.isArray(localPlayers) ? localPlayers : []).map(normalizePlayer).filter(Boolean);
+                return { success: true, data: normalized, error: null, source: 'cache' };
+            } catch (e) {
+                return { success: true, data: [], error: null, source: 'cache' };
+            }
         },
 
         getPlayer: async (emailOrId) => {
@@ -361,7 +405,22 @@
                 return { success: false, error: 'Google backend is not configured yet.' };
             }
             const query = String(playerIdOrEmail).trim();
-            const payload = query.includes('@') ? { email: query } : { id: query };
+            const cleanId = query.replace(/-D\d+$/, '').trim();
+            let pEmail = '';
+            let pEnroll = '';
+            try {
+                const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                const found = localPlayers.find(x => x.id === query || x.original_id === cleanId || x.email === query);
+                if (found) {
+                    pEmail = found.email || '';
+                    pEnroll = found.enrollment_no || '';
+                }
+            } catch (e) {}
+
+            const payload = query.includes('@')
+                ? { email: query, id: cleanId, original_id: cleanId, enrollment_no: pEnroll }
+                : { id: cleanId, original_id: cleanId, email: pEmail, enrollment_no: pEnroll };
+
             const res = await postApi('approvePlayer', payload);
             if (!res.success) {
                 return { success: false, error: res.error || 'Failed to approve athlete in Google Sheets.' };
@@ -370,7 +429,7 @@
             // Update local cache on successful Google Sheets write
             try {
                 const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-                const p = localPlayers.find(x => x.id === playerIdOrEmail || x.email === playerIdOrEmail);
+                const p = localPlayers.find(x => x.id === query || x.original_id === cleanId || x.email === query);
                 if (p) {
                     p.status = 'Approved';
                     localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
@@ -385,7 +444,22 @@
                 return { success: false, error: 'Google backend is not configured yet.' };
             }
             const query = String(playerIdOrEmail).trim();
-            const payload = query.includes('@') ? { email: query } : { id: query };
+            const cleanId = query.replace(/-D\d+$/, '').trim();
+            let pEmail = '';
+            let pEnroll = '';
+            try {
+                const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                const found = localPlayers.find(x => x.id === query || x.original_id === cleanId || x.email === query);
+                if (found) {
+                    pEmail = found.email || '';
+                    pEnroll = found.enrollment_no || '';
+                }
+            } catch (e) {}
+
+            const payload = query.includes('@')
+                ? { email: query, id: cleanId, original_id: cleanId, enrollment_no: pEnroll }
+                : { id: cleanId, original_id: cleanId, email: pEmail, enrollment_no: pEnroll };
+
             const res = await postApi('rejectPlayer', payload);
             if (!res.success) {
                 return { success: false, error: res.error || 'Failed to reject athlete in Google Sheets.' };
@@ -394,7 +468,7 @@
             // Update local cache on successful Google Sheets write
             try {
                 const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-                const p = localPlayers.find(x => x.id === playerIdOrEmail || x.email === playerIdOrEmail);
+                const p = localPlayers.find(x => x.id === query || x.original_id === cleanId || x.email === query);
                 if (p) {
                     p.status = 'Rejected';
                     localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
@@ -404,13 +478,38 @@
             return { success: true, status: 'Rejected' };
         },
 
+        updatePlayerStatus: async (playerIdOrEmail, status) => {
+            const cleanStatus = String(status || '').trim();
+            if (cleanStatus.toLowerCase() === 'approved') {
+                return await window.GoogleTourneyApi.approvePlayer(playerIdOrEmail);
+            } else if (cleanStatus.toLowerCase() === 'rejected') {
+                return await window.GoogleTourneyApi.rejectPlayer(playerIdOrEmail);
+            }
+            return await window.GoogleTourneyApi.updatePlayer({ id: playerIdOrEmail, status: cleanStatus });
+        },
+
         // --- ATHLETE DELETION ---
         deletePlayer: async (playerIdOrEmail) => {
             if (!isConfigured()) {
                 return { success: false, error: 'Google backend is not configured yet.' };
             }
             const query = String(playerIdOrEmail).trim();
-            const payload = query.includes('@') ? { email: query } : { id: query };
+            const cleanId = query.replace(/-D\d+$/, '').trim();
+            let pEmail = '';
+            let pEnroll = '';
+            try {
+                const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                const found = localPlayers.find(x => x.id === query || x.original_id === cleanId || x.email === query);
+                if (found) {
+                    pEmail = found.email || '';
+                    pEnroll = found.enrollment_no || '';
+                }
+            } catch (e) {}
+
+            const payload = query.includes('@')
+                ? { email: query, id: cleanId, original_id: cleanId, enrollment_no: pEnroll }
+                : { id: cleanId, original_id: cleanId, email: pEmail, enrollment_no: pEnroll };
+
             const res = await postApi('deletePlayer', payload);
             if (!res.success) {
                 return { success: false, error: res.error || 'Failed to delete athlete from Google Sheets.' };
@@ -418,7 +517,7 @@
 
             try {
                 let localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
-                localPlayers = localPlayers.filter(p => p.id !== playerIdOrEmail && p.email !== playerIdOrEmail);
+                localPlayers = localPlayers.filter(p => p.id !== query && p.original_id !== cleanId && p.email !== query);
                 localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
             } catch (e) {}
 
