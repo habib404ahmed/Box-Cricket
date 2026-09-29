@@ -1,4 +1,4 @@
-// Box Cricket League - Interactive Script
+﻿// Box Cricket League - Interactive Script
 
 // Tab Switching Functionality (Login / Sign Up)
 function switchAuthTab(tab) {
@@ -878,9 +878,18 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             // 10. Persist to Database (Google Sheets / local fallback)
+            // Wrapped with a 70-second absolute timeout to guarantee the button is ALWAYS
+            // reset via finally{}, even if the network hangs indefinitely.
             let finalProfile = playerData;
             if (window.UniBoxDb) {
-                const dbResult = await window.UniBoxDb.savePlayer(playerData);
+                const REGISTRATION_TIMEOUT_MS = 70000;
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Registration timed out after 70 seconds. Your details may have been saved — please try logging in.')), REGISTRATION_TIMEOUT_MS)
+                );
+                const dbResult = await Promise.race([
+                    window.UniBoxDb.savePlayer(playerData),
+                    timeoutPromise
+                ]);
                 if (dbResult.error || !dbResult.data) {
                     const errMsg = (dbResult.error?.code === '23505' || dbResult.error?.message?.includes('unique') || dbResult.error?.message?.includes('duplicate key'))
                         ? 'An athlete with this email or enrollment number already exists.'
@@ -1435,6 +1444,88 @@ document.addEventListener('DOMContentLoaded', () => {
     window.syncAthleteCount = syncAthleteCount;
     window.startAthleteCountSync = startAthleteCountSync;
     window.stopAthleteCountSync = stopAthleteCountSync;
+
+    // =========================================================================
+    // BACKGROUND UPLOAD EVENT HANDLERS (Requirements 9, 14)
+    // =========================================================================
+    // These event listeners respond to CustomEvents fired by googleApiClient.js
+    // after a background photo/certificate upload completes.
+    // They update the dashboard UI WITHOUT requiring a page reload.
+
+    // Track pending upload state for retry UI (Req 9)
+    let _bgUploadPending = {};
+
+    /**
+     * spl:bg_upload_start — fires when background uploads begin.
+     * Shows a subtle "Uploading files..." indicator on the dashboard.
+     */
+    window.addEventListener('spl:bg_upload_start', (e) => {
+        const { uploads, email } = e.detail || {};
+        if (!Array.isArray(uploads) || !uploads.length) return;
+        // Store pending info for retry capability
+        _bgUploadPending = e.detail || {};
+        showSessionToast(`Uploading ${uploads.join(' & ')} in background...`, 'info');
+    });
+
+    /**
+     * spl:bg_upload_done — fires when a single file upload completes successfully.
+     * Immediately updates the dashboard photo or certificate link (Req 14).
+     */
+    window.addEventListener('spl:bg_upload_done', (e) => {
+        const { type, file_url, cert_name, email } = e.detail || {};
+        const activeEmail = sessionStorage.getItem('unibox_active_email') || '';
+
+        // Req 10: Only apply to the currently logged-in athlete
+        if (!email || !activeEmail || email.toLowerCase() !== activeEmail.toLowerCase()) return;
+
+        if (type === 'photo' && file_url) {
+            // Req 14: Refresh photo on dashboard without page reload
+            const playerPhoto = document.getElementById('dash-player-photo');
+            const photoPlaceholder = document.getElementById('dash-photo-placeholder');
+            const photoStatusBadge = document.getElementById('photo-status-badge');
+            const photoBtnText = document.getElementById('photo-btn-text');
+            if (playerPhoto) {
+                playerPhoto.src = file_url;
+                playerPhoto.classList.remove('hidden');
+            }
+            if (photoPlaceholder) photoPlaceholder.classList.add('hidden');
+            if (photoStatusBadge) {
+                photoStatusBadge.classList.remove('hidden');
+                photoStatusBadge.classList.add('flex');
+            }
+            if (photoBtnText) photoBtnText.textContent = 'Change Photo';
+        }
+
+        if (type === 'certificate' && file_url) {
+            // Req 14: Show certificate link on dashboard
+            updateCertViewerButton(cert_name || 'Sports Certificate', file_url);
+            const certDisplay = document.getElementById('dash-player-cert');
+            if (certDisplay) certDisplay.innerText = cert_name || 'Sports Certificate';
+        }
+    });
+
+    /**
+     * spl:bg_upload_complete — fires when ALL background uploads have finished.
+     * Shows success or failure toast. On failure: shows non-blocking retry message (Req 9).
+     */
+    window.addEventListener('spl:bg_upload_complete', (e) => {
+        const { results, anyFailed } = e.detail || {};
+        _bgUploadPending = {};
+
+        if (!anyFailed) {
+            showSessionToast('Files uploaded successfully! ✓', 'info');
+        } else {
+            // Req 9: Non-blocking failure notice — does NOT log out or undo registration
+            const failedTypes = Object.entries(results || {})
+                .filter(([, r]) => !r.success)
+                .map(([t]) => t)
+                .join(' & ');
+            showSessionToast(
+                `${failedTypes} upload failed (non-fatal). Registration is saved. Visit your dashboard to retry.`,
+                'warning'
+            );
+        }
+    });
 
     // Run auto-restore
     restoreStudentSession();

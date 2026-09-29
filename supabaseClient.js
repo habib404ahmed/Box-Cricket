@@ -1,4 +1,4 @@
-// ==============================================================================
+﻿// ==============================================================================
 // Sunstone Premier League 2026 - Supabase Client Connector & Database Operations
 // ==============================================================================
 
@@ -1289,7 +1289,7 @@ const UniBoxDb = {
                     if (data.password_hash === inputHash) {
                         return { success: true, admin: { ...data, admin_token: 'SPL2026_ADMIN_SECURE_AUTH_TOKEN_KEY' }, error: null, source: 'supabase' };
                     } else {
-                        return { success: false, error: 'Incorrect coordinator password.', source: 'supabase' };
+                        return { success: false, error: 'Invalid Admin credentials.', source: 'supabase' };
                     }
                 }
             } catch (err) {
@@ -1298,7 +1298,7 @@ const UniBoxDb = {
         }
 
         // Built-in Authorized Coordinator Fallback Verification
-        const defaultHash = '819ad992a50989f76e1e5fe6d2167e370dabae02fb8ac8b0add58c6a23134f23';
+        const defaultHash = 'bf145ff13649f1771e5196eaa41c3622d090750500bdc2c9925f51e0deec4eab';
         if ((trimmed.toLowerCase() === 'admin' || trimmed.toLowerCase() === 'admin@unibox.com') && inputHash === defaultHash) {
             return {
                 success: true,
@@ -1308,7 +1308,7 @@ const UniBoxDb = {
             };
         }
 
-        return { success: false, error: 'Invalid coordinator username or password.', source: 'auth' };
+        return { success: false, error: 'Invalid Admin credentials.', source: 'auth' };
     }
 };
 

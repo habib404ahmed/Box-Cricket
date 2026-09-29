@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" class="dark">
 
 <head>
@@ -111,7 +111,7 @@
             <!-- Error Banner -->
             <div id="admin-error-box" class="hidden mb-5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center gap-2.5">
                 <span class="text-base">⚠️</span>
-                <span id="admin-error-text">Invalid credentials.</span>
+                <span id="admin-error-text">Invalid Admin credentials.</span>
             </div>
 
             <!-- Admin Authentication Form -->
@@ -223,7 +223,7 @@
                         window.location.replace('index.html');
                         return;
                     } else {
-                        adminErrorText.textContent = result.error || 'Invalid coordinator credentials.';
+                        adminErrorText.textContent = 'Invalid Admin credentials.';
                         adminErrorBox.classList.remove('hidden');
                     }
                 } else {

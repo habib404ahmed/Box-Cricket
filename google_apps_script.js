@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ==============================================================================
  * SUNSTONE PREMIER LEAGUE 2026 — GOOGLE APPS SCRIPT BACKEND API
  * ==============================================================================
@@ -466,7 +466,7 @@ function isAdminAuthorized(payload) {
   }
 
   // 2. Verified Coordinator Password Hash Verification
-  if (adminPass && hashPassword(adminPass) === '819ad992a50989f76e1e5fe6d2167e370dabae02fb8ac8b0add58c6a23134f23' && role === 'ADMIN') {
+  if (adminPass && hashPassword(adminPass) === 'bf145ff13649f1771e5196eaa41c3622d090750500bdc2c9925f51e0deec4eab' && role === 'ADMIN') {
     return true;
   }
 
@@ -617,11 +617,11 @@ function doPost(e) {
         break;
 
       case 'uploadPhoto':
-        result = apiUploadFile(payload, CONFIG.FOLDERS.PHOTOS, 'athlete_photo');
+        result = apiUploadFileAndUpdatePlayer(payload, CONFIG.FOLDERS.PHOTOS, 'athlete_photo', 'photo');
         break;
 
       case 'uploadCertificate':
-        result = apiUploadFile(payload, CONFIG.FOLDERS.CERTIFICATES, 'athlete_cert');
+        result = apiUploadFileAndUpdatePlayer(payload, CONFIG.FOLDERS.CERTIFICATES, 'athlete_cert', 'certificate');
         break;
 
       default:
@@ -1173,6 +1173,88 @@ function apiUploadFile(payload, folderName, prefix) {
 }
 
 /**
+ * Upload a file to Google Drive AND write the resulting file_id / file_url back
+ * to the athlete's Players sheet row.
+ *
+ * Requirements 6, 7, 8: After background upload succeeds the Google Sheets record
+ * must be updated so Admin can see the file link and the athlete dashboard can display it.
+ *
+ * @param {Object} payload  - Must contain file_data, email or player_id, and optionally certificate_name
+ * @param {string} folderName - Drive subfolder name (CONFIG.FOLDERS.PHOTOS or CERTIFICATES)
+ * @param {string} prefix     - Filename prefix (e.g. 'athlete_photo')
+ * @param {string} fileType   - 'photo' or 'certificate'
+ */
+function apiUploadFileAndUpdatePlayer(payload, folderName, prefix, fileType) {
+  var fileData = payload.file_data || payload.photo_data || payload.certificate_data;
+  if (!fileData) {
+    return { success: false, error: 'No file data provided.' };
+  }
+
+  // Save to Drive
+  var saved = saveBase64ToDrive(fileData, folderName, prefix || 'upload');
+  if (!saved.fileId) {
+    return { success: false, error: 'Failed to upload file to Google Drive.' };
+  }
+
+  // Write Drive URL back to the player's sheet row (Req 6, 7, 8)
+  var email = payload.email ? String(payload.email).trim().toLowerCase() : '';
+  var playerId = payload.player_id ? String(payload.player_id).trim() : '';
+
+  if (email || playerId) {
+    try {
+      var sheet = getPlayersSheet();
+      var lastRow = sheet.getLastRow();
+      var lastCol = sheet.getLastColumn();
+
+      if (lastRow > 1 && lastCol > 0) {
+        var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+          return String(h).trim();
+        });
+        var idIdx    = headerRow.indexOf('id');
+        var emailIdx = headerRow.indexOf('email');
+        var values   = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+        for (var i = 0; i < values.length; i++) {
+          var row      = values[i];
+          var rowId    = idIdx    !== -1 ? String(row[idIdx]).trim()                    : '';
+          var rowEmail = emailIdx !== -1 ? String(row[emailIdx]).trim().toLowerCase()   : '';
+
+          var matched = (playerId && rowId === playerId) || (email && rowEmail === email);
+          if (matched) {
+            var rowNum = i + 2;
+            if (fileType === 'photo') {
+              var photoIdCol  = headerRow.indexOf('photo_file_id');
+              var photoUrlCol = headerRow.indexOf('photo_file_url');
+              if (photoIdCol  !== -1) sheet.getRange(rowNum, photoIdCol  + 1).setValue(saved.fileId);
+              if (photoUrlCol !== -1) sheet.getRange(rowNum, photoUrlCol + 1).setValue(saved.fileUrl);
+            } else if (fileType === 'certificate') {
+              var certIdCol   = headerRow.indexOf('certificate_file_id');
+              var certUrlCol  = headerRow.indexOf('certificate_file_url');
+              var certNameCol = headerRow.indexOf('certificate_name');
+              var certName    = payload.certificate_name ? String(payload.certificate_name).trim() : 'Sports Certificate';
+              if (certIdCol   !== -1) sheet.getRange(rowNum, certIdCol   + 1).setValue(saved.fileId);
+              if (certUrlCol  !== -1) sheet.getRange(rowNum, certUrlCol  + 1).setValue(saved.fileUrl);
+              if (certNameCol !== -1) sheet.getRange(rowNum, certNameCol + 1).setValue(certName);
+            }
+            Logger.log('[UPLOAD] Updated ' + fileType + ' for player ' + (rowId || rowEmail) + ' -> ' + saved.fileUrl);
+            break;
+          }
+        }
+      }
+    } catch (updateErr) {
+      // Non-fatal: file is already saved to Drive, Sheets write failed
+      Logger.log('[UPLOAD] Warning: Could not write Drive URL to Sheets: ' + updateErr);
+    }
+  }
+
+  return {
+    success: true,
+    file_id: saved.fileId,
+    file_url: saved.fileUrl
+  };
+}
+
+/**
  * STEP 10, 11, 12, 13, 14 — ATHLETE REGISTRATION
  * Server-side branch validation, mobile number preservation, Drive file storage
  */
@@ -1309,7 +1391,7 @@ function apiRegisterPlayer(payload) {
       var sVals = settingsSheet.getRange(2, 1, sLastRow - 1, 2).getValues();
       for (var s = 0; s < sVals.length; s++) {
         if (sVals[s][0] === 'athlete_count') {
-          settingsSheet.getRange(s + 2, 2).setValue(nextIndex);
+          settingsSheet.getRange(s + 2, 2).setValue(nextNum);
           break;
         }
       }

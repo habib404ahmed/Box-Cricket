@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ==============================================================================
  * SUNSTONE PREMIER LEAGUE 2026 — GOOGLE BACKEND CLIENT BRIDGE
  * ==============================================================================
@@ -491,13 +491,6 @@
                 };
             }
 
-            const payload = {
-                ...playerData,
-                department: dept,
-                mobile_number: rawPhone,
-                phone: rawPhone
-            };
-
             if (!isConfigured()) {
                 return {
                     success: false,
@@ -506,7 +499,27 @@
                 };
             }
 
-            const res = await postApi('registerPlayer', payload);
+            // PERFORMANCE FIX: Strip large Base64 file payloads from the registration request.
+            // Sending photo + certificate data (1-5MB each) bloats the POST body causing
+            // Google Apps Script to spend 30-60s on Drive uploads during registration, which
+            // makes the frontend timeout and hang. Instead:
+            //   1. Register core data instantly (~2-5s round trip)
+            //   2. Upload files in background after success (non-blocking)
+            const photoData = playerData.photo_data || null;
+            const certData = playerData.certificate_data || null;
+            const certNameBg = playerData.certificate_name || playerData.certificate || null;
+
+            const payload = {
+                ...playerData,
+                department: dept,
+                mobile_number: rawPhone,
+                phone: rawPhone,
+                photo_data: null,        // stripped — uploaded in background
+                certificate_data: null   // stripped — uploaded in background
+            };
+
+            // Use 60s timeout: generous for GAS cold starts, without file payloads
+            const res = await postApi('registerPlayer', payload, 60000);
             if (!res.success) {
                 return {
                     success: false,
@@ -516,6 +529,7 @@
             }
 
             const normalized = normalizePlayer(res.data);
+
             // Cache verified record for instant reads
             try {
                 const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
@@ -525,6 +539,142 @@
                 localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
                 localStorage.setItem('unibox_phone_' + normalized.email.toLowerCase(), rawPhone);
             } catch (e) {}
+
+            // BACKGROUND: Upload photo and certificate after registration succeeds (fire-and-forget).
+            // These do NOT block the UI — the athlete is already on the dashboard.
+            // Fulfils requirements 4, 5, 6, 7, 8, 9, 10, 14.
+            if (photoData || certData) {
+                // Capture identity now — never look up from closure to avoid wrong-athlete uploads (Req 10)
+                const bgPlayerId = normalized.id;
+                const bgEmail    = normalized.email;
+                const bgCertName = certNameBg || 'Sports Certificate';
+                // Req 9: track pending uploads so UI can show status and retry
+                const pendingUploads = [];
+                if (photoData)  pendingUploads.push({ type: 'photo',       data: photoData });
+                if (certData)   pendingUploads.push({ type: 'certificate', data: certData  });
+
+                // Notify the dashboard that uploads are starting (Req 9 — non-blocking status)
+                try {
+                    if (typeof window !== 'undefined' && window.dispatchEvent) {
+                        window.dispatchEvent(new CustomEvent('spl:bg_upload_start', {
+                            detail: { playerId: bgPlayerId, email: bgEmail, uploads: pendingUploads.map(u => u.type) }
+                        }));
+                    }
+                } catch (e) {}
+
+                (async () => {
+                    const results = {};
+
+                    // --- Photo Upload ---
+                    if (photoData) {
+                        try {
+                            const photoRes = await postApi('uploadPhoto', {
+                                file_data: photoData,
+                                player_id: bgPlayerId,
+                                email: bgEmail
+                            }, 90000);
+
+                            if (photoRes.success && photoRes.file_url) {
+                                results.photo = { success: true, file_url: photoRes.file_url, file_id: photoRes.file_id };
+
+                                // Update localStorage cache (Req 14 — dashboard will refresh)
+                                try {
+                                    const cached = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                                    const pi = cached.findIndex(p => p.email === bgEmail);
+                                    if (pi >= 0) {
+                                        cached[pi].photo_file_url = photoRes.file_url;
+                                        cached[pi].photo_file_id  = photoRes.file_id || '';
+                                        cached[pi].photo_data     = photoRes.file_url;
+                                        cached[pi].photo          = photoRes.file_url;
+                                        localStorage.setItem('unibox_players', JSON.stringify(cached));
+                                    }
+                                    const cp = JSON.parse(localStorage.getItem('unibox_cached_profile') || '{}');
+                                    if (cp.email === bgEmail) {
+                                        cp.photo_file_url = photoRes.file_url;
+                                        cp.photo_file_id  = photoRes.file_id || '';
+                                        cp.photo_data     = photoRes.file_url;
+                                        cp.photo          = photoRes.file_url;
+                                        localStorage.setItem('unibox_cached_profile', JSON.stringify(cp));
+                                    }
+                                } catch (e) {}
+
+                                // Req 14: Fire event so dashboard can refresh photo without page reload
+                                try {
+                                    if (typeof window !== 'undefined' && window.dispatchEvent) {
+                                        window.dispatchEvent(new CustomEvent('spl:bg_upload_done', {
+                                            detail: { type: 'photo', playerId: bgPlayerId, email: bgEmail, file_url: photoRes.file_url }
+                                        }));
+                                    }
+                                } catch (e) {}
+                            } else {
+                                results.photo = { success: false, error: photoRes.error || 'Photo upload failed.' };
+                            }
+                        } catch (photoErr) {
+                            results.photo = { success: false, error: photoErr.message };
+                            console.warn('[REGISTRATION] Background photo upload failed (non-fatal):', photoErr.message);
+                        }
+                    }
+
+                    // --- Certificate Upload ---
+                    if (certData) {
+                        try {
+                            const certRes = await postApi('uploadCertificate', {
+                                file_data: certData,
+                                player_id: bgPlayerId,
+                                email: bgEmail,
+                                certificate_name: bgCertName
+                            }, 90000);
+
+                            if (certRes.success && certRes.file_url) {
+                                results.certificate = { success: true, file_url: certRes.file_url, file_id: certRes.file_id };
+
+                                // Update localStorage cache
+                                try {
+                                    const cached = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                                    const pi = cached.findIndex(p => p.email === bgEmail);
+                                    if (pi >= 0) {
+                                        cached[pi].certificate_file_url = certRes.file_url;
+                                        cached[pi].certificate_file_id  = certRes.file_id || '';
+                                        cached[pi].certificate_data     = certRes.file_url;
+                                        localStorage.setItem('unibox_players', JSON.stringify(cached));
+                                    }
+                                    const cp = JSON.parse(localStorage.getItem('unibox_cached_profile') || '{}');
+                                    if (cp.email === bgEmail) {
+                                        cp.certificate_file_url = certRes.file_url;
+                                        cp.certificate_file_id  = certRes.file_id || '';
+                                        cp.certificate_data     = certRes.file_url;
+                                        localStorage.setItem('unibox_cached_profile', JSON.stringify(cp));
+                                    }
+                                } catch (e) {}
+
+                                // Req 14: Fire event so dashboard can refresh cert link
+                                try {
+                                    if (typeof window !== 'undefined' && window.dispatchEvent) {
+                                        window.dispatchEvent(new CustomEvent('spl:bg_upload_done', {
+                                            detail: { type: 'certificate', playerId: bgPlayerId, email: bgEmail, file_url: certRes.file_url, cert_name: bgCertName }
+                                        }));
+                                    }
+                                } catch (e) {}
+                            } else {
+                                results.certificate = { success: false, error: certRes.error || 'Certificate upload failed.' };
+                            }
+                        } catch (certErr) {
+                            results.certificate = { success: false, error: certErr.message };
+                            console.warn('[REGISTRATION] Background cert upload failed (non-fatal):', certErr.message);
+                        }
+                    }
+
+                    // Req 9: Fire final status event (UI can show "upload complete" or "upload failed + retry")
+                    const anyFailed = Object.values(results).some(r => !r.success);
+                    try {
+                        if (typeof window !== 'undefined' && window.dispatchEvent) {
+                            window.dispatchEvent(new CustomEvent('spl:bg_upload_complete', {
+                                detail: { playerId: bgPlayerId, email: bgEmail, results, anyFailed }
+                            }));
+                        }
+                    } catch (e) {}
+                })();
+            }
 
             return { success: true, data: normalized, error: null, source: 'google_sheets' };
         },
