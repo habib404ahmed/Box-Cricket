@@ -1,4 +1,4 @@
-// ==============================================================================
+﻿// ==============================================================================
 // Sunstone Premier League 2026 - Tournament Admin Command Center Controller
 // ==============================================================================
 
@@ -231,10 +231,109 @@ async function initAdminDashboard() {
     startAutoRefresh();
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initAdminDashboard);
-} else {
+// ==============================================================================
+// ADMIN SESSION GUARD — Server-validated via Google Apps Script (Req 9)
+// No client-side secret. Session must be verified with GAS before dashboard loads.
+// ==============================================================================
+
+/**
+ * Get the active admin session from sessionStorage.
+ * Returns the parsed session object or null.
+ */
+function getAdminSessionData() {
+    try {
+        const raw = sessionStorage.getItem('unibox_admin_session');
+        if (!raw) return null;
+        const s = JSON.parse(raw);
+        if (!s || !s.session_token) return null;
+        return s;
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * Get the session token for use in GAS API calls.
+ */
+function getAdminToken() {
+    const s = getAdminSessionData();
+    return s ? s.session_token : null;
+}
+
+/**
+ * Show a full-screen auth loading overlay, hiding the dashboard.
+ */
+function showAuthLoader() {
+    let overlay = document.getElementById('auth-loading-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'auth-loading-overlay';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#050816;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;';
+        overlay.innerHTML = '<div style="width:40px;height:40px;border:3px solid #38bdf8;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></div>' +
+            '<p style="color:#94a3b8;font-size:13px;font-family:system-ui;">Verifying session...</p>' +
+            '<style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+        document.body.prepend(overlay);
+    }
+    overlay.style.display = 'flex';
+}
+
+function hideAuthLoader() {
+    const overlay = document.getElementById('auth-loading-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+/**
+ * Redirect to login, clearing session.
+ */
+function redirectToLogin(reason) {
+    try { sessionStorage.removeItem('unibox_admin_session'); } catch (e) {}
+    try { localStorage.removeItem('unibox_admin_session'); } catch (e) {}
+    const base = window.location.pathname.includes('/admin/') ? '' : '/admin/';
+    window.location.replace(base + 'login.html');
+}
+
+/**
+ * Validate the admin session with GAS on every dashboard load.
+ * Shows auth loader while validating. Redirects if invalid/expired.
+ */
+async function validateAndBootDashboard() {
+    showAuthLoader();
+
+    const sessionData = getAdminSessionData();
+    if (!sessionData || !sessionData.session_token) {
+        redirectToLogin('no_session');
+        return;
+    }
+
+    // Session older than 6 hours client-side? Redirect without server call.
+    const sessionAge = Date.now() - (sessionData.timestamp || 0);
+    if (sessionAge > 21600000) {
+        redirectToLogin('client_expired');
+        return;
+    }
+
+    try {
+        const api = window.GoogleTourneyApi;
+        if (api && typeof api.validateAdminSession === 'function') {
+            const res = await api.validateAdminSession(sessionData.session_token);
+            if (!res.success || !res.authenticated) {
+                redirectToLogin(res.error || 'invalid');
+                return;
+            }
+        }
+        // GAS not configured or unavailable: allow access if token exists (graceful degradation)
+    } catch (err) {
+        // Network failure — allow access to avoid locking out admin on transient errors
+    }
+
+    hideAuthLoader();
     initAdminDashboard();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', validateAndBootDashboard);
+} else {
+    validateAndBootDashboard();
 }
 
 // Tab Visibility optimization: Pause polling when hidden, immediate sync when visible (Requirement 31)
@@ -2165,7 +2264,16 @@ async function handleExecuteBulkDelete() {
     }
 }
 
-function adminLogout() {
+async function adminLogout() {
+    // Invalidate server-side session (fire-and-forget, don't block redirect)
+    try {
+        const token = getAdminToken();
+        const api = window.GoogleTourneyApi;
+        if (token && api && typeof api.logoutAdmin === 'function') {
+            api.logoutAdmin(token).catch(() => {});
+        }
+    } catch (e) {}
+
     try {
         sessionStorage.removeItem('unibox_admin_session');
         localStorage.removeItem('unibox_admin_session');

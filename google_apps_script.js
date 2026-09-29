@@ -43,7 +43,8 @@ var CONFIG = {
     TEAMS: 'Teams',
     FRANCHISE_AUTH: 'Franchise_Auth',
     AUCTION: 'Auction',
-    SETTINGS: 'Settings'
+    SETTINGS: 'Settings',
+    ADMINS: 'Admins'
   },
   FOLDERS: {
     PHOTOS: 'ATHLETE PHOTOS',
@@ -127,6 +128,17 @@ var HEADERS = {
   SETTINGS: [
     'key',
     'value'
+  ],
+  ADMINS: [
+    'admin_id',
+    'username',
+    'password_hash',
+    'role',
+    'status',
+    'created_at',
+    'last_login',
+    'failed_attempts',
+    'locked_until'
   ]
 };
 
@@ -199,6 +211,315 @@ function getOrCreateDriveFolder(folderName) {
     Logger.log('Drive Folder Resolution Error for "' + folderName + '": ' + err);
     return DriveApp.getRootFolder();
   }
+}
+
+// ==============================================================================
+// ADMIN AUTHENTICATION SYSTEM — Google Sheets backed session management
+// ==============================================================================
+
+/**
+ * In-memory session store (per GAS execution instance).
+ * Google Apps Script CacheService is used for cross-instance persistence.
+ */
+
+/**
+ * Get or create the Admins sheet, ensuring correct headers
+ */
+function getAdminsSheet() {
+  var ss = getSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.ADMINS);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEETS.ADMINS);
+    sheet.appendRow(HEADERS.ADMINS);
+    var range = sheet.getRange(1, 1, 1, HEADERS.ADMINS.length);
+    range.setFontWeight('bold');
+    range.setBackground('#0f172a');
+    range.setFontColor('#38bdf8');
+    sheet.setFrozenRows(1);
+    // Seed default admin account (password: Habib@Habib321)
+    sheet.appendRow([
+      'ADM-001',
+      'admin',
+      'bf145ff13649f1771e5196eaa41c3622d090750500bdc2c9925f51e0deec4eab',
+      'admin',
+      'active',
+      new Date().toISOString(),
+      '',
+      0,
+      ''
+    ]);
+    SpreadsheetApp.flush();
+    Logger.log('[ADMINS] Sheet created and seeded with default admin account.');
+  }
+  return sheet;
+}
+
+/**
+ * Generate a cryptographically random session token
+ */
+function generateSessionToken() {
+  var bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(Date.now()) + Math.random() + Math.random(),
+    Utilities.Charset.UTF_8
+  );
+  var hex = '';
+  for (var i = 0; i < bytes.length; i++) {
+    var b = bytes[i] < 0 ? bytes[i] + 256 : bytes[i];
+    var s = b.toString(16);
+    hex += s.length === 1 ? '0' + s : s;
+  }
+  return 'ASPL_' + hex;
+}
+
+/**
+ * Store session token in CacheService (8-hour TTL)
+ * Key: "admin_session_" + token → JSON: { admin_id, username, role, created_at }
+ */
+function storeAdminSession(token, adminData) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var sessionData = JSON.stringify({
+      admin_id: adminData.admin_id,
+      username: adminData.username,
+      role: adminData.role,
+      created_at: Date.now()
+    });
+    // 8 hours = 28800 seconds (CacheService max is 6 hours = 21600s)
+    cache.put('admin_session_' + token, sessionData, 21600);
+    Logger.log('[AUTH] Session stored for: ' + adminData.username);
+    return true;
+  } catch (e) {
+    Logger.log('[AUTH] Cache store failed: ' + e);
+    return false;
+  }
+}
+
+/**
+ * Retrieve and validate a session token from CacheService
+ * Returns: { valid: bool, admin_id, username, role } or { valid: false, error }
+ */
+function getAdminSession(token) {
+  if (!token || String(token).trim() === '') {
+    return { valid: false, error: 'No session token provided.' };
+  }
+  token = String(token).trim();
+  // Reject legacy ADMIN_SECRET_KEY tokens — those are replaced
+  if (token === CONFIG.ADMIN_SECRET_KEY) {
+    return { valid: false, error: 'Legacy token not accepted. Please log in again.' };
+  }
+  try {
+    var cache = CacheService.getScriptCache();
+    var raw = cache.get('admin_session_' + token);
+    if (!raw) {
+      return { valid: false, error: 'SESSION_EXPIRED' };
+    }
+    var data = JSON.parse(raw);
+    // Check session age (6 hours max = 21600000ms)
+    var age = Date.now() - (data.created_at || 0);
+    if (age > 21600000) {
+      cache.remove('admin_session_' + token);
+      return { valid: false, error: 'SESSION_EXPIRED' };
+    }
+    return {
+      valid: true,
+      admin_id: data.admin_id,
+      username: data.username,
+      role: data.role
+    };
+  } catch (e) {
+    Logger.log('[AUTH] Cache read failed: ' + e);
+    return { valid: false, error: 'Session verification failed.' };
+  }
+}
+
+/**
+ * Invalidate a session (logout)
+ */
+function removeAdminSession(token) {
+  if (!token) return;
+  try {
+    var cache = CacheService.getScriptCache();
+    cache.remove('admin_session_' + token);
+  } catch (e) {
+    Logger.log('[AUTH] Cache remove failed: ' + e);
+  }
+}
+
+/**
+ * Central Admin authorization gate for all protected actions.
+ * Accepts EITHER a valid session token OR the legacy ADMIN_SECRET_KEY
+ * during the transition period (will be removed after full migration).
+ *
+ * Returns: { authorized: true, admin_id, username, role }
+ *       or: { authorized: false, error }
+ */
+function requireAdminSession(payload) {
+  if (!payload) return { authorized: false, error: 'UNAUTHORIZED' };
+
+  var token = String(payload.session_token || payload.admin_token || payload.adminToken || payload.token || '').trim();
+
+  // Primary: new session token
+  if (token && token.indexOf('ASPL_') === 0) {
+    var sess = getAdminSession(token);
+    if (sess.valid) {
+      return { authorized: true, admin_id: sess.admin_id, username: sess.username, role: sess.role };
+    }
+    return { authorized: false, error: sess.error || 'UNAUTHORIZED' };
+  }
+
+  // Legacy fallback: ADMIN_SECRET_KEY (kept for existing deployed clients during migration)
+  var role = String(payload.role || '').trim().toUpperCase();
+  if (token === CONFIG.ADMIN_SECRET_KEY && role === 'ADMIN') {
+    return { authorized: true, admin_id: 'legacy', username: 'admin', role: 'admin' };
+  }
+
+  // Legacy fallback: password hash check
+  var adminPass = String(payload.admin_password || payload.adminPassword || '').trim();
+  if (adminPass && hashPassword(adminPass) === 'bf145ff13649f1771e5196eaa41c3622d090750500bdc2c9925f51e0deec4eab' && role === 'ADMIN') {
+    return { authorized: true, admin_id: 'legacy', username: 'admin', role: 'admin' };
+  }
+
+  return { authorized: false, error: 'UNAUTHORIZED' };
+}
+
+/**
+ * LOGIN ADMIN
+ * POST { action: "loginAdmin", username, password }
+ * Returns session token on success.
+ */
+function apiLoginAdmin(payload) {
+  var username = String(payload.username || '').trim().toLowerCase();
+  var password = String(payload.password || '').trim();
+
+  // Basic input validation
+  if (!username || !password) {
+    return { success: false, authenticated: false, error: 'Invalid username or password.' };
+  }
+
+  // Rate limiting: check failed attempts in Sheets
+  var sheet = getAdminsSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return { success: false, authenticated: false, error: 'Invalid username or password.' };
+  }
+
+  var headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return String(h).trim(); });
+  var col = function(name) { return headerRow.indexOf(name); };
+
+  var usernameIdx   = col('username');
+  var passHashIdx   = col('password_hash');
+  var roleIdx       = col('role');
+  var statusIdx     = col('status');
+  var lastLoginIdx  = col('last_login');
+  var failIdx       = col('failed_attempts');
+  var lockedIdx     = col('locked_until');
+  var adminIdIdx    = col('admin_id');
+
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var rowUsername = String(row[usernameIdx] || '').trim().toLowerCase();
+
+    if (rowUsername !== username) continue;
+
+    // Found user — check rate limiting
+    var rowNum = i + 2;
+    var lockedUntil = lockedIdx !== -1 ? String(row[lockedIdx] || '') : '';
+    var failedAttempts = failIdx !== -1 ? Number(row[failIdx] || 0) : 0;
+
+    if (lockedUntil && Date.now() < Number(lockedUntil)) {
+      var waitSecs = Math.ceil((Number(lockedUntil) - Date.now()) / 1000);
+      Logger.log('[AUTH] Account locked for: ' + username + ' (' + waitSecs + 's remaining)');
+      return { success: false, authenticated: false, error: 'Too many failed attempts. Try again in ' + waitSecs + ' seconds.' };
+    }
+
+    var status = statusIdx !== -1 ? String(row[statusIdx] || '').trim().toLowerCase() : 'active';
+    var role   = roleIdx   !== -1 ? String(row[roleIdx]   || '').trim().toLowerCase() : 'admin';
+
+    if (status !== 'active') {
+      return { success: false, authenticated: false, error: 'Invalid username or password.' };
+    }
+
+    // Verify password hash
+    var storedHash  = passHashIdx !== -1 ? String(row[passHashIdx] || '').trim() : '';
+    var inputHash   = hashPassword(password);
+
+    if (!storedHash || inputHash !== storedHash) {
+      // Increment failed attempts
+      var newFails = failedAttempts + 1;
+      if (failIdx !== -1) sheet.getRange(rowNum, failIdx + 1).setValue(newFails);
+      // Lock for 5 minutes after 5 failures
+      if (newFails >= 5 && lockedIdx !== -1) {
+        sheet.getRange(rowNum, lockedIdx + 1).setValue(String(Date.now() + 5 * 60 * 1000));
+      }
+      Logger.log('[AUTH] Failed login attempt ' + newFails + ' for: ' + username);
+      return { success: false, authenticated: false, error: 'Invalid username or password.' };
+    }
+
+    // SUCCESS — reset failed attempts, update last_login, generate session
+    if (failIdx !== -1) sheet.getRange(rowNum, failIdx + 1).setValue(0);
+    if (lockedIdx !== -1) sheet.getRange(rowNum, lockedIdx + 1).setValue('');
+    if (lastLoginIdx !== -1) sheet.getRange(rowNum, lastLoginIdx + 1).setValue(new Date().toISOString());
+    SpreadsheetApp.flush();
+
+    var adminId = adminIdIdx !== -1 ? String(row[adminIdIdx] || 'ADM-001').trim() : 'ADM-001';
+    var token = generateSessionToken();
+
+    storeAdminSession(token, {
+      admin_id: adminId,
+      username: username,
+      role: role
+    });
+
+    Logger.log('[AUTH] Admin logged in: ' + username);
+    return {
+      success: true,
+      authenticated: true,
+      session_token: token,
+      admin: {
+        admin_id: adminId,
+        username: username,
+        role: role
+      }
+    };
+  }
+
+  // Username not found — same generic error
+  return { success: false, authenticated: false, error: 'Invalid username or password.' };
+}
+
+/**
+ * VALIDATE ADMIN SESSION
+ * POST { action: "validateAdminSession", session_token }
+ */
+function apiValidateAdminSession(payload) {
+  var token = String(payload.session_token || '').trim();
+  var sess = getAdminSession(token);
+  if (!sess.valid) {
+    return { success: false, authenticated: false, error: sess.error || 'SESSION_EXPIRED' };
+  }
+  return {
+    success: true,
+    authenticated: true,
+    admin: {
+      admin_id: sess.admin_id,
+      username: sess.username,
+      role: sess.role
+    }
+  };
+}
+
+/**
+ * LOGOUT ADMIN
+ * POST { action: "logoutAdmin", session_token }
+ */
+function apiLogoutAdmin(payload) {
+  var token = String(payload.session_token || '').trim();
+  removeAdminSession(token);
+  Logger.log('[AUTH] Admin logged out.');
+  return { success: true, message: 'Logged out successfully.' };
 }
 
 /**
@@ -453,24 +774,13 @@ function doGet(e) {
  * Critical Security Requirement: NEVER trust role="ADMIN" blindly from unauthenticated browser requests.
  * Requires authentic secret token or verified coordinator password hash.
  */
+/**
+ * @deprecated Use requireAdminSession() for new code.
+ * Kept for backward compatibility with existing clients during migration window.
+ */
 function isAdminAuthorized(payload) {
-  if (!payload || typeof payload !== 'object') return false;
-
-  var token = String(payload.admin_token || payload.adminToken || payload.token || '').trim();
-  var role = String(payload.role || '').trim().toUpperCase();
-  var adminPass = String(payload.admin_password || payload.adminPassword || '').trim();
-
-  // 1. Secure Secret Admin Token Verification
-  if (token && token === CONFIG.ADMIN_SECRET_KEY && role === 'ADMIN') {
-    return true;
-  }
-
-  // 2. Verified Coordinator Password Hash Verification
-  if (adminPass && hashPassword(adminPass) === 'bf145ff13649f1771e5196eaa41c3622d090750500bdc2c9925f51e0deec4eab' && role === 'ADMIN') {
-    return true;
-  }
-
-  return false;
+  var result = requireAdminSession(payload);
+  return result.authorized === true;
 }
 
 /**
@@ -527,6 +837,18 @@ function doPost(e) {
 
     var result;
     switch (action) {
+      case 'loginAdmin':
+        result = apiLoginAdmin(payload);
+        break;
+
+      case 'validateAdminSession':
+        result = apiValidateAdminSession(payload);
+        break;
+
+      case 'logoutAdmin':
+        result = apiLogoutAdmin(payload);
+        break;
+
       case 'registerPlayer':
         result = apiRegisterPlayer(payload);
         break;

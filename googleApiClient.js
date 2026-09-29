@@ -468,6 +468,62 @@
             return { count: filtered.length, success: true, source: 'google_sheets' };
         },
 
+        // --- ADMIN AUTHENTICATION ---
+
+        /**
+         * Login as Admin via Google Apps Script + Sheets.
+         * Sends username + password to GAS. Returns a session token on success.
+         * Password is NEVER stored in browser storage.
+         */
+        adminLogin: async (username, password) => {
+            if (!username || !password) {
+                return { success: false, authenticated: false, error: 'Username and password are required.' };
+            }
+            if (!isConfigured()) {
+                return { success: false, authenticated: false, error: 'Google Apps Script backend not configured.' };
+            }
+            try {
+                const res = await postApi('loginAdmin', { username: String(username).trim(), password: String(password) }, 30000);
+                if (!res.success || !res.authenticated) {
+                    return { success: false, authenticated: false, error: res.error || 'Invalid Admin credentials.' };
+                }
+                return {
+                    success: true,
+                    authenticated: true,
+                    session_token: res.session_token,
+                    admin: res.admin
+                };
+            } catch (err) {
+                return { success: false, authenticated: false, error: 'Authentication server unavailable. Please try again.' };
+            }
+        },
+
+        /**
+         * Validate an existing Admin session token with the server.
+         */
+        validateAdminSession: async (sessionToken) => {
+            if (!sessionToken || !isConfigured()) {
+                return { success: false, authenticated: false, error: 'SESSION_EXPIRED' };
+            }
+            try {
+                const res = await postApi('validateAdminSession', { session_token: sessionToken }, 15000);
+                return res;
+            } catch (err) {
+                return { success: false, authenticated: false, error: 'SESSION_EXPIRED' };
+            }
+        },
+
+        /**
+         * Logout Admin — invalidates the server-side session.
+         */
+        logoutAdmin: async (sessionToken) => {
+            if (!sessionToken || !isConfigured()) return { success: true };
+            try {
+                await postApi('logoutAdmin', { session_token: sessionToken }, 10000);
+            } catch (e) {}
+            return { success: true };
+        },
+
         // --- ATHLETE REGISTRATION (POST) ---
         registerPlayer: async (playerData) => {
             // Frontend validation: Branch restriction strictly BCA, B.Tech, BBA

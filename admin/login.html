@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" class="dark">
 
 <head>
@@ -177,10 +177,8 @@
         </div>
     </div>
 
-    <!-- Scripts -->
+    <!-- Scripts: Google Apps Script API client ONLY — Supabase removed from admin login -->
     <script src="/googleApiClient.js" onerror="this.onerror=null; this.src='../googleApiClient.js';"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/supabaseClient.js" onerror="this.onerror=null; this.src='../supabaseClient.js';"></script>
     <script>
         const adminLoginForm = document.getElementById('admin-login-form');
         const adminIdentifier = document.getElementById('admin-identifier');
@@ -191,53 +189,67 @@
         const adminBtnSpinner = document.getElementById('admin-btn-spinner');
         const adminSubmitBtn = document.getElementById('admin-submit-btn');
 
+        function showError(msg) {
+            adminErrorText.textContent = msg || 'Invalid Admin credentials.';
+            adminErrorBox.classList.remove('hidden');
+        }
+
+        function resetBtn() {
+            adminBtnText.textContent = 'Enter Command Center';
+            adminBtnSpinner.classList.add('hidden');
+            adminSubmitBtn.disabled = false;
+        }
+
         adminLoginForm?.addEventListener('submit', async (e) => {
             e.preventDefault();
-
-            // Clear previous errors
             adminErrorBox.classList.add('hidden');
 
             const identifier = adminIdentifier.value.trim();
             const password = adminPassword.value;
 
+            if (!identifier || !password) {
+                showError('Username and password are required.');
+                return;
+            }
+
             // Show loading state
-            adminBtnText.textContent = 'Verifying Credentials...';
+            adminBtnText.textContent = 'Signing in...';
             adminBtnSpinner.classList.remove('hidden');
             adminSubmitBtn.disabled = true;
 
             try {
-                if (window.UniBoxDb) {
-                    const result = await window.UniBoxDb.adminLogin(identifier, password);
+                // ONLY source of auth: Google Apps Script → Admins Sheet
+                const api = window.GoogleTourneyApi;
+                if (!api || typeof api.adminLogin !== 'function') {
+                    showError('Authentication service unavailable. Please refresh and try again.');
+                    return;
+                }
 
-                    if (result.success && result.admin) {
-                        // Store verified admin session
-                        sessionStorage.setItem('unibox_admin_session', JSON.stringify({
-                            username: result.admin.username,
-                            email: result.admin.email,
-                            role: result.admin.role || 'Lead Coordinator',
-                            admin_token: result.admin.admin_token || 'SPL2026_ADMIN_SECURE_AUTH_TOKEN_KEY',
-                            timestamp: Date.now()
-                        }));
+                const result = await api.adminLogin(identifier, password);
 
-                        // Redirect to Admin Command Center
-                        window.location.replace('index.html');
-                        return;
-                    } else {
-                        adminErrorText.textContent = 'Invalid Admin credentials.';
-                        adminErrorBox.classList.remove('hidden');
-                    }
+                if (result.success && result.authenticated && result.admin) {
+                    // Store session token + minimal admin info (NO password, NO hash)
+                    sessionStorage.setItem('unibox_admin_session', JSON.stringify({
+                        session_token: result.session_token,
+                        admin_id: result.admin.admin_id,
+                        username: result.admin.username,
+                        role: result.admin.role || 'admin',
+                        timestamp: Date.now()
+                    }));
+
+                    // Clear sensitive field immediately after successful login
+                    adminPassword.value = '';
+
+                    // Redirect to Admin Command Center
+                    window.location.replace('index.html');
+                    return;
                 } else {
-                    adminErrorText.textContent = 'Database connection library unavailable.';
-                    adminErrorBox.classList.remove('hidden');
+                    showError('Invalid Admin credentials.');
                 }
             } catch (err) {
-                console.error('Admin login error:', err);
-                adminErrorText.textContent = 'Authentication error. Please try again.';
-                adminErrorBox.classList.remove('hidden');
+                showError('Unable to connect to authentication server. Please try again.');
             } finally {
-                adminBtnText.textContent = 'Enter Command Center';
-                adminBtnSpinner.classList.add('hidden');
-                adminSubmitBtn.disabled = false;
+                resetBtn();
             }
         });
     </script>

@@ -121,7 +121,7 @@
                 <!-- Live DB Status -->
                 <div id="db-status-badge" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#08111F] border border-sky-900/60 text-[11px] font-bold text-sky-400">
                     <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
-                    <span id="db-status-text">Supabase Live</span>
+                    <span id="db-status-text">Google Sheets Live</span>
                 </div>
 
                 <!-- Refresh Button -->
@@ -1088,10 +1088,8 @@
         </div>
     </div>
 
-    <!-- Scripts -->
+    <!-- Scripts: Supabase removed from admin auth — Google Apps Script is the sole auth provider -->
     <script src="/googleApiClient.js" onerror="this.onerror=null; this.src='../googleApiClient.js';"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/supabaseClient.js" onerror="this.onerror=null; this.src='../supabaseClient.js';"></script>
     <script src="/admin/admin.js" onerror="this.onerror=null; this.src='admin.js';"></script>
 </body>
 
