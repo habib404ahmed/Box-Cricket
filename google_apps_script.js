@@ -61,6 +61,9 @@ var CONFIG = {
     'Wicketkeeper': 10,
     'Fielder': 5
   },
+  // Tournament Limits & Configuration
+  MAX_FRANCHISES: 8,
+  MAX_SQUAD_SIZE: 10,
   // Tournament Security: Secret token required for all admin privileged mutations
   ADMIN_SECRET_KEY: 'SPL2026_ADMIN_SECURE_AUTH_TOKEN_KEY'
 };
@@ -823,7 +826,7 @@ function doPost(e) {
       'createTeam', 'createFranchise', 'registerFranchise', 'updateTeam', 'deleteTeam',
       'deleteAllPlayers', 'deletePlayer', 'deletePlayers', 'approvePlayer', 'approvePlayers', 'approveAllPlayers',
       'unapprovePlayer', 'unapprovePlayers',
-      'rejectPlayer', 'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse'
+      'rejectPlayer', 'purchasePlayer', 'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse'
     ];
 
     if (STRICT_ADMIN_ACTIONS.indexOf(action) !== -1) {
@@ -940,6 +943,8 @@ function doPost(e) {
         break;
 
       case 'purchasePlayer':
+      case 'assignPlayer':
+      case 'sellPlayer':
         result = apiPurchasePlayer(payload);
         break;
 
@@ -1324,10 +1329,12 @@ function apiGetTeams(params) {
     var tNameLower = teamName.toLowerCase();
     var tIdLower = teamId.toLowerCase();
 
-    // Find squad from Players sheet
+    // Find squad from Players sheet: only count active sold athletes (exclude Rejected, Pending, Unassigned)
     var squad = allPlayers.filter(function(p) {
       var soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
-      return soldTeam && (soldTeam === tNameLower || soldTeam === tIdLower);
+      var isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+      var isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+      return isSold && isNotRejected && soldTeam && (soldTeam === tNameLower || soldTeam === tIdLower);
     });
 
     var spent = squad.reduce(function(sum, p) {
@@ -2539,8 +2546,8 @@ function apiRegisterFranchise(payload) {
   }
 
   // Requirement 12: Tournament limit: 8 franchises maximum (NOT created automatically, manually by Admin)
-  if (existingTeamIds.length >= 8) {
-    return { success: false, error: 'Tournament limit reached: Maximum of 8 franchises allowed.' };
+  if (existingTeamIds.length >= (CONFIG.MAX_FRANCHISES || 8)) {
+    return { success: false, error: 'Tournament limit reached: Maximum of ' + (CONFIG.MAX_FRANCHISES || 8) + ' franchises allowed.' };
   }
 
   // 2. Check for duplicate email in Franchise_Auth
@@ -2903,181 +2910,227 @@ function apiDeleteTeam(payload) {
  * STEP 24 — AUCTION PURCHASE & REALTIME PURSE UPDATE
  */
 function apiPurchasePlayer(payload) {
-  var playerId = payload.player_id || payload.id || payload.playerId || '';
-  var teamIdOrName = payload.team_id || payload.teamId || payload.sold_to_team || '';
-  var soldPrice = Number(payload.sold_price || payload.soldPrice || 0);
-
-  if (!playerId) return { success: false, error: 'Player ID is required.' };
-  if (!teamIdOrName) return { success: false, error: 'Bidding franchise team is required.' };
-  if (isNaN(soldPrice) || soldPrice <= 0) return { success: false, error: 'Valid sold price is required.' };
-
-  var playersSheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
-  var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
-  var auctionSheet = getOrCreateSheet(CONFIG.SHEETS.AUCTION, HEADERS.AUCTION);
-
-  // 1. Locate Team & Check Remaining Purse
-  var teamValues = teamsSheet.getRange(2, 1, Math.max(1, teamsSheet.getLastRow() - 1), HEADERS.TEAMS.length).getValues();
-  var teamRowIdx = -1;
-  var targetTeam = null;
-
-  for (var t = 0; t < teamValues.length; t++) {
-    var tRow = teamValues[t];
-    var tId = String(tRow[HEADERS.TEAMS.indexOf('id')]).trim().toLowerCase();
-    var tName = String(tRow[HEADERS.TEAMS.indexOf('team_name')]).trim().toLowerCase();
-    var query = teamIdOrName.trim().toLowerCase();
-
-    if (tId === query || tName === query) {
-      teamRowIdx = t + 2;
-      targetTeam = {
-        id: tRow[HEADERS.TEAMS.indexOf('id')],
-        team_name: tRow[HEADERS.TEAMS.indexOf('team_name')],
-        purse: Number(tRow[HEADERS.TEAMS.indexOf('purse')]) || 1000,
-        total_spent: Number(tRow[HEADERS.TEAMS.indexOf('total_spent')]) || 0,
-        player_count: Number(tRow[HEADERS.TEAMS.indexOf('player_count')]) || 0
-      };
-      break;
-    }
-  }
-
-  if (!targetTeam) {
-    return { success: false, error: 'Purchasing franchise team not found.' };
-  }
-
-  var remaining = targetTeam.purse - targetTeam.total_spent;
-  if (soldPrice > remaining) {
+  var lock = LockService.getScriptLock();
+  try {
+    // Concurrency protection: wait up to 10s for serialized atomic squad assignment
+    lock.waitLock(10000);
+  } catch (e) {
     return {
       success: false,
-      error: 'Insufficient purse balance! ' + targetTeam.team_name + ' has only ' + remaining + ' Points remaining.'
+      error: 'SERVER_BUSY',
+      message: 'Server is currently processing another transaction. Please try again.'
     };
   }
 
-  // 2. Locate Player & Update Sold Information
-  var pValues = playersSheet.getRange(2, 1, Math.max(1, playersSheet.getLastRow() - 1), HEADERS.PLAYERS.length).getValues();
-  var pRowIdx = -1;
-  var playerName = '';
+  try {
+    var playerId = payload.player_id || payload.id || payload.playerId || '';
+    var teamIdOrName = payload.team_id || payload.teamId || payload.sold_to_team || '';
+    var soldPrice = Number(payload.sold_price || payload.soldPrice || 0);
 
-  for (var p = 0; p < pValues.length; p++) {
-    var row = pValues[p];
-    var rowId = String(row[HEADERS.PLAYERS.indexOf('id')]).trim();
-    var rowEmail = String(row[HEADERS.PLAYERS.indexOf('email')]).trim().toLowerCase();
+    if (!playerId) return { success: false, error: 'Player ID is required.' };
+    if (!teamIdOrName) return { success: false, error: 'Bidding franchise team is required.' };
+    if (isNaN(soldPrice) || soldPrice <= 0) return { success: false, error: 'Valid sold price is required.' };
 
-    if (rowId === playerId || rowEmail === playerId.toLowerCase()) {
-      pRowIdx = p + 2;
-      playerName = row[HEADERS.PLAYERS.indexOf('full_name')];
-      break;
+    var playersSheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
+    var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
+    var auctionSheet = getOrCreateSheet(CONFIG.SHEETS.AUCTION, HEADERS.AUCTION);
+
+    // 1. Locate Team & Check Remaining Purse
+    var teamValues = teamsSheet.getRange(2, 1, Math.max(1, teamsSheet.getLastRow() - 1), HEADERS.TEAMS.length).getValues();
+    var teamRowIdx = -1;
+    var targetTeam = null;
+
+    for (var t = 0; t < teamValues.length; t++) {
+      var tRow = teamValues[t];
+      var tId = String(tRow[HEADERS.TEAMS.indexOf('id')]).trim().toLowerCase();
+      var tName = String(tRow[HEADERS.TEAMS.indexOf('team_name')]).trim().toLowerCase();
+      var query = teamIdOrName.trim().toLowerCase();
+
+      if (tId === query || tName === query) {
+        teamRowIdx = t + 2;
+        targetTeam = {
+          id: tRow[HEADERS.TEAMS.indexOf('id')],
+          team_name: tRow[HEADERS.TEAMS.indexOf('team_name')],
+          purse: Number(tRow[HEADERS.TEAMS.indexOf('purse')]) || 1000,
+          total_spent: Number(tRow[HEADERS.TEAMS.indexOf('total_spent')]) || 0,
+          player_count: Number(tRow[HEADERS.TEAMS.indexOf('player_count')]) || 0
+        };
+        break;
+      }
     }
+
+    if (!targetTeam) {
+      return { success: false, error: 'Purchasing franchise team not found.' };
+    }
+
+    // 2. Locate Player & Count Current Active Squad Members for Target Team
+    var pValues = playersSheet.getRange(2, 1, Math.max(1, playersSheet.getLastRow() - 1), HEADERS.PLAYERS.length).getValues();
+    var pRowIdx = -1;
+    var playerName = '';
+    var activeSquadCount = 0;
+    var targetTeamIdLower = String(targetTeam.id).trim().toLowerCase();
+    var targetTeamNameLower = String(targetTeam.team_name).trim().toLowerCase();
+
+    for (var p = 0; p < pValues.length; p++) {
+      var row = pValues[p];
+      var rowId = String(row[HEADERS.PLAYERS.indexOf('id')]).trim();
+      var rowEmail = String(row[HEADERS.PLAYERS.indexOf('email')]).trim().toLowerCase();
+      var rowSoldTeam = String(row[HEADERS.PLAYERS.indexOf('sold_to_team')] || '').trim().toLowerCase();
+      var rowStatus = String(row[HEADERS.PLAYERS.indexOf('status')] || '').trim().toLowerCase();
+      var rowAuctionStatus = String(row[HEADERS.PLAYERS.indexOf('auction_status')] || '').trim().toLowerCase();
+
+      if (rowId === playerId || rowEmail === playerId.toLowerCase()) {
+        pRowIdx = p + 2;
+        playerName = row[HEADERS.PLAYERS.indexOf('full_name')];
+      }
+
+      // Count only active assigned players for this franchise (exclude Rejected, Pending, Unassigned, Deleted)
+      if (rowAuctionStatus === 'sold' && rowStatus !== 'rejected' && (rowSoldTeam === targetTeamIdLower || rowSoldTeam === targetTeamNameLower)) {
+        activeSquadCount++;
+      }
+    }
+
+    if (pRowIdx === -1) {
+      return { success: false, error: 'Athlete record not found in database.' };
+    }
+
+    // 3. Strict Server-Side Squad Limit Validation (MAX_SQUAD_SIZE = 10)
+    var maxSquad = CONFIG.MAX_SQUAD_SIZE || 10;
+    if (activeSquadCount >= maxSquad) {
+      return {
+        success: false,
+        error: "SQUAD_LIMIT_REACHED",
+        message: "Squad limit reached. A franchise can contain a maximum of " + maxSquad + " players."
+      };
+    }
+
+    // 4. Validate Sufficient Purse Balance
+    var remaining = targetTeam.purse - targetTeam.total_spent;
+    if (soldPrice > remaining) {
+      return {
+        success: false,
+        error: 'Insufficient purse balance! ' + targetTeam.team_name + ' has only ' + remaining + ' Points remaining.'
+      };
+    }
+
+    // 5. Update Players sheet: status = Approved, auction_status = Sold, sold_to_team = team ID (Requirement 10)
+    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('status') + 1).setValue('Approved');
+    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('auction_status') + 1).setValue('Sold');
+    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_to_team') + 1).setValue(targetTeam.id);
+    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_price') + 1).setValue(soldPrice);
+
+    // 6. Update Teams sheet: total_spent, remaining_purse, player_count
+    var newSpent = targetTeam.total_spent + soldPrice;
+    var newRemaining = Math.max(0, targetTeam.purse - newSpent);
+    var newCount = activeSquadCount + 1;
+
+    teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('total_spent') + 1).setValue(newSpent);
+    teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('remaining_purse') + 1).setValue(newRemaining);
+    teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('player_count') + 1).setValue(newCount);
+
+    // 7. Record in Auction sheet
+    auctionSheet.appendRow([
+      'auc_' + new Date().getTime(),
+      playerId,
+      playerName,
+      '',
+      soldPrice,
+      targetTeam.id,
+      'Sold',
+      soldPrice,
+      targetTeam.team_name,
+      new Date().toISOString()
+    ]);
+
+    Logger.log('[AUCTION] Athlete ' + playerId + ' sold to ' + targetTeam.team_name + ' (' + targetTeam.id + ') for ' + soldPrice + '. Squad count: ' + newCount + '/' + maxSquad);
+
+    return {
+      success: true,
+      player: { id: playerId, sold_to_team: targetTeam.id, sold_price: soldPrice, auction_status: 'Sold' },
+      team: { id: targetTeam.id, team_name: targetTeam.team_name, spent: newSpent, leftover_balance: newRemaining, player_count: newCount, squad_count: newCount },
+      message: 'Player successfully purchased by ' + targetTeam.team_name + ' for ' + soldPrice + ' Points.'
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-
-  if (pRowIdx === -1) {
-    return { success: false, error: 'Athlete record not found in database.' };
-  }
-
-  // Update Players sheet: status = Approved, auction_status = Sold, sold_to_team = team ID (Requirement 10)
-  playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('status') + 1).setValue('Approved');
-  playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('auction_status') + 1).setValue('Sold');
-  playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_to_team') + 1).setValue(targetTeam.id);
-  playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_price') + 1).setValue(soldPrice);
-
-  // Update Teams sheet: total_spent, remaining_purse, player_count
-  var newSpent = targetTeam.total_spent + soldPrice;
-  var newRemaining = Math.max(0, targetTeam.purse - newSpent);
-  var newCount = targetTeam.player_count + 1;
-
-  teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('total_spent') + 1).setValue(newSpent);
-  teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('remaining_purse') + 1).setValue(newRemaining);
-  teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('player_count') + 1).setValue(newCount);
-
-  // Record in Auction sheet
-  auctionSheet.appendRow([
-    'auc_' + new Date().getTime(),
-    playerId,
-    playerName,
-    '',
-    soldPrice,
-    targetTeam.id,
-    'Sold',
-    soldPrice,
-    targetTeam.team_name,
-    new Date().toISOString()
-  ]);
-
-  Logger.log('[AUCTION] Athlete ' + playerId + ' sold to ' + targetTeam.team_name + ' (' + targetTeam.id + ') for ' + soldPrice);
-
-  return {
-    success: true,
-    player: { id: playerId, sold_to_team: targetTeam.id, sold_price: soldPrice, auction_status: 'Sold' },
-    team: { id: targetTeam.id, team_name: targetTeam.team_name, spent: newSpent, leftover_balance: newRemaining, player_count: newCount },
-    message: 'Player successfully purchased by ' + targetTeam.team_name + ' for ' + soldPrice + ' Points.'
-  };
 }
 
 /**
  * STEP 24 — REVOKE ATHLETE PURCHASE
  */
 function apiRevokePlayerPurchase(payload) {
-  var playerId = payload.player_id || payload.id || payload.playerId || '';
-  if (!playerId) return { success: false, error: 'Player ID is required.' };
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {}
 
-  var playersSheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
-  var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
+  try {
+    var playerId = payload.player_id || payload.id || payload.playerId || '';
+    if (!playerId) return { success: false, error: 'Player ID is required.' };
 
-  var pValues = playersSheet.getRange(2, 1, Math.max(1, playersSheet.getLastRow() - 1), HEADERS.PLAYERS.length).getValues();
-  var pRowIdx = -1;
-  var soldTeamName = '';
-  var soldPrice = 0;
+    var playersSheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
+    var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
 
-  for (var p = 0; p < pValues.length; p++) {
-    var row = pValues[p];
-    var rowId = String(row[HEADERS.PLAYERS.indexOf('id')]).trim();
-    var rowEmail = String(row[HEADERS.PLAYERS.indexOf('email')]).trim().toLowerCase();
+    var pValues = playersSheet.getRange(2, 1, Math.max(1, playersSheet.getLastRow() - 1), HEADERS.PLAYERS.length).getValues();
+    var pRowIdx = -1;
+    var soldTeamName = '';
+    var soldPrice = 0;
 
-    if (rowId === playerId || rowEmail === playerId.toLowerCase()) {
-      pRowIdx = p + 2;
-      soldTeamName = String(row[HEADERS.PLAYERS.indexOf('sold_to_team')] || '').trim();
-      soldPrice = Number(row[HEADERS.PLAYERS.indexOf('sold_price')]) || 0;
-      break;
-    }
-  }
+    for (var p = 0; p < pValues.length; p++) {
+      var row = pValues[p];
+      var rowId = String(row[HEADERS.PLAYERS.indexOf('id')]).trim();
+      var rowEmail = String(row[HEADERS.PLAYERS.indexOf('email')]).trim().toLowerCase();
 
-  if (pRowIdx === -1) return { success: false, error: 'Player record not found.' };
-
-  // Reset player in Players sheet
-  playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('auction_status') + 1).setValue('Upcoming');
-  playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_to_team') + 1).setValue('');
-  playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_price') + 1).setValue('');
-
-  // Refund team if applicable
-  if (soldTeamName && soldPrice > 0) {
-    var teamValues = teamsSheet.getRange(2, 1, Math.max(1, teamsSheet.getLastRow() - 1), HEADERS.TEAMS.length).getValues();
-    for (var t = 0; t < teamValues.length; t++) {
-      var tRow = teamValues[t];
-      var tId = String(tRow[HEADERS.TEAMS.indexOf('id')]).trim().toLowerCase();
-      var tName = String(tRow[HEADERS.TEAMS.indexOf('team_name')]).trim().toLowerCase();
-      var q = soldTeamName.toLowerCase();
-
-      if (tId === q || tName === q) {
-        var teamRowIdx = t + 2;
-        var currentSpent = Number(tRow[HEADERS.TEAMS.indexOf('total_spent')]) || 0;
-        var purse = Number(tRow[HEADERS.TEAMS.indexOf('purse')]) || 1000;
-        var currentCount = Number(tRow[HEADERS.TEAMS.indexOf('player_count')]) || 0;
-
-        var newSpent = Math.max(0, currentSpent - soldPrice);
-        var newRemaining = Math.max(0, purse - newSpent);
-        var newCount = Math.max(0, currentCount - 1);
-
-        teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('total_spent') + 1).setValue(newSpent);
-        teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('remaining_purse') + 1).setValue(newRemaining);
-        teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('player_count') + 1).setValue(newCount);
+      if (rowId === playerId || rowEmail === playerId.toLowerCase()) {
+        pRowIdx = p + 2;
+        soldTeamName = String(row[HEADERS.PLAYERS.indexOf('sold_to_team')] || '').trim();
+        soldPrice = Number(row[HEADERS.PLAYERS.indexOf('sold_price')]) || 0;
         break;
       }
     }
-  }
 
-  Logger.log('[AUCTION] Athlete ' + playerId + ' purchase revoked.');
-  return {
-    success: true,
-    refundedTeam: soldTeamName,
-    refundedPrice: soldPrice,
-    message: 'Athlete purchase revoked and franchise purse refunded.'
-  };
+    if (pRowIdx === -1) return { success: false, error: 'Player record not found.' };
+
+    // Reset player in Players sheet
+    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('auction_status') + 1).setValue('Upcoming');
+    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_to_team') + 1).setValue('');
+    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_price') + 1).setValue('');
+
+    // Refund team if applicable
+    if (soldTeamName && soldPrice > 0) {
+      var teamValues = teamsSheet.getRange(2, 1, Math.max(1, teamsSheet.getLastRow() - 1), HEADERS.TEAMS.length).getValues();
+      for (var t = 0; t < teamValues.length; t++) {
+        var tRow = teamValues[t];
+        var tId = String(tRow[HEADERS.TEAMS.indexOf('id')]).trim().toLowerCase();
+        var tName = String(tRow[HEADERS.TEAMS.indexOf('team_name')]).trim().toLowerCase();
+        var q = soldTeamName.toLowerCase();
+
+        if (tId === q || tName === q) {
+          var teamRowIdx = t + 2;
+          var currentSpent = Number(tRow[HEADERS.TEAMS.indexOf('total_spent')]) || 0;
+          var purse = Number(tRow[HEADERS.TEAMS.indexOf('purse')]) || 1000;
+          var currentCount = Number(tRow[HEADERS.TEAMS.indexOf('player_count')]) || 0;
+
+          var newSpent = Math.max(0, currentSpent - soldPrice);
+          var newRemaining = Math.max(0, purse - newSpent);
+          var newCount = Math.max(0, currentCount - 1);
+
+          teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('total_spent') + 1).setValue(newSpent);
+          teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('remaining_purse') + 1).setValue(newRemaining);
+          teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('player_count') + 1).setValue(newCount);
+          break;
+        }
+      }
+    }
+
+    Logger.log('[AUCTION] Athlete ' + playerId + ' purchase revoked.');
+    return {
+      success: true,
+      refundedTeam: soldTeamName,
+      refundedPrice: soldPrice,
+      message: 'Athlete purchase revoked and franchise purse refunded.'
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }

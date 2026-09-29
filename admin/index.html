@@ -731,6 +731,14 @@
                             <span>Balance After Purchase:</span>
                             <span id="preview-new-balance" class="text-emerald-400 text-sm font-black font-mono">980.0 Points</span>
                         </div>
+                        <div class="border-t border-sky-950/70 pt-2 flex items-center justify-between text-slate-400">
+                            <span>Current Squad:</span>
+                            <span id="preview-squad-count" class="font-bold text-white font-mono">0 / 10</span>
+                        </div>
+                        <div class="flex items-center justify-between text-slate-400">
+                            <span>Available Slots:</span>
+                            <span id="preview-available-slots" class="font-bold text-sky-400 font-mono">10</span>
+                        </div>
                         <p id="purchase-error-msg" class="hidden text-rose-400 font-semibold text-[11px] pt-1">⚠️ Error message</p>
                     </div>
 
@@ -796,7 +804,7 @@
 
                 <!-- Squad Content -->
                 <div class="p-6 overflow-y-auto flex-1 space-y-4">
-                    <div class="grid grid-cols-3 gap-3 text-center text-xs">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-xs">
                         <div class="p-3 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
                             <p class="text-slate-400 uppercase font-black text-[9px] tracking-wider">Total Purse</p>
                             <p id="team-stat-purse" class="text-base font-black text-white mt-0.5 font-mono">1000.0 Pts</p>
@@ -808,6 +816,11 @@
                         <div class="p-3 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
                             <p class="text-slate-400 uppercase font-black text-[9px] tracking-wider">Balance</p>
                             <p id="team-stat-balance" class="text-base font-black text-emerald-400 mt-0.5 font-mono">1000.0 Pts</p>
+                        </div>
+                        <div class="p-3 rounded-2xl bg-[#08111F]/70 border border-sky-950/70">
+                            <p class="text-slate-400 uppercase font-black text-[9px] tracking-wider">Squad Capacity</p>
+                            <p id="team-stat-squad" class="text-base font-black text-sky-400 mt-0.5 font-mono">0 / 10</p>
+                            <span id="team-stat-slots" class="text-[10px] text-slate-400 font-bold block mt-0.5">10 Slots Left</span>
                         </div>
                     </div>
 

@@ -2,6 +2,10 @@
 // Sunstone Premier League 2026 - Tournament Admin Command Center Controller
 // ==============================================================================
 
+// Central Tournament Capacity & Squad Constraints
+const MAX_FRANCHISES = 8;
+const MAX_SQUAD_SIZE = 10;
+
 let allPlayers = [];
 let filteredPlayers = [];
 let allTeams = [];
@@ -9,6 +13,35 @@ let activeModalPlayer = null;
 let activePurchasePlayer = null;
 let activeEditBasePlayer = null;
 let activeSquadTeamId = null;
+
+/**
+ * Returns active squad athletes for a team.
+ * STRICT RULE (Section 5): Only counts active assigned players (auction_status === 'Sold' AND status !== 'Rejected').
+ * Excludes Pending, Rejected, Unassigned, Deleted athletes.
+ */
+function getTeamActiveSquad(team) {
+    if (!team) return [];
+    if (Array.isArray(team.squad) && team.squad.length > 0) {
+        return team.squad.filter(p => {
+            const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+            const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+            return isSold && isNotRejected;
+        });
+    }
+    const tIdLower = String(team.id || '').trim().toLowerCase();
+    const tNameLower = String(team.name || team.team_name || '').trim().toLowerCase();
+    return (allPlayers || []).filter(p => {
+        const soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
+        const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+        const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+        return isSold && isNotRejected && (soldTeam === tIdLower || soldTeam === tNameLower);
+    });
+}
+
+function getTeamActiveSquadCount(team) {
+    if (!team) return 0;
+    return getTeamActiveSquad(team).length;
+}
 
 // DOM Elements
 const rosterTableBody = document.getElementById('roster-table-body');
@@ -654,16 +687,16 @@ function renderTeamBalanceHUD() {
     if (createBtn) {
         if (!hasAdminSession) {
             createBtn.style.display = 'none';
-        } else if (allTeams.length >= 8) {
+        } else if (allTeams.length >= MAX_FRANCHISES) {
             createBtn.style.display = 'inline-flex';
             createBtn.disabled = true;
-            createBtn.innerHTML = `<span>🔒 8 / 8 FRANCHISES</span>`;
-            createBtn.title = 'Maximum of 8 franchises reached';
+            createBtn.innerHTML = `<span>🔒 ${MAX_FRANCHISES} / ${MAX_FRANCHISES} FRANCHISES</span>`;
+            createBtn.title = `Maximum of ${MAX_FRANCHISES} franchises reached`;
             createBtn.className = 'text-xs font-black text-slate-400 bg-slate-800/80 border border-slate-700 px-4 py-2.5 rounded-xl cursor-not-allowed opacity-60 uppercase tracking-wider flex items-center gap-2 shadow-none';
         } else {
             createBtn.style.display = 'inline-flex';
             createBtn.disabled = false;
-            createBtn.innerHTML = `<span>➕ Create Franchise (${allTeams.length}/8)</span>`;
+            createBtn.innerHTML = `<span>➕ Create Franchise (${allTeams.length}/${MAX_FRANCHISES})</span>`;
             createBtn.title = 'Create a new franchise';
             createBtn.className = 'text-xs font-black text-slate-950 bg-gradient-to-r from-lime-400 to-emerald-400 hover:from-lime-300 hover:to-emerald-300 px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm uppercase tracking-wider';
         }
@@ -681,7 +714,9 @@ function renderTeamBalanceHUD() {
         const spent = Number(team.spent ?? team.total_spent ?? 0);
         const leftover = Math.max(0, total - spent);
         const spentPct = total > 0 ? Math.min(100, (spent / total) * 100) : 0;
-        const squadCount = team.squad_count ?? (team.squad ? team.squad.length : (team.player_count ?? 0));
+        const squadCount = getTeamActiveSquadCount(team);
+        const availableSlots = Math.max(0, MAX_SQUAD_SIZE - squadCount);
+        const isFull = squadCount >= MAX_SQUAD_SIZE;
         
         const rawOwner = team.owner_name ? String(team.owner_name).trim() : '';
         const ownerName = (rawOwner && rawOwner !== 'undefined' && rawOwner !== 'null') ? rawOwner : 'No Owner Claimed';
@@ -729,14 +764,21 @@ function renderTeamBalanceHUD() {
                     </div>
                 </div>
 
-                <!-- Budget Bar & Stats -->
+                <!-- Budget Bar & Stats (Section 7 & 9: EXACTLY 10 Players Max) -->
                 <div>
                     <div class="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800/80 mb-2">
                         <div class="bg-gradient-to-r from-lime-400 to-emerald-400 h-full transition-all duration-500" style="width: ${100 - spentPct}%"></div>
                     </div>
-                    <div class="flex items-center justify-between text-[10px] text-slate-500 font-semibold">
+                    <div class="flex items-center justify-between text-[10px] text-slate-500 font-semibold mb-1">
                         <span>Spent: ${spent.toFixed(1)} Pts</span>
-                        <span class="text-slate-400 font-bold">👥 ${squadCount}/7</span>
+                        <span class="text-slate-300 font-bold">👥 ${squadCount} / ${MAX_SQUAD_SIZE} Players</span>
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] pt-1.5 border-t border-slate-900 font-medium">
+                        <span class="text-slate-500">Slots: <strong class="${availableSlots === 0 ? 'text-rose-400 font-bold' : 'text-sky-400 font-bold'}">${availableSlots}</strong></span>
+                        ${isFull 
+                            ? '<span class="px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-400 font-black text-[9px] uppercase border border-amber-400/30">Squad Full</span>' 
+                            : '<span class="text-emerald-400/80 text-[9px] font-bold">Available</span>'
+                        }
                     </div>
                 </div>
             </div>
@@ -1597,15 +1639,23 @@ function openPurchaseModal(playerId) {
         avatarIcon.classList.remove('hidden');
     }
 
-    // Populate Team Selector with current live leftover balances
+    // Populate Team Selector with current live leftover balances and squad capacities (Section 11)
     const teamSelect = document.getElementById('purchase-team-select');
     teamSelect.innerHTML = `<option value="" disabled selected>Choose a franchise...</option>` + allTeams.map(t => {
+        const squadCount = getTeamActiveSquadCount(t);
+        const availableSlots = Math.max(0, MAX_SQUAD_SIZE - squadCount);
+        const isFull = squadCount >= MAX_SQUAD_SIZE;
         const ownerTag = t.owner_name ? ` [Owner: ${t.owner_name}]` : '';
-        return `<option value="${t.id}">${t.logo} ${t.name}${ownerTag} (Leftover Purse: ${t.leftover_balance.toFixed(1)} Points)</option>`;
+        const squadTag = isFull ? ` [SQUAD FULL — ${MAX_SQUAD_SIZE}/${MAX_SQUAD_SIZE}]` : ` [Squad: ${squadCount}/${MAX_SQUAD_SIZE} · Slots: ${availableSlots}]`;
+        const disabledAttr = isFull ? 'disabled' : '';
+        return `<option value="${t.id}" ${disabledAttr}>${t.logo} ${t.name}${ownerTag}${squadTag} (Leftover Purse: ${t.leftover_balance.toFixed(1)} Points)</option>`;
     }).join('');
 
-    // Pre-select first team if available
-    if (allTeams.length > 0) {
+    // Pre-select first eligible team with available slots if available
+    const eligibleTeam = allTeams.find(t => getTeamActiveSquadCount(t) < MAX_SQUAD_SIZE);
+    if (eligibleTeam) {
+        teamSelect.value = eligibleTeam.id;
+    } else if (allTeams.length > 0) {
         teamSelect.selectedIndex = 1;
     }
 
@@ -1633,7 +1683,7 @@ function closePurchaseModal() {
     document.body.style.overflow = '';
 }
 
-// Dynamic Real-time Calculation Preview as User Types or Selects Team
+// Dynamic Real-time Calculation Preview as User Types or Selects Team (Section 11)
 function updatePurchaseBalancePreview() {
     if (!activePurchasePlayer) return;
 
@@ -1642,6 +1692,8 @@ function updatePurchaseBalancePreview() {
     const curBalEl = document.getElementById('preview-current-balance');
     const dedEl = document.getElementById('preview-deduction');
     const newBalEl = document.getElementById('preview-new-balance');
+    const squadCountEl = document.getElementById('preview-squad-count');
+    const slotsEl = document.getElementById('preview-available-slots');
     const errorEl = document.getElementById('purchase-error-msg');
     const submitBtn = document.getElementById('purchase-submit-btn');
 
@@ -1658,7 +1710,18 @@ function updatePurchaseBalancePreview() {
         curBalEl.textContent = '---';
         dedEl.textContent = `${purchasePrice.toFixed(1)} Points`;
         newBalEl.textContent = '---';
+        if (squadCountEl) squadCountEl.textContent = `0 / ${MAX_SQUAD_SIZE}`;
+        if (slotsEl) slotsEl.textContent = `${MAX_SQUAD_SIZE}`;
         return;
+    }
+
+    const squadCount = getTeamActiveSquadCount(team);
+    const availableSlots = Math.max(0, MAX_SQUAD_SIZE - squadCount);
+
+    if (squadCountEl) squadCountEl.textContent = `${squadCount} / ${MAX_SQUAD_SIZE}`;
+    if (slotsEl) {
+        slotsEl.textContent = `${availableSlots}`;
+        slotsEl.className = availableSlots === 0 ? 'font-bold text-rose-400 font-mono' : 'font-bold text-sky-400 font-mono';
     }
 
     const currentBalance = team.leftover_balance;
@@ -1668,7 +1731,14 @@ function updatePurchaseBalancePreview() {
     dedEl.textContent = `- ${purchasePrice.toFixed(1)} Points`;
     newBalEl.textContent = `${newBalance.toFixed(1)} Points`;
 
-    if (purchasePrice < basePrice) {
+    // Enforcement of 10-player capacity (Section 3 & 11)
+    if (squadCount >= MAX_SQUAD_SIZE) {
+        errorEl.textContent = `⚠️ This franchise has reached the maximum squad size of ${MAX_SQUAD_SIZE} players.`;
+        errorEl.classList.remove('hidden');
+        newBalEl.className = 'text-rose-400 text-sm font-black font-mono';
+        submitBtn.disabled = true;
+        submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    } else if (purchasePrice < basePrice) {
         errorEl.textContent = `⚠️ Price cannot be lower than player's base price of ${basePrice} Points.`;
         errorEl.classList.remove('hidden');
         newBalEl.className = 'text-rose-400 text-sm font-black font-mono';
@@ -1706,6 +1776,14 @@ async function handleExecutePurchase(e) {
     const total = Number(targetTeam.purse ?? targetTeam.total_budget ?? 1000);
     const currentSpent = Number(targetTeam.spent ?? targetTeam.total_spent ?? 0);
     const leftover = total - currentSpent;
+
+    // Strict Squad Capacity Check (Section 3 & 6: MAX 10 PLAYERS)
+    const activeSquadCount = getTeamActiveSquadCount(targetTeam);
+    if (activeSquadCount >= MAX_SQUAD_SIZE) {
+        showToast(`Squad limit reached. A franchise can contain a maximum of ${MAX_SQUAD_SIZE} players.`, 'error');
+        return;
+    }
+
     if (soldPrice > leftover) {
         showToast(`Cannot sell for ${soldPrice} Pts. Remaining purse is only ${leftover.toFixed(1)} Pts.`, 'error');
         return;
@@ -1728,7 +1806,7 @@ async function handleExecutePurchase(e) {
     targetTeam.spent = targetTeam.total_spent;
     targetTeam.remaining_purse = Math.max(0, total - targetTeam.total_spent);
     targetTeam.leftover_balance = targetTeam.remaining_purse;
-    targetTeam.squad_count = (Number(targetTeam.squad_count) || (targetTeam.squad ? targetTeam.squad.length : 0)) + 1;
+    targetTeam.squad_count = activeSquadCount + 1;
     if (!targetTeam.squad) targetTeam.squad = [];
     targetTeam.squad.push({ ...activePurchasePlayer });
 
@@ -1788,10 +1866,10 @@ async function handleRevokePurchase(playerId) {
         targetTeam.spent = targetTeam.total_spent;
         targetTeam.remaining_purse = Math.min(total, (Number(targetTeam.remaining_purse ?? targetTeam.leftover_balance ?? 0)) + price);
         targetTeam.leftover_balance = targetTeam.remaining_purse;
-        targetTeam.squad_count = Math.max(0, (Number(targetTeam.squad_count) || 1) - 1);
         if (targetTeam.squad) {
             targetTeam.squad = targetTeam.squad.filter(p => p.id !== playerId && p.email !== playerId);
         }
+        targetTeam.squad_count = getTeamActiveSquadCount(targetTeam);
     }
 
     // 4. Immediately update UI
@@ -1825,18 +1903,28 @@ function openTeamSquadModal(teamId) {
     const modal = document.getElementById('team-squad-modal');
     document.getElementById('team-squad-logo').textContent = team.logo || '🏏';
     document.getElementById('team-squad-name').textContent = team.name;
+
+    const squad = getTeamActiveSquad(team);
+    const squadCount = squad.length;
+    const availableSlots = Math.max(0, MAX_SQUAD_SIZE - squadCount);
+    const isFull = squadCount >= MAX_SQUAD_SIZE;
+
     const ownerMeta = team.owner_name ? ` • 👑 Owner: ${team.owner_name}` : '';
-    document.getElementById('team-squad-meta').textContent = `${team.department} Franchise • ${team.squad_count || 0} Players Acquired${ownerMeta}`;
+    document.getElementById('team-squad-meta').textContent = `${team.department || 'SPL'} Franchise • Squad: ${squadCount} / ${MAX_SQUAD_SIZE} Players • Available Slots: ${availableSlots}${isFull ? ' (SQUAD FULL)' : ''}${ownerMeta}`;
 
     document.getElementById('team-stat-purse').textContent = `${team.total_budget.toFixed(1)} Pts`;
     document.getElementById('team-stat-spent').textContent = `${team.spent.toFixed(1)} Pts`;
     document.getElementById('team-stat-balance').textContent = `${team.leftover_balance.toFixed(1)} Pts`;
 
+    const squadStatEl = document.getElementById('team-stat-squad');
+    if (squadStatEl) squadStatEl.textContent = `${squadCount} / ${MAX_SQUAD_SIZE}`;
+    const slotsStatEl = document.getElementById('team-stat-slots');
+    if (slotsStatEl) slotsStatEl.textContent = isFull ? 'SQUAD FULL (0 Slots)' : `${availableSlots} Slots Left`;
+
     const squadBody = document.getElementById('team-squad-table-body');
-    const squad = team.squad || [];
 
     if (!squad.length) {
-        squadBody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500">No players acquired by ${team.name} yet.</td></tr>`;
+        squadBody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500">No players acquired by ${team.name} yet (0 / ${MAX_SQUAD_SIZE} Players · ${MAX_SQUAD_SIZE} Slots Available).</td></tr>`;
     } else {
         squadBody.innerHTML = squad.map(p => {
             const pName = p.full_name || p.name || 'Athlete';
@@ -2519,8 +2607,8 @@ async function handleCreateFranchiseSubmit(event) {
         return;
     }
 
-    if (allTeams.length >= 8) {
-        showAlert('Maximum of 8 franchises allowed.');
+    if (allTeams.length >= MAX_FRANCHISES) {
+        showAlert(`Tournament limit reached: Maximum of ${MAX_FRANCHISES} franchises allowed.`);
         return;
     }
 

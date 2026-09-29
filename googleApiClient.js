@@ -36,6 +36,10 @@
         );
     };
 
+    // Tournament Limits
+    const MAX_FRANCHISES = 8;
+    const MAX_SQUAD_SIZE = 10;
+
     // Secret key for privileged admin requests
     const ADMIN_SECRET_KEY = 'SPL2026_ADMIN_SECURE_AUTH_TOKEN_KEY';
 
@@ -116,17 +120,22 @@
         const resolvedLogo = t.logo_file_url || t.logo || '🏏';
         const purse = Number(t.purse ?? t.total_budget ?? 1000);
 
-        // Find squad from players list if not provided
+        // Find active squad from players list (exclude Rejected, Pending, Unassigned, Deleted athletes)
         const tNameLower = resolvedName.toLowerCase();
         const tIdLower = resolvedId.toLowerCase();
-        const squad = Array.isArray(t.squad) ? t.squad : (allPlayers || []).filter(p => {
+        const rawSquad = Array.isArray(t.squad) ? t.squad : (allPlayers || []).filter(p => {
             const soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
             return soldTeam && (soldTeam === tNameLower || soldTeam === tIdLower);
+        });
+        const squad = rawSquad.filter(p => {
+            const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+            const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+            return isSold && isNotRejected;
         });
 
         const spent = Number(t.spent ?? t.total_spent ?? (squad.reduce((sum, p) => sum + (Number(p.sold_price) || 0), 0)));
         const remaining = Math.max(0, purse - spent);
-        const count = Number(t.player_count ?? squad.length);
+        const count = squad.length;
 
         return {
             id: resolvedId,
@@ -1291,6 +1300,14 @@
                 throw new Error('Please enter a valid purchase price.');
             }
 
+            // Client-side squad size check
+            if (_cachedTeams && _cachedTeams.length) {
+                const targetTeam = _cachedTeams.find(t => t.id === teamId || t.name === teamId);
+                if (targetTeam && (Number(targetTeam.squad_count) >= MAX_SQUAD_SIZE || (targetTeam.squad && targetTeam.squad.length >= MAX_SQUAD_SIZE))) {
+                    throw new Error('Squad limit reached. A franchise can contain a maximum of ' + MAX_SQUAD_SIZE + ' players.');
+                }
+            }
+
             if (isConfigured()) {
                 const res = await postApi('purchasePlayer', {
                     player_id: playerId,
@@ -1341,7 +1358,13 @@
         }
     };
 
+    // Expose constants to GoogleTourneyApi
+    GoogleTourneyApi.MAX_FRANCHISES = MAX_FRANCHISES;
+    GoogleTourneyApi.MAX_SQUAD_SIZE = MAX_SQUAD_SIZE;
+
     // Expose to window
+    window.MAX_FRANCHISES = MAX_FRANCHISES;
+    window.MAX_SQUAD_SIZE = MAX_SQUAD_SIZE;
     window.GoogleTourneyApi = GoogleTourneyApi;
     if (typeof window !== 'undefined' && !window.UniBoxDb) {
         window.UniBoxDb = GoogleTourneyApi;

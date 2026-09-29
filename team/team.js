@@ -52,6 +52,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    // Central Tournament Capacity
+    const MAX_SQUAD_SIZE = 10;
+
     // Centralized State
     const teamState = {
         currentTeam: null,
@@ -298,6 +301,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (hudTotal) hudTotal.textContent = `${total.toFixed(1)} Pts`;
         if (hudSquadCount) hudSquadCount.textContent = squadCount;
         if (tabSquadBadge) tabSquadBadge.textContent = squadCount;
+
+        const hudSquadSlots = document.getElementById('hud-squad-slots');
+        const availableSlots = Math.max(0, MAX_SQUAD_SIZE - squadCount);
+        if (hudSquadSlots) {
+            hudSquadSlots.textContent = squadCount >= MAX_SQUAD_SIZE 
+                ? 'Squad Full' 
+                : `${availableSlots} Slots Available (Max ${MAX_SQUAD_SIZE})`;
+        }
 
         // Progress bar
         const pctUsed = total > 0 ? Math.min(100, Math.round((spent / total) * 100)) : 0;
