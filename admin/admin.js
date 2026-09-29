@@ -330,52 +330,62 @@ async function initAdminDashboard() {
 
     console.log('[ADMIN] Initial data fetch started');
 
-    // Parallel Initial Data Load (Requirement 2 & 6)
+    // Sequential Initial Data Load: Google Apps Script Web App serializes concurrent requests
+    // and can throttle/drop simultaneous calls from the same client.
+    // Fetching players first, then teams (passing in the loaded players) ensures fast, 100% reliable execution.
     try {
-        const playersPromise = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function')
-            ? window.GoogleTourneyApi.getPlayers()
-            : (window.UniBoxDb ? window.UniBoxDb.getAllPlayers() : Promise.resolve({ success: false, data: [] }));
-
-        const teamsPromise = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getTeams === 'function')
-            ? window.GoogleTourneyApi.getTeams()
-            : (window.UniBoxDb ? window.UniBoxDb.getAllTeams() : Promise.resolve({ success: false, data: [] }));
-
-        const [playersRes, teamsRes] = await Promise.allSettled([playersPromise, teamsPromise]);
+        let playersResVal = null;
+        try {
+            playersResVal = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function')
+                ? await window.GoogleTourneyApi.getPlayers()
+                : (window.UniBoxDb ? await window.UniBoxDb.getAllPlayers() : { success: false, data: [] });
+        } catch (pErr) {
+            playersResVal = { success: false, data: [], error: pErr.message || String(pErr) };
+        }
 
         let playersSuccess = false;
         let playersError = null;
 
-        // Process Players
-        if (playersRes.status === 'fulfilled' && playersRes.value && (playersRes.value.success || Array.isArray(playersRes.value.data))) {
-            const raw = Array.isArray(playersRes.value.data) ? playersRes.value.data : [];
+        // Process Players immediately
+        if (playersResVal && (playersResVal.success || Array.isArray(playersResVal.data))) {
+            const raw = Array.isArray(playersResVal.data) ? playersResVal.data : [];
             const normalized = raw.map(normalizePlayer).filter(Boolean);
             adminState.players = normalized;
             allPlayers = normalized;
             window.allPlayers = allPlayers;
             adminState.playersSignature = computePlayersSignature(allPlayers);
             lastPlayersSignature = adminState.playersSignature;
-            playersSuccess = playersRes.value.success !== false;
+            playersSuccess = playersResVal.success !== false;
             console.log(`[ADMIN] Players received: ${allPlayers.length}`);
         } else {
-            playersError = (playersRes.status === 'fulfilled' && playersRes.value) ? (playersRes.value.error || 'Failed to retrieve athletes') : 'Players request failed';
+            playersError = playersResVal ? (playersResVal.error || 'Failed to retrieve athletes') : 'Players request failed';
             console.error(`[ADMIN ERROR] Players fetch failed:`, playersError);
+        }
+
+        let teamsResVal = null;
+        try {
+            teamsResVal = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getTeams === 'function')
+                ? await window.GoogleTourneyApi.getTeams(allPlayers)
+                : (window.UniBoxDb ? await window.UniBoxDb.getAllTeams(allPlayers) : { success: false, data: [] });
+        } catch (tErr) {
+            teamsResVal = { success: false, data: [], error: tErr.message || String(tErr) };
         }
 
         let teamsSuccess = false;
         let teamsError = null;
 
         // Process Teams
-        if (teamsRes.status === 'fulfilled' && teamsRes.value && (teamsRes.value.success || Array.isArray(teamsRes.value.data))) {
-            const rawTeams = Array.isArray(teamsRes.value.data) ? teamsRes.value.data : [];
+        if (teamsResVal && (teamsResVal.success || Array.isArray(teamsResVal.data))) {
+            const rawTeams = Array.isArray(teamsResVal.data) ? teamsResVal.data : [];
             const filteredTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
             adminState.teams = filteredTeams;
             allTeams = filteredTeams;
             adminState.teamsSignature = computeTeamsSignature(allTeams);
             lastTeamsSignature = adminState.teamsSignature;
-            teamsSuccess = teamsRes.value.success !== false;
+            teamsSuccess = teamsResVal.success !== false;
             console.log(`[ADMIN] Teams received: ${allTeams.length}`);
         } else {
-            teamsError = (teamsRes.status === 'fulfilled' && teamsRes.value) ? (teamsRes.value.error || 'Failed to retrieve franchises') : 'Teams request failed';
+            teamsError = teamsResVal ? (teamsResVal.error || 'Failed to retrieve franchises') : 'Teams request failed';
             console.error(`[ADMIN ERROR] Teams fetch failed:`, teamsError);
         }
 
@@ -404,7 +414,7 @@ async function initAdminDashboard() {
             startAutoRefresh();
         }
     } catch (initErr) {
-        console.error('[ADMIN ERROR] Error during initial parallel load:', initErr);
+        console.error('[ADMIN ERROR] Error during initial sequential load:', initErr);
         adminState.uiState = 'error';
         adminState.errorMessage = initErr.message || 'Error during initial data load';
         renderAdminErrorState(adminState.errorMessage);
@@ -487,7 +497,10 @@ async function validateAndBootDashboard() {
     showAuthLoader();
 
     const sessionData = getAdminSessionData();
-    if (!sessionData || !sessionData.session_token) {
+    const hasToken = Boolean(sessionData && sessionData.session_token);
+    console.log(`[AUTH] Session token present: ${hasToken}`);
+
+    if (!hasToken) {
         console.warn('[ADMIN] No admin session found. Redirecting to login.');
         hideAuthLoader();
         redirectToLogin('no_session');
@@ -509,14 +522,18 @@ async function validateAndBootDashboard() {
         const api = window.GoogleTourneyApi;
         if (api && typeof api.validateAdminSession === 'function') {
             const res = await api.validateAdminSession(sessionData.session_token);
-            if (!res.success && !res.isTimeout) {
-                console.warn('[ADMIN] Session validation rejected by server:', res.error);
-                hideAuthLoader();
-                redirectToLogin(res.error || 'invalid');
-                return;
-            }
-            if (res.isTimeout) {
-                console.warn('[ADMIN] Session validation timed out. Allowing entry based on valid client token.');
+            if (!res.success) {
+                // Section 9: Only UNAUTHORIZED or SESSION_EXPIRED requires login again.
+                // A Google Sheets / network / server / timeout failure must NOT log the Admin out!
+                const isAuthFailure = res.error === 'UNAUTHORIZED' || res.error === 'SESSION_EXPIRED' ||
+                    res.error === 'Session expired' || res.error === 'Invalid session token.';
+                if (isAuthFailure) {
+                    console.warn('[AUTH] Session rejected by server:', res.error);
+                    hideAuthLoader();
+                    redirectToLogin(res.error || 'invalid');
+                    return;
+                }
+                console.warn('[AUTH] Session validation non-fatal error, continuing with active session:', res.error);
             } else {
                 console.log('[ADMIN] Session validation completed');
             }
@@ -683,19 +700,35 @@ async function refreshAdminData(forceRender = false) {
             }
         }
 
-        // Changed detected or verification due: download only what is needed in parallel
+        // Changed detected or verification due: download only what is needed sequentially to avoid GAS contention
         const needPlayers = forceRender || !syncState || syncState.playersCount !== adminState.players.length || timeSinceFullSync >= 15000;
         const needTeams = forceRender || !syncState || syncState.teamsCount !== adminState.teams.length || timeSinceFullSync >= 15000;
 
-        let playersPromise = needPlayers
-            ? (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function' ? window.GoogleTourneyApi.getPlayers() : window.UniBoxDb?.getAllPlayers())
-            : Promise.resolve({ success: true, data: adminState.players });
+        let playersResVal = null;
+        if (needPlayers) {
+            try {
+                playersResVal = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function')
+                    ? await window.GoogleTourneyApi.getPlayers()
+                    : (window.UniBoxDb ? await window.UniBoxDb.getAllPlayers() : { success: false, data: [] });
+            } catch (e) {
+                playersResVal = { success: false, data: [] };
+            }
+        } else {
+            playersResVal = { success: true, data: adminState.players };
+        }
 
-        let teamsPromise = needTeams
-            ? (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getTeams === 'function' ? window.GoogleTourneyApi.getTeams(allPlayers) : window.UniBoxDb?.getAllTeams(allPlayers))
-            : Promise.resolve({ success: true, data: adminState.teams });
-
-        const [playersRes, teamsRes] = await Promise.allSettled([playersPromise, teamsPromise]);
+        let teamsResVal = null;
+        if (needTeams) {
+            try {
+                teamsResVal = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getTeams === 'function')
+                    ? await window.GoogleTourneyApi.getTeams(allPlayers)
+                    : (window.UniBoxDb ? await window.UniBoxDb.getAllTeams(allPlayers) : { success: false, data: [] });
+            } catch (e) {
+                teamsResVal = { success: false, data: [] };
+            }
+        } else {
+            teamsResVal = { success: true, data: adminState.teams };
+        }
 
         // Discard stale out-of-order response (Requirement 11)
         if (currentGeneration !== syncGeneration) return;
@@ -704,8 +737,8 @@ async function refreshAdminData(forceRender = false) {
         let hasPlayersChanged = false;
 
         // Ingest players if fetched
-        if (playersRes.status === 'fulfilled' && playersRes.value && (playersRes.value.success || Array.isArray(playersRes.value.data))) {
-            const rawPlayers = Array.isArray(playersRes.value.data) ? playersRes.value.data : [];
+        if (playersResVal && (playersResVal.success || Array.isArray(playersResVal.data))) {
+            const rawPlayers = Array.isArray(playersResVal.data) ? playersResVal.data : [];
             // Guard against stale response during delete-all
             if (Date.now() - lastDeleteAllTimestamp < 4000 && allPlayers.length === 0 && rawPlayers.length > 0) {
                 return;
@@ -727,8 +760,8 @@ async function refreshAdminData(forceRender = false) {
         }
 
         // Ingest teams if fetched
-        if (teamsRes.status === 'fulfilled' && teamsRes.value && (teamsRes.value.success || Array.isArray(teamsRes.value.data))) {
-            const rawTeams = Array.isArray(teamsRes.value.data) ? teamsRes.value.data : [];
+        if (teamsResVal && (teamsResVal.success || Array.isArray(teamsResVal.data))) {
+            const rawTeams = Array.isArray(teamsResVal.data) ? teamsResVal.data : [];
             const newTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
             const newTeamSig = computeTeamsSignature(newTeams);
 

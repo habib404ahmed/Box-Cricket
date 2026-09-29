@@ -170,9 +170,9 @@
     /**
      * Executes GET request to Google Apps Script Web App
      */
-    async function getApi(action, queryParams = {}, timeoutMs = 25000) {
+    async function getApi(action, queryParams = {}, timeoutMs = 45000, retries = 1) {
         if (!isConfigured()) {
-            console.error(`[API ERROR] ${action}: Google Apps Script Web App URL not configured`);
+            console.error(`[API ERROR] action=${action} status=0 error=Google Apps Script Web App URL not configured`);
             return {
                 configured: false,
                 success: false,
@@ -181,9 +181,25 @@
         }
 
         const actionName = action || 'unknown';
-        console.log(`[API] Request started: ${actionName}`);
+        console.log(`[API] Request started: action=${actionName}`);
 
-        const params = new URLSearchParams({ action, ...queryParams });
+        // Attach session_token if available (Section 8)
+        let token = queryParams.session_token;
+        if (!token && typeof window !== 'undefined') {
+            try {
+                const raw = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed && parsed.session_token) token = parsed.session_token;
+                }
+            } catch (e) {}
+        }
+
+        const params = new URLSearchParams({
+            action,
+            ...(token ? { session_token: token } : {}),
+            ...queryParams
+        });
         const endpoint = `${GOOGLE_SCRIPT_WEB_APP_URL}?${params.toString()}`;
 
         // In-flight deduplication for identical concurrent GET queries
@@ -192,66 +208,82 @@
         }
 
         const reqPromise = (async () => {
-            const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-            let timeoutId = null;
-            if (controller && timeoutMs > 0) {
-                timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-            }
-
-            try {
-                const response = await fetch(endpoint, {
-                    method: 'GET',
-                    mode: 'cors',
-                    redirect: 'follow',
-                    cache: 'no-cache',
-                    signal: controller ? controller.signal : undefined
-                });
-
-                if (timeoutId) clearTimeout(timeoutId);
-
-                console.log(`[API] Apps Script response received: ${actionName} (HTTP ${response.status})`);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+            for (let attempt = 1; attempt <= retries + 1; attempt++) {
+                const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+                let timeoutId = null;
+                if (controller && timeoutMs > 0) {
+                    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
                 }
 
-                const rawText = await response.text();
-                let json;
+                let response = null;
                 try {
-                    json = JSON.parse(rawText);
-                    console.log(`[API] JSON parsed: ${actionName}`);
-                } catch (parseErr) {
-                    console.warn(`[API ERROR] GET ${actionName} non-JSON response:`, rawText.substring(0, 100));
-                    throw new Error('Invalid JSON response from Google Apps Script Web App.');
+                    response = await fetch(endpoint, {
+                        method: 'GET',
+                        mode: 'cors',
+                        redirect: 'follow',
+                        cache: 'no-cache',
+                        signal: controller ? controller.signal : undefined
+                    });
+
+                    if (timeoutId) clearTimeout(timeoutId);
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+                    }
+
+                    const rawText = await response.text();
+                    let json;
+                    try {
+                        json = JSON.parse(rawText);
+                        const countVal = Array.isArray(json.data) ? json.data.length : (typeof json.count === 'number' ? json.count : 'N/A');
+                        console.log(`[API] action=${actionName} status=${response.status} responseType=json success=${json.success} count=${countVal}`);
+                    } catch (parseErr) {
+                        console.warn(`[API ERROR] action=${actionName} status=${response.status} error=Invalid JSON response (len: ${rawText.length}) attempt=${attempt}`);
+                        // If Apps Script returned non-JSON (e.g. transient Maestro container HTML page), retry once if attempts remain
+                        if (attempt <= retries) {
+                            await new Promise(r => setTimeout(r, 1200));
+                            continue;
+                        }
+                        throw new Error('Invalid JSON response from Google Apps Script Web App.');
+                    }
+                    return { configured: true, ...json };
+                } catch (err) {
+                    if (timeoutId) clearTimeout(timeoutId);
+                    const isTimeout = err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'));
+                    const errMsg = isTimeout ? `Request timed out (${Math.round(timeoutMs/1000)}s).` : (err.message || String(err));
+                    console.error(`[API ERROR] action=${actionName} status=${response ? response.status : (isTimeout ? 408 : 0)} error=${errMsg} attempt=${attempt}`);
+
+                    if (attempt <= retries && !isTimeout) {
+                        await new Promise(r => setTimeout(r, 1200));
+                        continue;
+                    }
+
+                    return {
+                        configured: true,
+                        success: false,
+                        isTimeout: Boolean(isTimeout),
+                        error: errMsg
+                    };
                 }
-                return { configured: true, ...json };
-            } catch (err) {
-                if (timeoutId) clearTimeout(timeoutId);
-                const isTimeout = err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'));
-                console.error(`[API ERROR] GET ${actionName} failed:`, isTimeout ? `Request timed out (${Math.round(timeoutMs/1000)}s)` : (err.message || String(err)));
-                return {
-                    configured: true,
-                    success: false,
-                    isTimeout: Boolean(isTimeout),
-                    error: isTimeout ? `Request timed out (${Math.round(timeoutMs/1000)}s).` : (err.message || String(err))
-                };
-            } finally {
-                _inFlightGetRequests.delete(endpoint);
             }
         })();
 
         _inFlightGetRequests.set(endpoint, reqPromise);
-        return await reqPromise;
+        try {
+            return await reqPromise;
+        } finally {
+            _inFlightGetRequests.delete(endpoint);
+        }
     }
 
     /**
      * Executes POST request to Google Apps Script Web App
      * Note: Sends body as text/plain JSON to avoid browser CORS preflight blocks with Google Apps Script
-     * Features 30-second timeout guard and safe text-to-JSON parsing
+     * Features 45-second timeout guard and safe text-to-JSON parsing
      */
-    async function postApi(action, payload = {}, timeoutMs = 30000) {
+    async function postApi(action, payload = {}, timeoutMs = 45000) {
         if (!isConfigured()) {
-            console.error(`[API ERROR] ${action}: Google Apps Script Web App URL not configured`);
+            console.error(`[API ERROR] action=${action} status=0 error=Google Apps Script Web App URL not configured`);
             return {
                 configured: false,
                 success: false,
@@ -260,12 +292,13 @@
         }
 
         const actionName = action || 'unknown';
-        console.log(`[API] Request started: ${actionName}`);
+        console.log(`[API] Request started: action=${actionName}`);
 
         // Determine caller role and secure admin token based strictly on authenticated admin session
         let callerRole = payload.role;
         let adminToken = payload.admin_token;
         let adminActor = payload.actor;
+        let sessionToken = payload.session_token;
 
         if (typeof window !== 'undefined') {
             try {
@@ -274,6 +307,7 @@
                     const sessionObj = JSON.parse(rawAdminSession);
                     if (sessionObj && (sessionObj.session_token || sessionObj.admin_token || sessionObj.role)) {
                         callerRole = 'ADMIN';
+                        sessionToken = sessionObj.session_token || sessionToken;
                         adminToken = sessionObj.session_token || sessionObj.admin_token || ADMIN_SECRET_KEY;
                         adminActor = sessionObj.username || sessionObj.email || 'admin';
                     }
@@ -288,6 +322,7 @@
         const enrichedPayload = {
             action,
             role: callerRole,
+            ...(sessionToken ? { session_token: sessionToken } : {}),
             ...(adminToken ? { admin_token: adminToken, actor: adminActor } : {}),
             ...payload
         };
@@ -301,8 +336,9 @@
             }, timeoutMs);
         }
 
+        let response = null;
         try {
-            const response = await fetch(GOOGLE_SCRIPT_WEB_APP_URL, {
+            response = await fetch(GOOGLE_SCRIPT_WEB_APP_URL, {
                 method: 'POST',
                 mode: 'cors',
                 redirect: 'follow',
@@ -315,8 +351,6 @@
 
             if (timeoutId) clearTimeout(timeoutId);
 
-            console.log(`[API] Apps Script response received: ${actionName} (HTTP ${response.status})`);
-
             if (!response.ok) {
                 throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
             }
@@ -327,9 +361,9 @@
             let json;
             try {
                 json = JSON.parse(rawText);
-                console.log(`[API] JSON parsed: ${actionName}`);
+                console.log(`[API] action=${actionName} status=${response.status} responseType=json success=${json.success}`);
             } catch (parseErr) {
-                console.error(`[API ERROR] POST ${actionName} invalid JSON:`, rawText.substring(0, 150));
+                console.error(`[API ERROR] action=${actionName} status=${response.status} error=Invalid JSON response (len: ${rawText.length})`);
                 throw new Error('Invalid JSON response from Google Apps Script Web App.');
             }
 
@@ -337,14 +371,15 @@
         } catch (err) {
             if (timeoutId) clearTimeout(timeoutId);
             const isTimeout = err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'));
-            console.error(`[API ERROR] POST ${actionName} failed:`, isTimeout ? `Request timed out after ${Math.round(timeoutMs / 1000)}s` : (err.message || String(err)));
+            const errMsg = isTimeout
+                ? `Request timed out after ${Math.round(timeoutMs / 1000)} seconds.`
+                : (err.message || String(err));
+            console.error(`[API ERROR] action=${actionName} status=${response ? response.status : (isTimeout ? 408 : 0)} error=${errMsg}`);
             return {
                 configured: true,
                 success: false,
                 isTimeout: Boolean(isTimeout),
-                error: isTimeout
-                    ? `Request timed out after ${Math.round(timeoutMs / 1000)} seconds.`
-                    : (err.message || String(err))
+                error: errMsg
             };
         }
     }
@@ -398,7 +433,7 @@
         getPlayers: async () => {
             if (isConfigured()) {
                 try {
-                    const res = await getApi('getPlayers', {}, 25000);
+                    const res = await getApi('getPlayers', {}, 45000);
                     if (res && res.success && Array.isArray(res.data)) {
                         const seenIds = new Map();
                         const normalized = res.data.map(p => {
@@ -526,6 +561,10 @@
             }
         },
 
+        loginAdmin: function(username, password) {
+            return this.adminLogin(username, password);
+        },
+
         /**
          * Validate an existing Admin session token with the server.
          */
@@ -534,10 +573,10 @@
                 return { success: false, authenticated: false, error: 'SESSION_EXPIRED' };
             }
             try {
-                const res = await postApi('validateAdminSession', { session_token: sessionToken }, 15000);
+                const res = await postApi('validateAdminSession', { session_token: sessionToken }, 30000);
                 return res;
             } catch (err) {
-                return { success: false, authenticated: false, error: 'SESSION_EXPIRED' };
+                return { success: false, authenticated: false, error: 'SERVER_ERROR' };
             }
         },
 
@@ -1066,9 +1105,9 @@
             let fetchTimeout = false;
 
             if (isConfigured()) {
-                const res = await getApi('getTeams', { skipSquadCalc: 'true' }, 20000);
+                const res = await getApi('getTeams', { skipSquadCalc: 'true' }, 45000);
                 if (res && res.success && Array.isArray(res.data)) {
-                    // Respect the authoritative Google Sheet team roster directly
+                    // Respect the authoritative Google Sheet team roster directly (even if 0 teams)
                     teams = res.data;
                     source = 'google_sheets';
                     fetchSuccess = true;
