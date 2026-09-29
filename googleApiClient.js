@@ -511,7 +511,7 @@
                 return { success: false, authenticated: false, error: 'Google Apps Script backend not configured.' };
             }
             try {
-                const res = await postApi('loginAdmin', { username: String(username).trim(), password: String(password) }, 30000);
+                const res = await postApi('loginAdmin', { username: String(username).trim(), password: String(password) }, 45000);
                 if (!res.success || !res.authenticated) {
                     return { success: false, authenticated: false, error: res.error || 'Invalid Admin credentials.' };
                 }

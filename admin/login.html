@@ -9,12 +9,12 @@
     <!-- Open Graph & Metadata -->
     <meta property="og:title" content="Admin Login — Sunstone Premier League 2026">
     <meta property="og:description" content="Admin command center access for Sunstone Premier League 2026 tournament coordinators.">
-    <meta property="og:image" content="../assets/branding/sunstone-premier-league-2026.png">
+    <meta property="og:image" content="/assets/branding/sunstone-premier-league-2026.png">
     <meta property="og:type" content="website">
-    <link rel="manifest" href="../manifest.json">
+    <link rel="manifest" href="/manifest.json">
     <!-- Favicon & Stylesheet -->
-    <link rel="icon" type="image/png" href="../assets/branding/sunstone-premier-league-2026.png">
-    <link href="../dist/output.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/assets/branding/sunstone-premier-league-2026.png">
+    <link href="/dist/output.css" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -48,18 +48,30 @@
             z-index: 1;
         }
     </style>
-    <!-- Instant Redirect if Already Logged In -->
+    <!-- Instant Redirect if Already Logged In (Safe against Vercel redirect loops) -->
     <script>
-        if (sessionStorage.getItem('unibox_admin_session')) {
-            window.location.replace('index.html');
-        }
+        (function() {
+            try {
+                const sessionRaw = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+                if (sessionRaw) {
+                    const session = JSON.parse(sessionRaw);
+                    if (session && session.session_token) {
+                        window.location.replace('/admin');
+                        return;
+                    }
+                }
+            } catch (e) {
+                sessionStorage.removeItem('unibox_admin_session');
+                localStorage.removeItem('unibox_admin_session');
+            }
+        })();
     </script>
 </head>
 
 <body class="bg-[#050816] text-slate-100 min-h-screen flex items-center justify-center p-4 relative antialiased overflow-hidden">
 
     <!-- Subtle Background Watermark (Requirement 9) -->
-    <img src="../assets/branding/sunstone-premier-league-2026.png" 
+    <img src="/assets/branding/sunstone-premier-league-2026.png" 
          alt="" 
          aria-hidden="true" 
          class="tournament-watermark">
@@ -82,7 +94,7 @@
 
         <!-- Prominent Tournament Branding Above Login Card (Requirement 3) -->
         <div class="text-center mb-6 flex flex-col items-center">
-            <img src="../assets/branding/sunstone-premier-league-2026.png"
+            <img src="/assets/branding/sunstone-premier-league-2026.png"
                  alt="Sunstone Premier League 2026 Official Logo"
                  class="h-24 sm:h-28 w-auto object-contain logo-entrance tournament-logo-glow mb-3">
             <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#08111F]/90 border border-sky-500/25 text-[10px] font-black uppercase tracking-[0.18em] text-amber-400 backdrop-blur-md shadow-lg shadow-sky-500/5">
@@ -163,7 +175,7 @@
                 </div>
                 <!-- Return link -->
                 <div class="text-center">
-                    <a href="../index.html" class="text-xs text-slate-400 hover:text-sky-400 transition-colors flex items-center justify-center gap-1.5">
+                    <a href="/" class="text-xs text-slate-400 hover:text-sky-400 transition-colors flex items-center justify-center gap-1.5">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
                         Back to Player Portal
                     </a>
@@ -178,7 +190,7 @@
     </div>
 
     <!-- Scripts: Google Apps Script API client ONLY — Supabase removed from admin login -->
-    <script src="../googleApiClient.js"></script>
+    <script src="/googleApiClient.js" onerror="this.onerror=null; this.src='../googleApiClient.js';"></script>
     <script>
         const adminLoginForm = document.getElementById('admin-login-form');
         const adminIdentifier = document.getElementById('admin-identifier');
@@ -226,8 +238,9 @@
                 }
 
                 const result = await api.adminLogin(identifier, password);
+                console.log('[LOGIN RESULT]', JSON.stringify(result));
 
-                if (result.success && result.authenticated && result.admin) {
+                if (result.success && result.authenticated && result.admin && result.session_token) {
                     const sessionData = JSON.stringify({
                         session_token: result.session_token,
                         admin_id: result.admin.admin_id,
@@ -235,24 +248,23 @@
                         role: result.admin.role || 'admin',
                         timestamp: Date.now()
                     });
-                    // Store session token + minimal admin info (NO password, NO hash)
+
+                    // 4. Store the session token in both storages
                     sessionStorage.setItem('unibox_admin_session', sessionData);
                     localStorage.setItem('unibox_admin_session', sessionData);
+
+                    // 5. Verify that the token is actually available locally before navigating
+                    const verifiedSession = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+                    if (!verifiedSession) {
+                        showError('Storage error: Unable to save session. Please check your browser storage permissions.');
+                        return;
+                    }
 
                     // Clear sensitive field immediately after successful login
                     adminPassword.value = '';
 
-                    // Redirect to Admin Command Center (ensuring /admin/ directory)
-                    const p = window.location.pathname || '';
-                    let adminTarget = 'index.html';
-                    if (p.includes('/admin/')) {
-                        adminTarget = p.substring(0, p.indexOf('/admin/') + 7);
-                    } else if (p.endsWith('/admin') || p.endsWith('/admin/login')) {
-                        adminTarget = p.replace(/\/login$/, '') + '/';
-                    } else {
-                        adminTarget = './index.html';
-                    }
-                    window.location.replace(adminTarget);
+                    // 6. ONLY THEN navigate to the Admin dashboard (using clean canonical route /admin)
+                    window.location.replace('/admin');
                     return;
                 } else {
                     showError('Invalid Admin credentials.');

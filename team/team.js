@@ -6,16 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 1. AUTHENTICATION GUARD
     const sessionRaw = localStorage.getItem('unibox_team_owner_session') || sessionStorage.getItem('unibox_team_owner_session');
     if (!sessionRaw) {
-        const p = window.location.pathname || '';
-        let target = 'login.html';
-        if (p.endsWith('/team')) {
-            target = p + '/login.html';
-        } else if (p.includes('/team/')) {
-            target = p.substring(0, p.indexOf('/team/') + 6) + 'login.html';
-        } else {
-            target = '/team/login.html';
-        }
-        window.location.replace(target);
+        window.location.replace('/team/login');
         return;
     }
 
@@ -25,30 +16,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {
         localStorage.removeItem('unibox_team_owner_session');
         sessionStorage.removeItem('unibox_team_owner_session');
-        const p = window.location.pathname || '';
-        let target = 'login.html';
-        if (p.endsWith('/team')) {
-            target = p + '/login.html';
-        } else if (p.includes('/team/')) {
-            target = p.substring(0, p.indexOf('/team/') + 6) + 'login.html';
-        } else {
-            target = '/team/login.html';
-        }
-        window.location.replace(target);
+        window.location.replace('/team/login');
         return;
     }
 
     if (!session || !session.email) {
-        const p = window.location.pathname || '';
-        let target = 'login.html';
-        if (p.endsWith('/team')) {
-            target = p + '/login.html';
-        } else if (p.includes('/team/')) {
-            target = p.substring(0, p.indexOf('/team/') + 6) + 'login.html';
-        } else {
-            target = '/team/login.html';
-        }
-        window.location.replace(target);
+        localStorage.removeItem('unibox_team_owner_session');
+        sessionStorage.removeItem('unibox_team_owner_session');
+        window.location.replace('/team/login');
         return;
     }
 
@@ -121,16 +96,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 localStorage.removeItem('unibox_team_owner_session');
                 sessionStorage.removeItem('unibox_team_owner_session');
             } catch (err) {}
-            const p = window.location.pathname || '';
-            let target = 'login.html';
-            if (p.endsWith('/team')) {
-                target = p + '/login.html';
-            } else if (p.includes('/team/')) {
-                target = p.substring(0, p.indexOf('/team/') + 6) + 'login.html';
-            } else {
-                target = '/team/login.html';
-            }
-            window.location.href = target;
+            window.location.replace('/team/login');
         });
     }
 

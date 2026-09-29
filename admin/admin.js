@@ -472,8 +472,7 @@ function hideAuthLoader() {
 function redirectToLogin(reason) {
     try { sessionStorage.removeItem('unibox_admin_session'); } catch (e) {}
     try { localStorage.removeItem('unibox_admin_session'); } catch (e) {}
-    const base = window.location.pathname.includes('/admin/') ? '' : '/admin/';
-    window.location.replace(base + 'login.html');
+    window.location.replace('/admin/login');
 }
 
 /**
@@ -2586,16 +2585,7 @@ async function adminLogout() {
         localStorage.removeItem('unibox_admin_session');
     } catch (e) {}
 
-    const p = window.location.pathname || '';
-    let target = 'login.html';
-    if (p.endsWith('/admin')) {
-        target = p + '/login.html';
-    } else if (p.includes('/admin/')) {
-        target = p.substring(0, p.indexOf('/admin/') + 7) + 'login.html';
-    } else {
-        target = '/admin/login.html';
-    }
-    window.location.href = target;
+    window.location.replace('/admin/login');
 }
 
 function openCertViewerModal(name, data) {

@@ -9,12 +9,12 @@
     <!-- Open Graph & Metadata -->
     <meta property="og:title" content="Admin Command Center — Sunstone Premier League 2026">
     <meta property="og:description" content="Tournament operations control room for Sunstone Premier League 2026.">
-    <meta property="og:image" content="../assets/branding/sunstone-premier-league-2026.png">
+    <meta property="og:image" content="/assets/branding/sunstone-premier-league-2026.png">
     <meta property="og:type" content="website">
-    <link rel="manifest" href="../manifest.json">
+    <link rel="manifest" href="/manifest.json">
     <!-- Favicon & Stylesheet -->
-    <link rel="icon" type="image/png" href="../assets/branding/sunstone-premier-league-2026.png">
-    <link href="../dist/output.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/assets/branding/sunstone-premier-league-2026.png">
+    <link href="/dist/output.css" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -41,37 +41,28 @@
                 sessionStorage.removeItem('unibox_admin_session');
                 localStorage.removeItem('unibox_admin_session');
             } catch (e) {}
-
-            const p = window.location.pathname || '';
-            let target = 'login.html';
-            if (p.endsWith('/admin')) {
-                target = p + '/login.html';
-            } else if (p.includes('/admin/')) {
-                target = p.substring(0, p.indexOf('/admin/') + 7) + 'login.html';
-            } else {
-                target = '/admin/login.html';
-            }
-            window.location.href = target;
+            window.location.replace('/admin/login');
         }
         window.adminLogout = adminLogout;
 
+        // Instant Authentication Verification (Prevent Redirect Loops on Vercel)
         (function() {
-            // Normalize path to /admin/ so relative scripts, styles, and assets resolve correctly
-            const p = window.location.pathname || '';
-            if (p.endsWith('/admin')) {
-                window.location.replace(p + '/' + window.location.search + window.location.hash);
-                return;
-            }
-
-            const hasSession = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
-            if (!hasSession) {
-                let target = 'login.html';
-                if (p.includes('/admin/')) {
-                    target = p.substring(0, p.indexOf('/admin/') + 7) + 'login.html';
-                } else {
-                    target = '/admin/login.html';
+            try {
+                const sessionRaw = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+                if (!sessionRaw) {
+                    window.location.replace('/admin/login');
+                    return;
                 }
-                window.location.replace(target);
+                const parsed = JSON.parse(sessionRaw);
+                if (!parsed || !parsed.session_token) {
+                    sessionStorage.removeItem('unibox_admin_session');
+                    localStorage.removeItem('unibox_admin_session');
+                    window.location.replace('/admin/login');
+                }
+            } catch (e) {
+                sessionStorage.removeItem('unibox_admin_session');
+                localStorage.removeItem('unibox_admin_session');
+                window.location.replace('/admin/login');
             }
         })();
     </script>
@@ -80,7 +71,7 @@
 <body class="bg-[#050816] text-slate-100 min-h-screen selection:bg-sky-500 selection:text-slate-950 relative antialiased overflow-x-hidden">
 
     <!-- Subtle Background Watermark (Requirement 9) -->
-    <img src="../assets/branding/sunstone-premier-league-2026.png" 
+    <img src="/assets/branding/sunstone-premier-league-2026.png" 
          alt="" 
          aria-hidden="true" 
          class="tournament-watermark">
@@ -106,8 +97,8 @@
         <div class="max-w-[1560px] mx-auto px-3 sm:px-6 lg:px-8 h-[70px] sm:h-[74px] flex items-center justify-between gap-2 sm:gap-4 overflow-hidden">
             <!-- Brand & Badge (Requirement 5) -->
             <div class="flex items-center gap-2 sm:gap-4 min-w-0">
-                <a href="../index.html" class="flex items-center gap-2.5 sm:gap-3 group min-w-0" title="Return to Public Portal">
-                    <img src="../assets/branding/sunstone-premier-league-2026.png"
+                <a href="/" class="flex items-center gap-2.5 sm:gap-3 group min-w-0" title="Return to Public Portal">
+                    <img src="/assets/branding/sunstone-premier-league-2026.png"
                          alt="Sunstone Premier League 2026"
                          class="h-10 sm:h-12 w-auto object-contain logo-entrance tournament-logo-glow shrink-0">
                     <div class="min-w-0">
@@ -136,7 +127,7 @@
                 </button>
 
                 <!-- Return to Public Portal -->
-                <a href="../index.html" class="hidden sm:flex text-xs font-bold text-slate-300 hover:text-white bg-[#08111F] hover:bg-slate-800 border border-sky-900/60 px-4 py-2.5 rounded-xl transition-all items-center gap-2">
+                <a href="/" class="hidden sm:flex text-xs font-bold text-slate-300 hover:text-white bg-[#08111F] hover:bg-slate-800 border border-sky-900/60 px-4 py-2.5 rounded-xl transition-all items-center gap-2">
                     <svg class="w-3.5 h-3.5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                     </svg>
@@ -1208,8 +1199,8 @@
     </div>
 
     <!-- Scripts: Google Apps Script API Client and Admin Controller -->
-    <script src="../googleApiClient.js"></script>
-    <script src="admin.js"></script>
+    <script src="/googleApiClient.js" onerror="this.onerror=null; this.src='../googleApiClient.js';"></script>
+    <script src="/admin/admin.js" onerror="this.onerror=null; this.src='admin.js';"></script>
 </body>
 
 </html>
