@@ -170,14 +170,18 @@
     /**
      * Executes GET request to Google Apps Script Web App
      */
-    async function getApi(action, queryParams = {}, timeoutMs = 15000) {
+    async function getApi(action, queryParams = {}, timeoutMs = 25000) {
         if (!isConfigured()) {
+            console.error(`[API ERROR] ${action}: Google Apps Script Web App URL not configured`);
             return {
                 configured: false,
                 success: false,
                 error: 'Google Apps Script Web App URL not configured yet in googleApiClient.js.'
             };
         }
+
+        const actionName = action || 'unknown';
+        console.log(`[API] Request started: ${actionName}`);
 
         const params = new URLSearchParams({ action, ...queryParams });
         const endpoint = `${GOOGLE_SCRIPT_WEB_APP_URL}?${params.toString()}`;
@@ -205,6 +209,8 @@
 
                 if (timeoutId) clearTimeout(timeoutId);
 
+                console.log(`[API] Apps Script response received: ${actionName} (HTTP ${response.status})`);
+
                 if (!response.ok) {
                     throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
                 }
@@ -213,17 +219,16 @@
                 let json;
                 try {
                     json = JSON.parse(rawText);
+                    console.log(`[API] JSON parsed: ${actionName}`);
                 } catch (parseErr) {
-                    console.warn(`[GOOGLE API] GET ${action} non-JSON response:`, rawText.substring(0, 100));
+                    console.warn(`[API ERROR] GET ${actionName} non-JSON response:`, rawText.substring(0, 100));
                     throw new Error('Invalid JSON response from Google Apps Script Web App.');
                 }
                 return { configured: true, ...json };
             } catch (err) {
                 if (timeoutId) clearTimeout(timeoutId);
                 const isTimeout = err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'));
-                if (action !== 'getSyncState' && action !== 'getAthleteCount') {
-                    console.warn(`[GOOGLE API] GET ${action} failed:`, isTimeout ? 'Timed out' : (err.message || String(err)));
-                }
+                console.error(`[API ERROR] GET ${actionName} failed:`, isTimeout ? `Request timed out (${Math.round(timeoutMs/1000)}s)` : (err.message || String(err)));
                 return {
                     configured: true,
                     success: false,
@@ -246,12 +251,16 @@
      */
     async function postApi(action, payload = {}, timeoutMs = 30000) {
         if (!isConfigured()) {
+            console.error(`[API ERROR] ${action}: Google Apps Script Web App URL not configured`);
             return {
                 configured: false,
                 success: false,
                 error: 'Google Apps Script Web App URL not configured yet in googleApiClient.js.'
             };
         }
+
+        const actionName = action || 'unknown';
+        console.log(`[API] Request started: ${actionName}`);
 
         // Determine caller role and secure admin token based strictly on authenticated admin session
         let callerRole = payload.role;
@@ -306,19 +315,21 @@
 
             if (timeoutId) clearTimeout(timeoutId);
 
+            console.log(`[API] Apps Script response received: ${actionName} (HTTP ${response.status})`);
+
             if (!response.ok) {
                 throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
             }
 
             // Safe text extraction before JSON parsing (Requirement 12)
             const rawText = await response.text();
-            console.log(`[GOOGLE API] POST ${action} Status: ${response.status}, Length: ${rawText.length}`);
 
             let json;
             try {
                 json = JSON.parse(rawText);
+                console.log(`[API] JSON parsed: ${actionName}`);
             } catch (parseErr) {
-                console.error(`[GOOGLE API] POST ${action} invalid JSON:`, rawText.substring(0, 150));
+                console.error(`[API ERROR] POST ${actionName} invalid JSON:`, rawText.substring(0, 150));
                 throw new Error('Invalid JSON response from Google Apps Script Web App.');
             }
 
@@ -326,7 +337,7 @@
         } catch (err) {
             if (timeoutId) clearTimeout(timeoutId);
             const isTimeout = err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('timeout'));
-            console.error(`[GOOGLE API] POST ${action} failed:`, isTimeout ? `Timed out after ${Math.round(timeoutMs / 1000)}s` : err.message);
+            console.error(`[API ERROR] POST ${actionName} failed:`, isTimeout ? `Request timed out after ${Math.round(timeoutMs / 1000)}s` : (err.message || String(err)));
             return {
                 configured: true,
                 success: false,
@@ -380,14 +391,14 @@
         // --- 1-SECOND LIGHTWEIGHT SYNC STATE (Requirement 8) ---
         getSyncState: async () => {
             if (!isConfigured()) return { success: false, configured: false };
-            return await getApi('getSyncState', {}, 8000);
+            return await getApi('getSyncState', {}, 15000);
         },
 
         // --- PLAYERS (READ) ---
         getPlayers: async () => {
             if (isConfigured()) {
                 try {
-                    const res = await getApi('getPlayers');
+                    const res = await getApi('getPlayers', {}, 25000);
                     if (res && res.success && Array.isArray(res.data)) {
                         const seenIds = new Map();
                         const normalized = res.data.map(p => {
@@ -410,20 +421,28 @@
                         return { success: true, data: normalized, error: null, source: 'google_sheets' };
                     } else if (res && res.error) {
                         console.error('[PLAYERS] GoogleTourneyApi getPlayers error:', res.error);
+                        if (_cachedPlayers && _cachedPlayers.length > 0) {
+                            return { success: false, data: _cachedPlayers, isFallback: true, error: res.error, isTimeout: res.isTimeout, source: 'cache_fallback' };
+                        }
+                        return { success: false, data: [], error: res.error, isTimeout: res.isTimeout, source: 'error' };
                     }
                 } catch (apiErr) {
                     console.error('[PLAYERS] getPlayers network error:', apiErr);
+                    if (_cachedPlayers && _cachedPlayers.length > 0) {
+                        return { success: false, data: _cachedPlayers, isFallback: true, error: apiErr.message || String(apiErr), source: 'cache_fallback' };
+                    }
+                    return { success: false, data: [], error: apiErr.message || String(apiErr), source: 'network_error' };
                 }
             }
 
-            // Fallback
+            // Fallback when not configured
             try {
                 const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
                 const normalized = (Array.isArray(localPlayers) ? localPlayers : []).map(normalizePlayer).filter(Boolean);
                 _cachedPlayers = normalized;
-                return { success: true, data: normalized, error: null, source: 'cache' };
+                return { success: !isConfigured(), data: normalized, error: isConfigured() ? 'Failed to retrieve players from Google Sheets' : null, source: 'cache' };
             } catch (e) {
-                return { success: true, data: [], error: null, source: 'cache' };
+                return { success: false, data: [], error: 'Failed to retrieve athletes', source: 'cache' };
             }
         },
 
@@ -1042,13 +1061,20 @@
         getTeams: async (providedPlayers = null) => {
             let teams = [];
             let source = 'cache';
+            let fetchSuccess = false;
+            let fetchError = null;
+            let fetchTimeout = false;
 
             if (isConfigured()) {
-                const res = await getApi('getTeams', { skipSquadCalc: 'true' });
-                if (res.success && Array.isArray(res.data)) {
+                const res = await getApi('getTeams', { skipSquadCalc: 'true' }, 20000);
+                if (res && res.success && Array.isArray(res.data)) {
                     // Respect the authoritative Google Sheet team roster directly
                     teams = res.data;
                     source = 'google_sheets';
+                    fetchSuccess = true;
+                } else if (res) {
+                    fetchError = res.error || 'Failed to retrieve franchises';
+                    fetchTimeout = Boolean(res.isTimeout);
                 }
             }
 
@@ -1078,13 +1104,25 @@
             }
 
             const enriched = teams.map(t => normalizeTeam(t, players)).filter(Boolean);
-            _cachedTeams = enriched;
+            if (fetchSuccess) {
+                _cachedTeams = enriched;
+                try {
+                    localStorage.setItem('unibox_teams', JSON.stringify(enriched));
+                } catch (e) {}
+                return { success: true, data: enriched, error: null, source: 'google_sheets' };
+            }
 
-            try {
-                localStorage.setItem('unibox_teams', JSON.stringify(enriched));
-            } catch (e) {}
+            if (_cachedTeams && _cachedTeams.length > 0) {
+                return { success: false, data: _cachedTeams, isFallback: true, error: fetchError, isTimeout: fetchTimeout, source: 'cache_fallback' };
+            }
 
-            return { success: true, data: enriched, error: null, source: source };
+            return {
+                success: !isConfigured(),
+                data: enriched,
+                error: fetchError || (isConfigured() ? 'Failed to retrieve teams' : null),
+                isTimeout: fetchTimeout,
+                source: source
+            };
         },
 
         // --- FRANCHISE REGISTRATION & CREATION (POST) ---
@@ -1348,6 +1386,52 @@
                 return { success: true, file_id: 'local_img_' + Date.now(), file_url: base64Data };
             }
             return await postApi('uploadPhoto', { photo_data: base64Data, prefix: filenamePrefix });
+        },
+
+        // --- BASE PRICE MANAGEMENT ---
+        getDefaultBasePriceForRole: (role, customPrices = null) => {
+            const prices = customPrices || GoogleTourneyApi.getRoleBasePrices();
+            const cleanRole = String(role || '').trim();
+            return Number(prices[cleanRole] ?? 15);
+        },
+
+        getRoleBasePrices: () => {
+            const defaults = {
+                'Batsman': 15,
+                'Bowler': 15,
+                'All-Rounder': 20,
+                'Wicket Keeper': 15,
+                'Wicketkeeper': 15,
+                'Captain': 25
+            };
+            try {
+                const stored = localStorage.getItem('unibox_role_base_prices');
+                if (stored) return { ...defaults, ...JSON.parse(stored) };
+            } catch (e) {}
+            return defaults;
+        },
+
+        saveRoleBasePrices: (prices) => {
+            try {
+                localStorage.setItem('unibox_role_base_prices', JSON.stringify(prices));
+                return true;
+            } catch (e) {
+                return false;
+            }
+        },
+
+        updatePlayerBasePrice: async (playerIdOrEmail, basePrice) => {
+            const num = Number(basePrice);
+            if (isNaN(num) || num < 0) throw new Error('Invalid base price value');
+            if (isConfigured()) {
+                const res = await postApi('updatePlayer', { id: playerIdOrEmail, base_price: num });
+                if (!res.success) throw new Error(res.error || 'Failed to update base price in Google Sheets');
+            }
+            if (_cachedPlayers && _cachedPlayers.length) {
+                const p = _cachedPlayers.find(x => x.id === playerIdOrEmail || x.email === playerIdOrEmail);
+                if (p) p.base_price = num;
+            }
+            return { success: true };
         },
 
         uploadCertificate: async (base64Data, filenamePrefix = 'cert') => {

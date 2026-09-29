@@ -56,13 +56,17 @@
         window.adminLogout = adminLogout;
 
         (function() {
+            // Normalize path to /admin/ so relative scripts, styles, and assets resolve correctly
+            const p = window.location.pathname || '';
+            if (p.endsWith('/admin')) {
+                window.location.replace(p + '/' + window.location.search + window.location.hash);
+                return;
+            }
+
             const hasSession = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
             if (!hasSession) {
-                const p = window.location.pathname || '';
                 let target = 'login.html';
-                if (p.endsWith('/admin')) {
-                    target = p + '/login.html';
-                } else if (p.includes('/admin/')) {
+                if (p.includes('/admin/')) {
                     target = p.substring(0, p.indexOf('/admin/') + 7) + 'login.html';
                 } else {
                     target = '/admin/login.html';
@@ -1203,9 +1207,9 @@
         </div>
     </div>
 
-    <!-- Scripts: Supabase removed from admin auth — Google Apps Script is the sole auth provider -->
-    <script src="/googleApiClient.js" onerror="this.onerror=null; this.src='../googleApiClient.js';"></script>
-    <script src="/admin/admin.js" onerror="this.onerror=null; this.src='admin.js';"></script>
+    <!-- Scripts: Google Apps Script API Client and Admin Controller -->
+    <script src="../googleApiClient.js"></script>
+    <script src="admin.js"></script>
 </body>
 
 </html>

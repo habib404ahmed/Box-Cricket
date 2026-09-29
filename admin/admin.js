@@ -43,6 +43,30 @@ function getTeamActiveSquadCount(team) {
     return getTeamActiveSquad(team).length;
 }
 
+// Default role base prices fallback
+const DEFAULT_ROLE_BASE_PRICES = {
+    'Batsman': 15,
+    'Bowler': 15,
+    'All-Rounder': 20,
+    'Wicket Keeper': 15,
+    'Wicketkeeper': 15,
+    'Captain': 25
+};
+
+function getDefaultBasePriceForRole(role, customPrices = null) {
+    if (customPrices && customPrices[role] !== undefined) {
+        return Number(customPrices[role]);
+    }
+    if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getDefaultBasePriceForRole === 'function') {
+        return window.GoogleTourneyApi.getDefaultBasePriceForRole(role, customPrices);
+    }
+    if (window.UniBoxDb && typeof window.UniBoxDb.getDefaultBasePriceForRole === 'function') {
+        return window.UniBoxDb.getDefaultBasePriceForRole(role, customPrices);
+    }
+    const cleanRole = String(role || '').trim();
+    return DEFAULT_ROLE_BASE_PRICES[cleanRole] || 15;
+}
+
 // DOM Elements
 const rosterTableBody = document.getElementById('roster-table-body');
 const searchInput = document.getElementById('filter-search');
@@ -92,12 +116,17 @@ const toastIcon = document.getElementById('toast-icon');
 const toastMessage = document.getElementById('toast-message');
 
 // ==============================================================================
-// ADMIN CENTRALIZED IN-MEMORY STATE (Requirement 4)
+// ADMIN CENTRALIZED IN-MEMORY STATE (Requirement 4, 16, 19)
 // ==============================================================================
 const adminState = {
     players: [],
     teams: [],
     auction: {},
+    settings: {},
+    uiState: 'loading', // 'loading' | 'success' | 'empty' | 'error'
+    errorMessage: '',
+    loading: false,
+    initialized: false,
     stats: {
         totalRegistered: 0,
         verifiedCount: 0,
@@ -108,6 +137,7 @@ const adminState = {
     },
     lastSyncTimestamp: null,
     isInitialLoaded: false,
+    syncInProgress: false,
     playersSignature: '',
     teamsSignature: '',
     lastFullSyncTime: 0
@@ -224,12 +254,68 @@ function updateLiveStatus(status, extraText = '') {
     }
 }
 
-// Initialize Admin Dashboard with non-blocking parallel shell (Requirement 2 & 3)
-let isDashboardInitialized = false;
-async function initAdminDashboard() {
-    if (isDashboardInitialized) return;
-    isDashboardInitialized = true;
+// Helper to safely escape HTML in error messages
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
+// Render error state for the entire admin dashboard with working Retry button
+function renderAdminErrorState(errorMsg) {
+    if (rosterTableBody) {
+        rosterTableBody.innerHTML = `
+            <tr>
+                <td colspan="7" class="py-12 text-center">
+                    <div class="flex flex-col items-center justify-center gap-3 max-w-md mx-auto p-6 rounded-2xl bg-rose-950/20 border border-rose-500/30">
+                        <span class="text-3xl">⚠️</span>
+                        <h3 class="text-base font-black text-white uppercase tracking-wider">ADMIN DATA UNAVAILABLE</h3>
+                        <p class="text-xs text-rose-300">Unable to retrieve tournament data from Google Sheets.</p>
+                        <p class="text-[11px] text-slate-400 font-mono">${errorMsg ? escapeHtml(errorMsg) : 'Please check your connection and try again.'}</p>
+                        <button id="admin-retry-btn" type="button" onclick="retryAdminInitialLoad()"
+                            class="mt-2 text-xs font-black px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-300 hover:to-blue-400 text-slate-950 transition-all cursor-pointer shadow-lg shadow-sky-500/20 flex items-center gap-2">
+                            <span>🔄 Retry</span>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+    if (teamsHudContainer && !allTeams.length) {
+        teamsHudContainer.innerHTML = `
+            <div class="col-span-full py-6 text-center bg-rose-950/20 border border-rose-500/30 rounded-2xl p-4">
+                <p class="text-xs text-rose-300 font-medium">Franchise data unavailable.</p>
+                <button type="button" onclick="retryAdminInitialLoad()" class="mt-2 text-[11px] font-bold px-3 py-1.5 rounded-lg bg-slate-800 text-sky-400 hover:text-white border border-slate-700 cursor-pointer">
+                    Retry
+                </button>
+            </div>
+        `;
+    }
+    updateSelectAllCheckboxState();
+    updateBulkToolbar();
+}
+
+// User-triggered Retry without reloading the entire page
+window.retryAdminInitialLoad = function() {
+    console.log('[ADMIN] Retry requested by user');
+    adminState.uiState = 'loading';
+    adminState.errorMessage = '';
+    adminState.loading = false;
+    adminState.initialized = false;
+    adminState.isInitialLoaded = false;
+    initAdminDashboard();
+};
+
+// Initialize Admin Dashboard with non-blocking parallel shell (Requirement 2 & 3)
+async function initAdminDashboard() {
+    if (adminState.initialized || adminState.loading) return;
+    adminState.loading = true;
+
+    console.log('[ADMIN] Dashboard initialization started');
     initDbStatus();
     bindEventListeners();
     initRealtimeAuctionSync();
@@ -242,17 +328,22 @@ async function initAdminDashboard() {
         teamsHudContainer.innerHTML = renderTeamsSkeletonCards();
     }
 
-    // Parallel Initial Data Load (Requirement 2)
+    console.log('[ADMIN] Initial data fetch started');
+
+    // Parallel Initial Data Load (Requirement 2 & 6)
     try {
         const playersPromise = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getPlayers === 'function')
             ? window.GoogleTourneyApi.getPlayers()
-            : (window.UniBoxDb ? window.UniBoxDb.getAllPlayers() : Promise.resolve({ data: [] }));
+            : (window.UniBoxDb ? window.UniBoxDb.getAllPlayers() : Promise.resolve({ success: false, data: [] }));
 
         const teamsPromise = (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getTeams === 'function')
             ? window.GoogleTourneyApi.getTeams()
-            : (window.UniBoxDb ? window.UniBoxDb.getAllTeams() : Promise.resolve({ data: [] }));
+            : (window.UniBoxDb ? window.UniBoxDb.getAllTeams() : Promise.resolve({ success: false, data: [] }));
 
         const [playersRes, teamsRes] = await Promise.allSettled([playersPromise, teamsPromise]);
+
+        let playersSuccess = false;
+        let playersError = null;
 
         // Process Players
         if (playersRes.status === 'fulfilled' && playersRes.value && (playersRes.value.success || Array.isArray(playersRes.value.data))) {
@@ -263,7 +354,15 @@ async function initAdminDashboard() {
             window.allPlayers = allPlayers;
             adminState.playersSignature = computePlayersSignature(allPlayers);
             lastPlayersSignature = adminState.playersSignature;
+            playersSuccess = playersRes.value.success !== false;
+            console.log(`[ADMIN] Players received: ${allPlayers.length}`);
+        } else {
+            playersError = (playersRes.status === 'fulfilled' && playersRes.value) ? (playersRes.value.error || 'Failed to retrieve athletes') : 'Players request failed';
+            console.error(`[ADMIN ERROR] Players fetch failed:`, playersError);
         }
+
+        let teamsSuccess = false;
+        let teamsError = null;
 
         // Process Teams
         if (teamsRes.status === 'fulfilled' && teamsRes.value && (teamsRes.value.success || Array.isArray(teamsRes.value.data))) {
@@ -273,23 +372,47 @@ async function initAdminDashboard() {
             allTeams = filteredTeams;
             adminState.teamsSignature = computeTeamsSignature(allTeams);
             lastTeamsSignature = adminState.teamsSignature;
+            teamsSuccess = teamsRes.value.success !== false;
+            console.log(`[ADMIN] Teams received: ${allTeams.length}`);
+        } else {
+            teamsError = (teamsRes.status === 'fulfilled' && teamsRes.value) ? (teamsRes.value.error || 'Failed to retrieve franchises') : 'Teams request failed';
+            console.error(`[ADMIN ERROR] Teams fetch failed:`, teamsError);
         }
 
-        adminState.lastFullSyncTime = Date.now();
-        adminState.isInitialLoaded = true;
+        // Section 16 & 21: Check if required data loaded or both failed
+        if (!playersSuccess && !allPlayers.length && !teamsSuccess && !allTeams.length) {
+            adminState.uiState = 'error';
+            adminState.errorMessage = playersError || teamsError || 'Unable to retrieve tournament data from Google Sheets.';
+            renderAdminErrorState(adminState.errorMessage);
+            updateLiveStatus('connection_issue');
+        } else {
+            adminState.uiState = (allPlayers.length === 0 && allTeams.length === 0) ? 'empty' : 'success';
+            adminState.isInitialLoaded = true;
+            adminState.initialized = true;
+            adminState.lastFullSyncTime = Date.now();
+            adminState.lastSync = Date.now();
 
-        // Render UI sections immediately from single in-memory state
-        updateMetrics();
-        applyFilters();
-        renderTeamBalanceHUD();
-        updateLiveStatus('live');
+            console.log('[ADMIN] Initial render started');
+            updateMetrics();
+            applyFilters();
+            renderTeamBalanceHUD();
+            console.log('[ADMIN] Initial render completed');
+
+            updateLiveStatus('live');
+
+            // Section 14: Start 1-second background sync ONLY AFTER initial load succeeds!
+            startAutoRefresh();
+        }
     } catch (initErr) {
-        console.error('[ADMIN INIT] Error during initial parallel load:', initErr);
+        console.error('[ADMIN ERROR] Error during initial parallel load:', initErr);
+        adminState.uiState = 'error';
+        adminState.errorMessage = initErr.message || 'Error during initial data load';
+        renderAdminErrorState(adminState.errorMessage);
         updateLiveStatus('connection_issue');
+    } finally {
+        adminState.loading = false;
+        hideAuthLoader();
     }
-
-    // Start background auto-refresh every 1 second (1000ms)
-    startAutoRefresh();
 }
 
 // ==============================================================================
@@ -298,12 +421,12 @@ async function initAdminDashboard() {
 // ==============================================================================
 
 /**
- * Get the active admin session from sessionStorage.
+ * Get the active admin session from sessionStorage or localStorage.
  * Returns the parsed session object or null.
  */
 function getAdminSessionData() {
     try {
-        const raw = sessionStorage.getItem('unibox_admin_session');
+        const raw = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
         if (!raw) return null;
         const s = JSON.parse(raw);
         if (!s || !s.session_token) return null;
@@ -357,11 +480,17 @@ function redirectToLogin(reason) {
  * Validate the admin session with GAS on every dashboard load.
  * Shows auth loader while validating. Redirects if invalid/expired.
  */
+let isBootValidationStarted = false;
 async function validateAndBootDashboard() {
+    if (isBootValidationStarted) return;
+    isBootValidationStarted = true;
+
     showAuthLoader();
 
     const sessionData = getAdminSessionData();
     if (!sessionData || !sessionData.session_token) {
+        console.warn('[ADMIN] No admin session found. Redirecting to login.');
+        hideAuthLoader();
         redirectToLogin('no_session');
         return;
     }
@@ -369,22 +498,32 @@ async function validateAndBootDashboard() {
     // Session older than 6 hours client-side? Redirect without server call.
     const sessionAge = Date.now() - (sessionData.timestamp || 0);
     if (sessionAge > 21600000) {
+        console.warn('[ADMIN] Session expired client-side (>6h). Redirecting.');
+        hideAuthLoader();
         redirectToLogin('client_expired');
         return;
     }
+
+    console.log('[ADMIN] Session validation started');
 
     try {
         const api = window.GoogleTourneyApi;
         if (api && typeof api.validateAdminSession === 'function') {
             const res = await api.validateAdminSession(sessionData.session_token);
-            if (!res.success || !res.authenticated) {
+            if (!res.success && !res.isTimeout) {
+                console.warn('[ADMIN] Session validation rejected by server:', res.error);
+                hideAuthLoader();
                 redirectToLogin(res.error || 'invalid');
                 return;
             }
+            if (res.isTimeout) {
+                console.warn('[ADMIN] Session validation timed out. Allowing entry based on valid client token.');
+            } else {
+                console.log('[ADMIN] Session validation completed');
+            }
         }
-        // GAS not configured or unavailable: allow access if token exists (graceful degradation)
     } catch (err) {
-        // Network failure — allow access to avoid locking out admin on transient errors
+        console.warn('[ADMIN] Session validation network exception, allowing entry:', err);
     }
 
     hideAuthLoader();
@@ -506,12 +645,14 @@ function computeTeamsSignature(teams) {
     })));
 }
 
-// 1. FAST BACKGROUND AUTO-REFRESH CONTROLLER (Requirement 7, 8, 9, 10, 11)
+// 1. FAST BACKGROUND AUTO-REFRESH CONTROLLER (Requirement 7, 8, 9, 10, 11, 14)
 async function refreshAdminData(forceRender = false) {
-    if (isRefreshingAdminData || isDeletingAllPlayers || isCreatingFranchise || isBulkApproving) return;
+    if (adminState.syncInProgress || isRefreshingAdminData || isDeletingAllPlayers || isCreatingFranchise || isBulkApproving) return;
+    if (!adminState.isInitialLoaded) return;
     if (document.visibilityState === 'hidden') return;
     if (Date.now() - lastDeleteAllTimestamp < 4000) return;
 
+    adminState.syncInProgress = true;
     isRefreshingAdminData = true;
     const currentGeneration = ++syncGeneration;
 
@@ -606,6 +747,7 @@ async function refreshAdminData(forceRender = false) {
         console.warn('[BACKGROUND REFRESH] Error refreshing admin data:', err);
         updateLiveStatus('connection_issue');
     } finally {
+        adminState.syncInProgress = false;
         isRefreshingAdminData = false;
     }
 }
@@ -1001,7 +1143,7 @@ function renderRosterTable() {
         const role = player.player_role || 'All-Rounder';
         const photo = player.photo_file_url || player.photo_data || player.photo || '';
         const status = player.status || 'Registered';
-        const defaultRolePrice = window.UniBoxDb ? window.UniBoxDb.getDefaultBasePriceForRole(role) : 15;
+        const defaultRolePrice = getDefaultBasePriceForRole(role);
         const basePrice = (player.base_price !== undefined && player.base_price !== null) ? Number(player.base_price) : defaultRolePrice;
         const isSold = player.auction_status === 'Sold' || Boolean(player.sold_to_team);
         const soldTeam = player.sold_to_team || '';
@@ -1365,7 +1507,7 @@ function openAthleteModal(playerId) {
     modalRole.textContent = player.player_role || '---';
     modalCert.textContent = player.certificate_name || player.certificate || 'None attached';
 
-    const defaultRolePrice = window.UniBoxDb ? window.UniBoxDb.getDefaultBasePriceForRole(player.player_role) : 15;
+    const defaultRolePrice = getDefaultBasePriceForRole(player.player_role);
     const basePrice = (player.base_price !== undefined && player.base_price !== null) ? Number(player.base_price) : defaultRolePrice;
     modalBasePrice.textContent = `${basePrice.toFixed(1)} Pts`;
 
@@ -1534,12 +1676,17 @@ function handleSaveBasePrices(e) {
 // Bulk apply role base prices to all players
 async function applyRolePricesToAllPlayers() {
     if (!confirm('Apply role-based base prices to all athletes in the roster?')) return;
-    const prices = window.UniBoxDb.getRoleBasePrices();
+    const api = window.GoogleTourneyApi || window.UniBoxDb;
+    const prices = (api && typeof api.getRoleBasePrices === 'function')
+        ? api.getRoleBasePrices()
+        : DEFAULT_ROLE_BASE_PRICES;
 
     for (const player of allPlayers) {
         const role = player.player_role || 'All-Rounder';
-        const rolePrice = window.UniBoxDb.getDefaultBasePriceForRole(role, prices);
-        await window.UniBoxDb.updatePlayerBasePrice(player.id || player.email, rolePrice);
+        const rolePrice = getDefaultBasePriceForRole(role, prices);
+        if (api && typeof api.updatePlayerBasePrice === 'function') {
+            await api.updatePlayerBasePrice(player.id || player.email, rolePrice);
+        }
         player.base_price = rolePrice;
     }
 
@@ -1560,7 +1707,7 @@ function openEditBasePriceModal(playerId) {
     const nameEl = document.getElementById('edit-base-player-name');
     const inputEl = document.getElementById('edit-base-price-input');
 
-    const defaultRoleBase = window.UniBoxDb ? window.UniBoxDb.getDefaultBasePriceForRole(player.player_role) : 15;
+    const defaultRoleBase = getDefaultBasePriceForRole(player.player_role);
     if (inputEl) inputEl.value = (player.base_price !== undefined && player.base_price !== null) ? Number(player.base_price) : defaultRoleBase;
 
     modal.classList.remove('hidden');
@@ -1579,7 +1726,8 @@ function closeEditBasePriceModal() {
 
 async function handleSavePlayerBasePrice(e) {
     e.preventDefault();
-    if (!activeEditBasePlayer || !window.UniBoxDb) return;
+    const api = window.GoogleTourneyApi || window.UniBoxDb;
+    if (!activeEditBasePlayer || !api) return;
 
     const inputVal = Number(document.getElementById('edit-base-price-input')?.value);
     if (isNaN(inputVal) || inputVal < 0) {
@@ -1588,7 +1736,9 @@ async function handleSavePlayerBasePrice(e) {
     }
 
     const playerId = activeEditBasePlayer.id || activeEditBasePlayer.email;
-    await window.UniBoxDb.updatePlayerBasePrice(playerId, inputVal);
+    if (typeof api.updatePlayerBasePrice === 'function') {
+        await api.updatePlayerBasePrice(playerId, inputVal);
+    }
 
     activeEditBasePlayer.base_price = inputVal;
     if (activeModalPlayer && (activeModalPlayer.id === playerId || activeModalPlayer.email === playerId)) {

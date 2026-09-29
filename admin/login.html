@@ -178,7 +178,7 @@
     </div>
 
     <!-- Scripts: Google Apps Script API client ONLY — Supabase removed from admin login -->
-    <script src="/googleApiClient.js" onerror="this.onerror=null; this.src='../googleApiClient.js';"></script>
+    <script src="../googleApiClient.js"></script>
     <script>
         const adminLoginForm = document.getElementById('admin-login-form');
         const adminIdentifier = document.getElementById('admin-identifier');
@@ -228,20 +228,31 @@
                 const result = await api.adminLogin(identifier, password);
 
                 if (result.success && result.authenticated && result.admin) {
-                    // Store session token + minimal admin info (NO password, NO hash)
-                    sessionStorage.setItem('unibox_admin_session', JSON.stringify({
+                    const sessionData = JSON.stringify({
                         session_token: result.session_token,
                         admin_id: result.admin.admin_id,
                         username: result.admin.username,
                         role: result.admin.role || 'admin',
                         timestamp: Date.now()
-                    }));
+                    });
+                    // Store session token + minimal admin info (NO password, NO hash)
+                    sessionStorage.setItem('unibox_admin_session', sessionData);
+                    localStorage.setItem('unibox_admin_session', sessionData);
 
                     // Clear sensitive field immediately after successful login
                     adminPassword.value = '';
 
-                    // Redirect to Admin Command Center
-                    window.location.replace('index.html');
+                    // Redirect to Admin Command Center (ensuring /admin/ directory)
+                    const p = window.location.pathname || '';
+                    let adminTarget = 'index.html';
+                    if (p.includes('/admin/')) {
+                        adminTarget = p.substring(0, p.indexOf('/admin/') + 7);
+                    } else if (p.endsWith('/admin') || p.endsWith('/admin/login')) {
+                        adminTarget = p.replace(/\/login$/, '') + '/';
+                    } else {
+                        adminTarget = './index.html';
+                    }
+                    window.location.replace(adminTarget);
                     return;
                 } else {
                     showError('Invalid Admin credentials.');
