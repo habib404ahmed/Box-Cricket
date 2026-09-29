@@ -1,4 +1,4 @@
-﻿// ==============================================================================
+// ==============================================================================
 // Sunstone Premier League 2026 - Tournament Admin Command Center Controller
 // ==============================================================================
 
@@ -93,13 +93,41 @@ let lastTeamsSignature = '';
 // Bulk Athlete Selection & Approval State
 let selectedAthleteIds = new Set();
 let isBulkApproving = false;
+let isBulkUnapproving = false;
 const recentlyApprovedPlayerIds = new Map(); // id/email (lowercase) -> timestamp
+const recentlyUnapprovedPlayerIds = new Map(); // id/email (lowercase) -> timestamp
+
+// Helper to determine if athlete is sold or assigned to a franchise (Requirement 11 & 20)
+function isAthleteSoldOrAssigned(player) {
+    if (!player) return false;
+    const auctionStatus = String(player.auction_status || player.auctionStatus || '').trim().toLowerCase();
+    const soldToTeam = String(player.sold_to_team || player.team_id || player.team || '').trim();
+    const soldPrice = Number(player.sold_price || player.soldPrice || 0);
+    return auctionStatus === 'sold' || Boolean(soldToTeam) || soldPrice > 0;
+}
 
 // Helper to determine if an athlete is eligible for approval (Pending / Registered / empty)
 function isAthleteEligibleForApproval(player) {
     if (!player) return false;
     const s = String(player.status || 'Registered').trim().toLowerCase();
     return s !== 'approved' && s !== 'rejected';
+}
+
+// Helper to determine if an athlete is eligible for unapproval (Approved and unsold)
+function isAthleteEligibleForUnapproval(player) {
+    if (!player) return false;
+    const s = String(player.status || '').trim().toLowerCase();
+    return s === 'approved' && !isAthleteSoldOrAssigned(player);
+}
+
+// Helper to determine if an athlete can be selected in the roster table
+function isAthleteSelectable(player) {
+    if (!player) return false;
+    const s = String(player.status || '').trim().toLowerCase();
+    if (s === 'approved') {
+        return !isAthleteSoldOrAssigned(player);
+    }
+    return s !== 'rejected';
 }
 
 // Guard set against deleted teams resurrection from in-flight/stale background polls
@@ -360,10 +388,15 @@ function normalizePlayer(player) {
     const playerRole = String(player?.player_role ?? player?.role ?? "All-Rounder").trim();
     let status = String(player?.status ?? "Registered").trim();
 
-    // Protect newly approved athletes from stale in-flight 1s background polling
+    // Protect newly approved / unapproved athletes from stale in-flight 1s background polling
     const pid = id.toLowerCase();
     const pemail = email.toLowerCase();
     if (
+        (pid && recentlyUnapprovedPlayerIds.has(pid) && Date.now() - recentlyUnapprovedPlayerIds.get(pid) < 15000) ||
+        (pemail && recentlyUnapprovedPlayerIds.has(pemail) && Date.now() - recentlyUnapprovedPlayerIds.get(pemail) < 15000)
+    ) {
+        status = 'Pending';
+    } else if (
         (pid && recentlyApprovedPlayerIds.has(pid) && Date.now() - recentlyApprovedPlayerIds.get(pid) < 15000) ||
         (pemail && recentlyApprovedPlayerIds.has(pemail) && Date.now() - recentlyApprovedPlayerIds.get(pemail) < 15000)
     ) {
@@ -1018,14 +1051,38 @@ function renderRosterTable() {
 
         // Approval Workflow Controls (Based on database state)
         // STATE 1: Registered / Pending -> Show [ ✓ APPROVE ] and [ ✕ REJECT ]
-        // STATE 2: Approved -> Mutually exclusive, both disappear
-        // STATE 3: Rejected -> Mutually exclusive, both disappear
+        // STATE 2: Approved -> Show [ ↩ UNAPPROVE ]
+        // STATE 3: Rejected -> Show [ ✓ APPROVE ]
+        // Mutually exclusive: APPROVE and UNAPPROVE are NEVER shown simultaneously
         const rawStatus = String(status || 'Registered').trim().toLowerCase();
         const isApproved = rawStatus === 'approved';
         const isRejected = rawStatus === 'rejected';
         let approvalControls = '';
 
-        if (!isApproved && !isRejected) {
+        if (isApproved) {
+            approvalControls = `
+                <!-- Quick Unapprove (Admin Only) -->
+                <button type="button" onclick="promptUnapprovePlayer('${id}')"
+                    class="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/30 hover:border-amber-400/60 hover:shadow-[0_0_14px_rgba(245,158,11,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1 shrink-0"
+                    title="Unapprove Athlete (Move back to Pending)" aria-label="Unapprove Athlete">
+                    <span class="text-xs font-bold">↩</span>
+                    <span class="text-[11px] font-bold">Unapprove</span>
+                </button>
+            `;
+        } else if (isRejected) {
+            approvalControls = `
+                <!-- Quick Approve for Rejected -->
+                <button type="button" onclick="handleStatusUpdate('${id}', 'Approved')"
+                    class="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 hover:border-emerald-400/60 hover:shadow-[0_0_14px_rgba(16,185,129,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1 shrink-0"
+                    title="Approve Athlete" aria-label="Approve Athlete">
+                    <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span class="text-[11px] font-bold">Approve</span>
+                </button>
+            `;
+        } else {
+            // Pending / Registered
             approvalControls = `
                 <!-- Quick Approve -->
                 <button type="button" onclick="handleStatusUpdate('${id}', 'Approved')"
@@ -1039,9 +1096,9 @@ function renderRosterTable() {
 
                 <!-- Quick Reject -->
                 <button type="button" onclick="handleStatusUpdate('${id}', 'Rejected')"
-                    class="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/30 hover:border-amber-400/60 hover:shadow-[0_0_14px_rgba(245,158,11,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1 shrink-0"
+                    class="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 hover:border-rose-400/60 hover:shadow-[0_0_14px_rgba(244,63,94,0.35)] hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1 shrink-0"
                     title="Reject Athlete" aria-label="Reject Athlete">
-                    <svg class="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="w-3.5 h-3.5 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                     <span class="text-[11px] font-bold">Reject</span>
@@ -1070,9 +1127,10 @@ function renderRosterTable() {
             </button>
         `;
 
-        const isEligible = isAthleteEligibleForApproval(player);
+        const isSelectable = isAthleteSelectable(player);
         const isChecked = selectedAthleteIds.has(id);
-        const checkboxCol = isEligible
+        const disabledTooltip = isSold ? 'Cannot unapprove: already assigned to a franchise' : `Status: ${status}`;
+        const checkboxCol = isSelectable
             ? `<td class="py-3.5 px-3 sm:px-4 text-center w-12 no-print">
                 <input type="checkbox"
                     data-player-id="${id}"
@@ -1083,7 +1141,7 @@ function renderRosterTable() {
             : `<td class="py-3.5 px-3 sm:px-4 text-center w-12 no-print">
                 <input type="checkbox" disabled
                     class="w-4 h-4 rounded border-slate-800 bg-slate-950/50 text-slate-700 opacity-20 cursor-not-allowed"
-                    title="Already ${status}">
+                    title="${disabledTooltip}">
                </td>`;
 
         return `
@@ -1340,6 +1398,7 @@ function updateModalBadges() {
 
     const modalApproveBtn = document.getElementById('modal-approve-btn');
     const modalRejectBtn = document.getElementById('modal-reject-btn');
+    const modalUnapproveBtn = document.getElementById('modal-unapprove-btn');
     const modalApprovedBadge = document.getElementById('modal-approved-badge');
     const modalRejectedBadge = document.getElementById('modal-rejected-badge');
 
@@ -1348,13 +1407,15 @@ function updateModalBadges() {
         modalStatusBadge.textContent = 'Approved for Matchday';
         if (modalApproveBtn) modalApproveBtn.classList.add('hidden');
         if (modalRejectBtn) modalRejectBtn.classList.add('hidden');
+        if (modalUnapproveBtn) modalUnapproveBtn.classList.remove('hidden');
         if (modalApprovedBadge) modalApprovedBadge.classList.remove('hidden');
         if (modalRejectedBadge) modalRejectedBadge.classList.add('hidden');
     } else if (isRejected) {
         modalStatusBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-400/10 text-rose-400 border border-rose-400/20 mb-1';
         modalStatusBadge.textContent = 'Clearance Rejected';
-        if (modalApproveBtn) modalApproveBtn.classList.add('hidden');
+        if (modalApproveBtn) modalApproveBtn.classList.remove('hidden');
         if (modalRejectBtn) modalRejectBtn.classList.add('hidden');
+        if (modalUnapproveBtn) modalUnapproveBtn.classList.add('hidden');
         if (modalApprovedBadge) modalApprovedBadge.classList.add('hidden');
         if (modalRejectedBadge) modalRejectedBadge.classList.remove('hidden');
     } else {
@@ -1363,6 +1424,7 @@ function updateModalBadges() {
         modalStatusBadge.textContent = 'Pending Clearance';
         if (modalApproveBtn) modalApproveBtn.classList.remove('hidden');
         if (modalRejectBtn) modalRejectBtn.classList.remove('hidden');
+        if (modalUnapproveBtn) modalUnapproveBtn.classList.add('hidden');
         if (modalApprovedBadge) modalApprovedBadge.classList.add('hidden');
         if (modalRejectedBadge) modalRejectedBadge.classList.add('hidden');
     }
@@ -2072,6 +2134,13 @@ function bindEventListeners() {
         }
     });
 
+    const modalUnapproveBtn = document.getElementById('modal-unapprove-btn');
+    modalUnapproveBtn?.addEventListener('click', () => {
+        if (activeModalPlayer) {
+            promptUnapprovePlayer(activeModalPlayer.id || activeModalPlayer.email);
+        }
+    });
+
     modalRejectBtn?.addEventListener('click', () => {
         if (activeModalPlayer) {
             handleStatusUpdate(activeModalPlayer.id || activeModalPlayer.email, 'Rejected');
@@ -2591,8 +2660,8 @@ function updateSelectAllCheckboxState() {
     const selectAllChk = document.getElementById('select-all-athletes-chk');
     if (!selectAllChk) return;
 
-    const visibleEligible = filteredPlayers.filter(isAthleteEligibleForApproval);
-    if (visibleEligible.length === 0) {
+    const visibleSelectable = filteredPlayers.filter(isAthleteSelectable);
+    if (visibleSelectable.length === 0) {
         selectAllChk.checked = false;
         selectAllChk.indeterminate = false;
         selectAllChk.disabled = true;
@@ -2601,7 +2670,7 @@ function updateSelectAllCheckboxState() {
 
     selectAllChk.disabled = false;
     let selectedVisibleCount = 0;
-    for (const p of visibleEligible) {
+    for (const p of visibleSelectable) {
         const pid = p.id || p.email;
         if (selectedAthleteIds.has(pid)) {
             selectedVisibleCount++;
@@ -2611,7 +2680,7 @@ function updateSelectAllCheckboxState() {
     if (selectedVisibleCount === 0) {
         selectAllChk.checked = false;
         selectAllChk.indeterminate = false;
-    } else if (selectedVisibleCount === visibleEligible.length) {
+    } else if (selectedVisibleCount === visibleSelectable.length) {
         selectAllChk.checked = true;
         selectAllChk.indeterminate = false;
     } else {
@@ -2621,10 +2690,10 @@ function updateSelectAllCheckboxState() {
 }
 
 function handleSelectAllAthletes(headerChk) {
-    const visibleEligible = filteredPlayers.filter(isAthleteEligibleForApproval);
+    const visibleSelectable = filteredPlayers.filter(isAthleteSelectable);
     const shouldSelect = headerChk ? headerChk.checked : false;
 
-    visibleEligible.forEach(p => {
+    visibleSelectable.forEach(p => {
         const pid = p.id || p.email;
         if (shouldSelect) {
             selectedAthleteIds.add(pid);
@@ -2662,11 +2731,13 @@ function updateBulkToolbar() {
     const badge = document.getElementById('bulk-selected-badge');
     const countLabel = document.getElementById('bulk-selected-count');
     const approveBtn = document.getElementById('bulk-approve-selected-btn');
+    const approveLabel = document.getElementById('bulk-approve-btn-label');
+    const unapproveBtn = document.getElementById('bulk-unapprove-selected-btn');
+    const unapproveLabel = document.getElementById('bulk-unapprove-btn-label');
 
-    // Only count selected athletes that are currently present and eligible
+    // Only count selected athletes that are currently present in database
     const validSelected = Array.from(selectedAthleteIds).filter(id => {
-        const p = allPlayers.find(x => (x.id || x.email) === id);
-        return p && isAthleteEligibleForApproval(p);
+        return allPlayers.some(x => (x.id || x.email) === id);
     });
 
     selectedAthleteIds = new Set(validSelected);
@@ -2674,7 +2745,29 @@ function updateBulkToolbar() {
 
     if (badge) badge.textContent = count;
     if (countLabel) countLabel.textContent = `${count} SELECTED`;
-    if (approveBtn) approveBtn.disabled = count === 0;
+
+    // Categorize selection
+    const selectedPlayers = allPlayers.filter(p => selectedAthleteIds.has(p.id || p.email));
+    const pendingCount = selectedPlayers.filter(isAthleteEligibleForApproval).length;
+    const approvedCount = selectedPlayers.filter(isAthleteEligibleForUnapproval).length;
+
+    if (approveBtn) {
+        if (pendingCount > 0) {
+            approveBtn.classList.remove('hidden');
+            if (approveLabel) approveLabel.textContent = `✓ APPROVE SELECTED (${pendingCount})`;
+        } else {
+            approveBtn.classList.add('hidden');
+        }
+    }
+
+    if (unapproveBtn) {
+        if (approvedCount > 0) {
+            unapproveBtn.classList.remove('hidden');
+            if (unapproveLabel) unapproveLabel.textContent = `↩ UNAPPROVE SELECTED (${approvedCount})`;
+        } else {
+            unapproveBtn.classList.add('hidden');
+        }
+    }
 
     if (toolbar) {
         if (count > 0) {
@@ -2795,6 +2888,232 @@ async function handleConfirmApproveSelected() {
             submitBtn.disabled = false;
             submitBtn.innerHTML = originalText;
         }
+    }
+}
+
+// ==============================================================================
+// INDIVIDUAL UNAPPROVE ATHLETE WORKFLOW (Admin Only - Req 1, 2, 3, 11, 15)
+// ==============================================================================
+let activeUnapprovePlayerId = null;
+
+function promptUnapprovePlayer(playerId) {
+    const player = allPlayers.find(p => (p.id === playerId || p.email === playerId));
+    if (!player) return;
+
+    // Requirement 11 & 20: AUCTION / SQUAD SAFETY CHECK
+    if (isAthleteSoldOrAssigned(player)) {
+        alert("Cannot unapprove this athlete because they are already assigned to a franchise. Remove them from the squad/auction first.");
+        showToast("Cannot unapprove this athlete because they are already assigned to a franchise. Remove them from the squad/auction first.", 'error');
+        return;
+    }
+
+    const s = String(player.status || '').trim().toLowerCase();
+    if (s !== 'approved') {
+        showToast("Athlete is not currently Approved.", 'warning');
+        return;
+    }
+
+    activeUnapprovePlayerId = player.id || playerId;
+
+    const nameElem = document.getElementById('unapprove-athlete-name');
+    if (nameElem) nameElem.textContent = player.full_name || player.name || 'this athlete';
+
+    const idElem = document.getElementById('unapprove-athlete-id');
+    if (idElem) idElem.textContent = `ID: ${player.id} • ${player.department || player.branch || 'SPL'}`;
+
+    const modal = document.getElementById('modal-unapprove-athlete');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+    document.body.classList.add('overflow-hidden');
+}
+
+function closeUnapproveAthleteModal() {
+    activeUnapprovePlayerId = null;
+    const modal = document.getElementById('modal-unapprove-athlete');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    document.body.classList.remove('overflow-hidden');
+}
+
+async function handleConfirmUnapproveAthlete() {
+    if (!activeUnapprovePlayerId) {
+        closeUnapproveAthleteModal();
+        return;
+    }
+
+    const playerId = activeUnapprovePlayerId;
+    const player = allPlayers.find(p => (p.id === playerId || p.email === playerId));
+    if (!player) {
+        closeUnapproveAthleteModal();
+        return;
+    }
+
+    const playerName = player.full_name || player.name || 'Athlete';
+    const submitBtn = document.getElementById('confirm-unapprove-athlete-btn');
+    const textSpan = document.getElementById('confirm-unapprove-athlete-text');
+
+    if (submitBtn) submitBtn.disabled = true;
+    if (textSpan) textSpan.textContent = 'Unapproving...';
+
+    try {
+        const api = window.GoogleTourneyApi || window.UniBoxDb;
+        if (!api || typeof api.unapprovePlayer !== 'function') {
+            throw new Error('Unapproval API not available.');
+        }
+
+        const res = await api.unapprovePlayer(playerId);
+        if (!res || res.success === false) {
+            throw new Error(res?.error || 'Unable to unapprove athlete. Please try again.');
+        }
+
+        // Apply state change immediately
+        player.status = 'Pending';
+        const cleanId = String(playerId).toLowerCase();
+        recentlyApprovedPlayerIds.delete(cleanId);
+        recentlyUnapprovedPlayerIds.set(cleanId, Date.now());
+        if (player.original_id) {
+            const orig = String(player.original_id).toLowerCase();
+            recentlyApprovedPlayerIds.delete(orig);
+            recentlyUnapprovedPlayerIds.set(orig, Date.now());
+        }
+        if (player.email) {
+            const em = String(player.email).toLowerCase();
+            recentlyApprovedPlayerIds.delete(em);
+            recentlyUnapprovedPlayerIds.set(em, Date.now());
+        }
+
+        selectedAthleteIds.delete(playerId);
+        if (player.id) selectedAthleteIds.delete(player.id);
+        if (player.email) selectedAthleteIds.delete(player.email);
+
+        if (activeModalPlayer && (activeModalPlayer.id === playerId || activeModalPlayer.email === playerId)) {
+            activeModalPlayer.status = 'Pending';
+            updateModalBadges();
+        }
+
+        closeUnapproveAthleteModal();
+        updateMetrics();
+        applyFilters();
+        updateBulkToolbar();
+        showToast(`${playerName} moved back to Pending!`, 'success');
+
+    } catch (err) {
+        console.error('Unapprove error:', err);
+        showToast(err.message || 'Unable to unapprove athlete. Please try again.', 'error');
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
+        if (textSpan) textSpan.textContent = 'Unapprove';
+    }
+}
+
+// ==============================================================================
+// BULK UNAPPROVE SELECTED WORKFLOW (Admin Only - Req 9, 14, 15)
+// ==============================================================================
+function openUnapproveSelectedModal() {
+    const selectedPlayers = allPlayers.filter(p => selectedAthleteIds.has(p.id || p.email));
+    const eligibleApproved = selectedPlayers.filter(isAthleteEligibleForUnapproval);
+    const soldSelected = selectedPlayers.filter(p => String(p.status || '').trim().toLowerCase() === 'approved' && isAthleteSoldOrAssigned(p));
+
+    if (soldSelected.length > 0 && eligibleApproved.length === 0) {
+        alert("Cannot unapprove this athlete because they are already assigned to a franchise. Remove them from the squad/auction first.");
+        showToast("Cannot unapprove: selected athlete(s) are already assigned to a franchise. Remove them from the squad/auction first.", 'error');
+        return;
+    }
+
+    if (eligibleApproved.length === 0) {
+        showToast('No eligible approved athletes selected for unapproval.', 'warning');
+        return;
+    }
+
+    const countElem = document.getElementById('unapprove-selected-confirm-count');
+    if (countElem) {
+        countElem.textContent = `${eligibleApproved.length} selected athlete${eligibleApproved.length === 1 ? '' : 's'}`;
+    }
+
+    const modal = document.getElementById('modal-unapprove-selected');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+    document.body.classList.add('overflow-hidden');
+}
+
+function closeUnapproveSelectedModal() {
+    const modal = document.getElementById('modal-unapprove-selected');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    document.body.classList.remove('overflow-hidden');
+}
+
+async function handleConfirmUnapproveSelected() {
+    if (isBulkUnapproving) return;
+
+    const selectedPlayers = allPlayers.filter(p => selectedAthleteIds.has(p.id || p.email));
+    const eligibleApproved = selectedPlayers.filter(isAthleteEligibleForUnapproval);
+
+    if (!eligibleApproved.length) {
+        closeUnapproveSelectedModal();
+        showToast('No eligible approved athletes selected for unapproval.', 'warning');
+        return;
+    }
+
+    isBulkUnapproving = true;
+    const submitBtn = document.getElementById('confirm-unapprove-selected-submit-btn');
+    const textSpan = document.getElementById('confirm-unapprove-selected-text');
+
+    if (submitBtn) submitBtn.disabled = true;
+    if (textSpan) textSpan.textContent = 'Unapproving...';
+
+    const playerIds = eligibleApproved.map(p => p.id || p.original_id);
+
+    try {
+        const api = window.GoogleTourneyApi || window.UniBoxDb;
+        if (!api || typeof api.unapprovePlayers !== 'function') {
+            throw new Error('Bulk unapproval API not available.');
+        }
+
+        const res = await api.unapprovePlayers(playerIds);
+        if (!res || res.success === false) {
+            throw new Error(res?.error || 'Unable to unapprove athletes. Please try again.');
+        }
+
+        // Apply state changes immediately
+        eligibleApproved.forEach(p => {
+            p.status = 'Pending';
+            const pid = String(p.id || '').toLowerCase();
+            const pemail = String(p.email || '').toLowerCase();
+            recentlyApprovedPlayerIds.delete(pid);
+            recentlyApprovedPlayerIds.delete(pemail);
+            recentlyUnapprovedPlayerIds.set(pid, Date.now());
+            recentlyUnapprovedPlayerIds.set(pemail, Date.now());
+            if (p.original_id) {
+                const orig = String(p.original_id).toLowerCase();
+                recentlyApprovedPlayerIds.delete(orig);
+                recentlyUnapprovedPlayerIds.set(orig, Date.now());
+            }
+            selectedAthleteIds.delete(p.id);
+            if (p.email) selectedAthleteIds.delete(p.email);
+        });
+
+        closeUnapproveSelectedModal();
+        updateMetrics();
+        applyFilters();
+        updateBulkToolbar();
+        showToast(`Unapproved ${eligibleApproved.length} selected athlete${eligibleApproved.length === 1 ? '' : 's'}!`, 'success');
+
+    } catch (err) {
+        console.error('Bulk unapprove error:', err);
+        showToast(err.message || 'Unable to unapprove athletes. Please try again.', 'error');
+    } finally {
+        isBulkUnapproving = false;
+        if (submitBtn) submitBtn.disabled = false;
+        if (textSpan) textSpan.textContent = 'Unapprove';
     }
 }
 
@@ -2931,6 +3250,12 @@ window.clearAthleteSelection = clearAthleteSelection;
 window.openApproveSelectedModal = openApproveSelectedModal;
 window.closeApproveSelectedModal = closeApproveSelectedModal;
 window.handleConfirmApproveSelected = handleConfirmApproveSelected;
+window.promptUnapprovePlayer = promptUnapprovePlayer;
+window.closeUnapproveAthleteModal = closeUnapproveAthleteModal;
+window.handleConfirmUnapproveAthlete = handleConfirmUnapproveAthlete;
+window.openUnapproveSelectedModal = openUnapproveSelectedModal;
+window.closeUnapproveSelectedModal = closeUnapproveSelectedModal;
+window.handleConfirmUnapproveSelected = handleConfirmUnapproveSelected;
 window.openApproveAllModal = openApproveAllModal;
 window.closeApproveAllModal = closeApproveAllModal;
 window.handleConfirmApproveAll = handleConfirmApproveAll;

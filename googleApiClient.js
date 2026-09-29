@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ==============================================================================
  * SUNSTONE PREMIER LEAGUE 2026 — GOOGLE BACKEND CLIENT BRIDGE
  * ==============================================================================
@@ -254,9 +254,9 @@
                 const rawAdminSession = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
                 if (rawAdminSession) {
                     const sessionObj = JSON.parse(rawAdminSession);
-                    if (sessionObj && (sessionObj.admin_token || sessionObj.role)) {
+                    if (sessionObj && (sessionObj.session_token || sessionObj.admin_token || sessionObj.role)) {
                         callerRole = 'ADMIN';
-                        adminToken = sessionObj.admin_token || ADMIN_SECRET_KEY;
+                        adminToken = sessionObj.session_token || sessionObj.admin_token || ADMIN_SECRET_KEY;
                         adminActor = sessionObj.username || sessionObj.email || 'admin';
                     }
                 }
@@ -870,12 +870,70 @@
             return { success: true, status: 'Rejected' };
         },
 
+        // --- ATHLETE STATUS: UNAPPROVE (ADMIN ONLY) ---
+        unapprovePlayer: async (playerIdOrEmail) => {
+            if (!isConfigured()) {
+                return { success: false, error: 'Google backend is not configured yet.' };
+            }
+            const query = String(playerIdOrEmail).trim();
+            const cleanId = query.replace(/-D\d+$/, '').trim();
+
+            const res = await postApi('unapprovePlayer', { playerId: cleanId, id: cleanId, player_id: cleanId });
+            if (!res.success) {
+                return { success: false, error: res.error || 'Failed to unapprove athlete in Google Sheets.' };
+            }
+
+            // Update local cache on successful Google Sheets write
+            try {
+                const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                const p = localPlayers.find(x => x.id === query || x.original_id === cleanId || x.email === query);
+                if (p) {
+                    p.status = 'Pending';
+                    localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
+                }
+            } catch (e) {}
+
+            return { success: true, status: 'Pending', data: res.data || { playerId: cleanId, status: 'Pending' } };
+        },
+
+        // --- BULK ATHLETE UNAPPROVAL (ADMIN ONLY) ---
+        unapprovePlayers: async (playerIds) => {
+            if (!Array.isArray(playerIds) || playerIds.length === 0) {
+                return { success: true, data: { unapprovedCount: 0, skippedCount: 0, blockedSold: 0, notFoundCount: 0 } };
+            }
+            if (!isConfigured()) {
+                return { success: false, error: 'Google backend is not configured yet.' };
+            }
+            const res = await postApi('unapprovePlayers', { playerIds: playerIds, player_ids: playerIds });
+            if (!res.success) {
+                return { success: false, error: res.error || 'Failed to bulk unapprove athletes in Google Sheets.' };
+            }
+
+            // Update local cache on successful Google Sheets write
+            try {
+                const localPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                const idSet = new Set(playerIds.map(x => String(x).toLowerCase()));
+                localPlayers.forEach(p => {
+                    const pid = String(p.id || p.original_id || '').toLowerCase();
+                    const pemail = String(p.email || '').toLowerCase();
+                    if (idSet.has(pid) || idSet.has(pemail)) {
+                        p.status = 'Pending';
+                    }
+                });
+                localStorage.setItem('unibox_players', JSON.stringify(localPlayers));
+            } catch (e) {}
+
+            return { success: true, data: res.data || { unapprovedCount: playerIds.length } };
+        },
+
         updatePlayerStatus: async (playerIdOrEmail, status) => {
             const cleanStatus = String(status || '').trim();
             if (cleanStatus.toLowerCase() === 'approved') {
                 return await window.GoogleTourneyApi.approvePlayer(playerIdOrEmail);
             } else if (cleanStatus.toLowerCase() === 'rejected') {
                 return await window.GoogleTourneyApi.rejectPlayer(playerIdOrEmail);
+            } else if (cleanStatus.toLowerCase() === 'pending' || cleanStatus.toLowerCase() === 'registered') {
+                return await window.GoogleTourneyApi.unapprovePlayer(playerIdOrEmail);
             }
             return await window.GoogleTourneyApi.updatePlayer({ id: playerIdOrEmail, status: cleanStatus });
         },
@@ -1285,5 +1343,8 @@
 
     // Expose to window
     window.GoogleTourneyApi = GoogleTourneyApi;
+    if (typeof window !== 'undefined' && !window.UniBoxDb) {
+        window.UniBoxDb = GoogleTourneyApi;
+    }
 
 })(typeof window !== 'undefined' ? window : this);

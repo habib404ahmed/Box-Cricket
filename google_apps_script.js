@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ==============================================================================
  * SUNSTONE PREMIER LEAGUE 2026 — GOOGLE APPS SCRIPT BACKEND API
  * ==============================================================================
@@ -822,6 +822,7 @@ function doPost(e) {
     var STRICT_ADMIN_ACTIONS = [
       'createTeam', 'createFranchise', 'registerFranchise', 'updateTeam', 'deleteTeam',
       'deleteAllPlayers', 'deletePlayer', 'deletePlayers', 'approvePlayer', 'approvePlayers', 'approveAllPlayers',
+      'unapprovePlayer', 'unapprovePlayers',
       'rejectPlayer', 'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse'
     ];
 
@@ -867,6 +868,14 @@ function doPost(e) {
 
       case 'approveAllPlayers':
         result = apiApproveAllPlayers(payload);
+        break;
+
+      case 'unapprovePlayer':
+        result = apiUnapprovePlayer(payload);
+        break;
+
+      case 'unapprovePlayers':
+        result = apiUnapprovePlayers(payload);
         break;
 
       case 'rejectPlayer':
@@ -2057,6 +2066,224 @@ function apiApproveAllPlayers(payload) {
       skippedCount: skippedCount
     },
     message: 'Approved all ' + approvedCount + ' pending athletes.'
+  };
+}
+
+/**
+ * UNAPPROVE SINGLE ATHLETE (Admin Only)
+ * Requirements:
+ * 1. Verify Admin authorization (handled by STRICT_ADMIN_ACTIONS and requireAdminSession).
+ * 2. Find athlete by unique player ID.
+ * 3. Verify current status is Approved.
+ * 4. Auction Safety: verify athlete is not already sold or assigned to a franchise.
+ * 5. Change status back to 'Pending'.
+ * 6. Do not modify unrelated fields.
+ * 7. Return success { success: true, data: { playerId, status: 'Pending' } }.
+ */
+function apiUnapprovePlayer(payload) {
+  var id = String(payload.playerId || payload.player_id || payload.id || payload.original_id || '').replace(/-D\d+$/, '').trim();
+  if (!id) {
+    return { success: false, error: 'Player ID is required.' };
+  }
+
+  var ss = getSpreadsheet();
+  var sheet = getPlayersSheet(ss);
+  if (!sheet) return { success: false, error: 'Players sheet not found.' };
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) {
+    return { success: false, error: 'Player not found with ID: ' + id };
+  }
+
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h).trim();
+  });
+
+  var idIdx = headerRow.indexOf('id');
+  if (idIdx === -1) idIdx = headerRow.indexOf('player_id');
+  var statusIdx = headerRow.indexOf('status');
+  var auctionStatusIdx = headerRow.indexOf('auction_status');
+  var soldToTeamIdx = headerRow.indexOf('sold_to_team');
+  var soldPriceIdx = headerRow.indexOf('sold_price');
+  var teamIdIdx = headerRow.indexOf('team_id');
+
+  if (idIdx === -1) return { success: false, error: 'id column not found in Players sheet.' };
+  if (statusIdx === -1) {
+    sheet.getRange(1, lastCol + 1).setValue('status');
+    statusIdx = lastCol;
+    lastCol++;
+  }
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var targetIdLower = id.toLowerCase();
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var rowId = String(row[idIdx] || '').trim();
+    if (rowId.toLowerCase() === targetIdLower) {
+      var currentStatus = statusIdx !== -1 ? String(row[statusIdx] || '').trim() : '';
+
+      // Check current status: must be Approved
+      if (currentStatus.toLowerCase() !== 'approved') {
+        return {
+          success: false,
+          error: 'Athlete status is not Approved (currently: ' + (currentStatus || 'Pending') + ').'
+        };
+      }
+
+      // Requirement 11 & 20: AUCTION SAFETY CHECK
+      // If the athlete is already assigned/sold, block Unapprove
+      var auctionStatus = auctionStatusIdx !== -1 ? String(row[auctionStatusIdx] || '').trim().toLowerCase() : '';
+      var soldToTeam = soldToTeamIdx !== -1 ? String(row[soldToTeamIdx] || '').trim() : '';
+      var teamId = teamIdIdx !== -1 ? String(row[teamIdIdx] || '').trim() : '';
+      var soldPrice = soldPriceIdx !== -1 ? Number(row[soldPriceIdx] || 0) : 0;
+
+      if (auctionStatus === 'sold' || soldToTeam !== '' || teamId !== '' || soldPrice > 0) {
+        return {
+          success: false,
+          error: 'Cannot unapprove this athlete because they are already assigned to a franchise. Remove them from the squad/auction first.'
+        };
+      }
+
+      var rowNum = i + 2;
+      sheet.getRange(rowNum, statusIdx + 1).setValue('Pending');
+
+      var auditActor = String(payload.actor || payload.admin_username || payload.username || 'ADMIN').trim();
+      Logger.log('[AUDIT] action: UNAPPROVE_PLAYER | admin: ' + auditActor + ' | player_id: ' + rowId + ' | timestamp: ' + new Date().toISOString() + ' | previous_status: ' + currentStatus + ' | new_status: Pending');
+
+      return {
+        success: true,
+        data: {
+          playerId: rowId,
+          status: 'Pending'
+        },
+        message: 'Athlete moved back to Pending.'
+      };
+    }
+  }
+
+  return { success: false, error: 'Player not found with ID: ' + id };
+}
+
+/**
+ * BULK UNAPPROVE SELECTED PLAYERS (Admin Only)
+ * Requirements:
+ * 1. Verify Admin authorization.
+ * 2. Find athletes by unique player IDs.
+ * 3. Verify status is Approved and NOT assigned/sold.
+ * 4. Move eligible athletes to Pending in a single batch.
+ * 5. Return counts: { unapprovedCount, skippedCount, blockedSold, notFoundCount, playerIds }
+ */
+function apiUnapprovePlayers(payload) {
+  var rawIds = payload.playerIds || payload.player_ids || payload.ids || [];
+  if (!Array.isArray(rawIds) || rawIds.length === 0) {
+    return {
+      success: true,
+      data: { unapprovedCount: 0, skippedCount: 0, blockedSold: 0, notFoundCount: 0, playerIds: [] },
+      message: 'No athlete IDs provided.'
+    };
+  }
+
+  var targetIds = rawIds.map(function(id) {
+    return String(id).replace(/-D\d+$/, '').trim().toLowerCase();
+  }).filter(Boolean);
+
+  var ss = getSpreadsheet();
+  var sheet = getPlayersSheet(ss);
+  if (!sheet) return { success: false, error: 'Players sheet not found.' };
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) {
+    return {
+      success: true,
+      data: { unapprovedCount: 0, skippedCount: 0, blockedSold: 0, notFoundCount: targetIds.length, playerIds: [] },
+      message: 'No players in sheet.'
+    };
+  }
+
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return String(h).trim();
+  });
+
+  var idIdx = headerRow.indexOf('id');
+  if (idIdx === -1) idIdx = headerRow.indexOf('player_id');
+  var statusIdx = headerRow.indexOf('status');
+  var auctionStatusIdx = headerRow.indexOf('auction_status');
+  var soldToTeamIdx = headerRow.indexOf('sold_to_team');
+  var soldPriceIdx = headerRow.indexOf('sold_price');
+  var teamIdIdx = headerRow.indexOf('team_id');
+
+  if (idIdx === -1) return { success: false, error: 'id column not found in Players sheet.' };
+  if (statusIdx === -1) {
+    sheet.getRange(1, lastCol + 1).setValue('status');
+    statusIdx = lastCol;
+    lastCol++;
+  }
+
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+  var unapprovedCount = 0;
+  var skippedCount = 0;
+  var blockedSold = 0;
+  var notFoundCount = 0;
+  var matchedIds = {};
+  var unapprovedIds = [];
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var rowId = String(row[idIdx] || '').trim();
+    var rowIdLower = rowId.toLowerCase();
+
+    var matchFound = false;
+    for (var t = 0; t < targetIds.length; t++) {
+      if (rowIdLower && rowIdLower === targetIds[t]) {
+        matchFound = true;
+        matchedIds[targetIds[t]] = true;
+        break;
+      }
+    }
+
+    if (matchFound) {
+      var currentStatus = statusIdx !== -1 ? String(row[statusIdx] || '').trim().toLowerCase() : '';
+      var auctionStatus = auctionStatusIdx !== -1 ? String(row[auctionStatusIdx] || '').trim().toLowerCase() : '';
+      var soldToTeam = soldToTeamIdx !== -1 ? String(row[soldToTeamIdx] || '').trim() : '';
+      var teamId = teamIdIdx !== -1 ? String(row[teamIdIdx] || '').trim() : '';
+      var soldPrice = soldPriceIdx !== -1 ? Number(row[soldPriceIdx] || 0) : 0;
+
+      if (auctionStatus === 'sold' || soldToTeam !== '' || teamId !== '' || soldPrice > 0) {
+        blockedSold++;
+      } else if (currentStatus !== 'approved') {
+        skippedCount++;
+      } else {
+        sheet.getRange(i + 2, statusIdx + 1).setValue('Pending');
+        unapprovedCount++;
+        unapprovedIds.push(rowId);
+      }
+    }
+  }
+
+  for (var k = 0; k < targetIds.length; k++) {
+    if (!matchedIds[targetIds[k]]) {
+      notFoundCount++;
+    }
+  }
+
+  var auditActor = String(payload.actor || payload.admin_username || payload.username || 'ADMIN').trim();
+  Logger.log('[AUDIT] action: BULK_UNAPPROVE_PLAYERS | admin: ' + auditActor + ' | unapproved: ' + unapprovedCount + ' | blockedSold: ' + blockedSold + ' | skipped: ' + skippedCount + ' | timestamp: ' + new Date().toISOString() + ' | new_status: Pending');
+
+  return {
+    success: true,
+    data: {
+      unapprovedCount: unapprovedCount,
+      skippedCount: skippedCount,
+      blockedSold: blockedSold,
+      notFoundCount: notFoundCount,
+      playerIds: unapprovedIds
+    },
+    message: 'Unapproved ' + unapprovedCount + ' athlete' + (unapprovedCount === 1 ? '' : 's') + '.' +
+      (blockedSold > 0 ? ' (' + blockedSold + ' skipped because already assigned/sold)' : '')
   };
 }
 
