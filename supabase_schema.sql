@@ -1,4 +1,4 @@
--- ==============================================================================
+﻿-- ==============================================================================
 -- UNIBOX LEAGUE 2026 - SUPABASE DATABASE SCHEMA
 -- Run this script in your Supabase Dashboard: SQL Editor -> New query -> Run
 -- ==============================================================================
@@ -82,7 +82,7 @@ create policy "Allow read on admins for authentication"
 
 -- Seed Default Coordinator Account (Username: admin | Secure SHA-256 password hash)
 insert into public.admins (username, email, password_hash, role)
-values ('admin', 'admin@unibox.com', '819ad992a50989f76e1e5fe6d2167e370dabae02fb8ac8b0add58c6a23134f23', 'Lead Coordinator')
+values ('admin', 'admin@unibox.com', 'bf145ff13649f1771e5196eaa41c3622d090750500bdc2c9925f51e0deec4eab', 'Lead Coordinator')
 on conflict (username) do nothing;
 
 -- ==============================================================================
