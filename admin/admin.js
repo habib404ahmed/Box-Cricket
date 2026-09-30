@@ -3000,7 +3000,6 @@ async function handleCreateFranchiseSubmit(event) {
 
     const teamName = document.getElementById('new-team-name')?.value?.trim();
     const dept = document.getElementById('new-team-dept')?.value?.trim();
-    const shortName = document.getElementById('new-team-short')?.value?.trim()?.toUpperCase();
     const ownerName = document.getElementById('new-team-owner-name')?.value?.trim();
     const ownerEmail = document.getElementById('new-team-owner-email')?.value?.trim()?.toLowerCase();
     const password = document.getElementById('new-team-password')?.value;
@@ -3015,12 +3014,6 @@ async function handleCreateFranchiseSubmit(event) {
     const ALLOWED_DEPTS = ['BTech', 'BBA', 'BCA'];
     if (!dept || !ALLOWED_DEPTS.includes(dept)) {
         showAlert('Please select a valid Department (BTech, BBA, or BCA).');
-        return;
-    }
-
-    // Validate Short Code (Optional - only validate pattern if provided)
-    if (shortName && !/^[A-Za-z0-9_-]+$/.test(shortName)) {
-        showAlert('Invalid Short Code. Please use letters, numbers, hyphens, or underscores only.');
         return;
     }
 
@@ -3053,7 +3046,6 @@ async function handleCreateFranchiseSubmit(event) {
         const payload = {
             team_name: teamName,
             name: teamName,
-            short_name: shortName,
             department: dept,
             owner_name: ownerName,
             owner_email: ownerEmail,
@@ -3106,7 +3098,6 @@ async function handleCreateFranchiseSubmit(event) {
             id: res.teamId || ('SPL-TEAM-' + Date.now().toString().slice(-4)),
             team_name: teamName,
             name: teamName,
-            short_name: shortName,
             department: dept,
             owner_name: ownerName,
             owner_email: ownerEmail,
@@ -3320,9 +3311,6 @@ function openEditFranchiseModal(teamId) {
         deptSelect.value = (['BTech', 'BBA', 'BCA'].includes(d)) ? d : 'BTech';
     }
 
-    const shortInput = document.getElementById('edit-team-short');
-    if (shortInput) shortInput.value = team.short_name || '';
-
     const ownerNameInput = document.getElementById('edit-team-owner-name');
     if (ownerNameInput) ownerNameInput.value = team.owner_name || '';
 
@@ -3431,7 +3419,6 @@ async function handleEditFranchiseSubmit(event) {
 
     const teamName = document.getElementById('edit-team-name')?.value?.trim();
     const dept = document.getElementById('edit-team-dept')?.value?.trim();
-    const shortName = document.getElementById('edit-team-short')?.value?.trim()?.toUpperCase();
     const ownerName = document.getElementById('edit-team-owner-name')?.value?.trim();
     const ownerEmail = document.getElementById('edit-team-owner-email')?.value?.trim()?.toLowerCase();
     const password = document.getElementById('edit-team-password')?.value?.trim() || '';
@@ -3449,12 +3436,6 @@ async function handleEditFranchiseSubmit(event) {
         return;
     }
 
-    // Validate Short Code (Optional - only validate pattern if provided)
-    if (shortName && !/^[A-Za-z0-9_-]+$/.test(shortName)) {
-        showAlert('Invalid Short Code. Please use letters, numbers, hyphens, or underscores only.');
-        return;
-    }
-
     if (password && password.length < 6) {
         showAlert('New password must be at least 6 characters long.');
         return;
@@ -3462,7 +3443,6 @@ async function handleEditFranchiseSubmit(event) {
 
     // Duplicate validation against OTHER teams (Section 11)
     const normTeamName = teamName.toLowerCase();
-    const normShortName = shortName.toUpperCase();
     const normOwnerEmail = ownerEmail.toLowerCase();
 
     for (const other of allTeams) {
@@ -3470,11 +3450,6 @@ async function handleEditFranchiseSubmit(event) {
         const otherName = (other.team_name || other.name || '').trim().toLowerCase();
         if (otherName === normTeamName) {
             showAlert('Another franchise already has this name.');
-            return;
-        }
-        const otherShort = (other.short_name || '').trim().toUpperCase();
-        if (otherShort && normShortName && otherShort === normShortName) {
-            showAlert('Another franchise already has this short code.');
             return;
         }
         const otherEmail = (other.owner_email || '').trim().toLowerCase();
@@ -3530,7 +3505,6 @@ async function handleEditFranchiseSubmit(event) {
         const changes = {
             team_name: teamName,
             name: teamName,
-            short_name: shortName,
             department: dept,
             owner_name: ownerName,
             owner_email: ownerEmail,
@@ -3558,7 +3532,6 @@ async function handleEditFranchiseSubmit(event) {
         const updatedData = res.team || {};
         team.team_name = updatedData.team_name || teamName;
         team.name = team.team_name;
-        team.short_name = updatedData.short_name || shortName;
         team.department = updatedData.department || dept;
         team.owner_name = updatedData.owner_name || ownerName;
         team.owner_email = updatedData.owner_email || ownerEmail;
