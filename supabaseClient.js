@@ -1,4 +1,4 @@
-﻿// ==============================================================================
+// ==============================================================================
 // Sunstone Premier League 2026 - Supabase Client Connector & Database Operations
 // ==============================================================================
 
@@ -190,12 +190,13 @@ const UniBoxDb = {
             }
         } catch (e) {}
 
-        const deletedIds = JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]');
+        try {
+            localStorage.removeItem('unibox_deleted_teams');
+        } catch (e) {}
+
         if (!teams || !Array.isArray(teams)) {
             teams = [];
             localStorage.setItem('unibox_teams', JSON.stringify(teams));
-        } else if (deletedIds.length > 0) {
-            teams = teams.filter(t => !deletedIds.includes(t.id));
         }
 
         // Attempt Supabase fetch if available
@@ -212,7 +213,6 @@ const UniBoxDb = {
                     const session = UniBoxDb.getTeamOwnerSession();
 
                     teams = data
-                        .filter(t => !deletedIds.includes(t.id))
                         .map(t => {
                         const localMatch = localTeams.find(lt => lt.id === t.id || (lt.name && lt.name.toLowerCase() === t.name.toLowerCase()));
                         const regMatch = registry[t.id] || registry[t.name.toLowerCase()] || (session && (session.teamId === t.id || session.teamName?.toLowerCase() === t.name.toLowerCase()) ? registry[session.email] : null);
@@ -318,12 +318,9 @@ const UniBoxDb = {
         teams = teams.filter(t => t.id !== teamId);
         localStorage.setItem('unibox_teams', JSON.stringify(teams));
 
-        // Track in deleted IDs list so DEFAULT_TEAMS doesn't re-seed it
-        const deletedIds = JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]');
-        if (!deletedIds.includes(teamId)) {
-            deletedIds.push(teamId);
-            localStorage.setItem('unibox_deleted_teams', JSON.stringify(deletedIds));
-        }
+        try {
+            localStorage.removeItem('unibox_deleted_teams');
+        } catch (e) {}
 
         // 2. Remove from team owners registry
         const registry = JSON.parse(localStorage.getItem('unibox_team_owners_registry') || '{}');

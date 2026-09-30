@@ -1143,12 +1143,20 @@
             }
 
             const enriched = teams.map(t => normalizeTeam(t, players)).filter(Boolean);
+            const teamMap = new Map();
+            for (const t of enriched) {
+                if (t && t.id) {
+                    teamMap.set(String(t.id).trim(), t);
+                }
+            }
+            const dedupedTeams = Array.from(teamMap.values());
+
             if (fetchSuccess) {
-                _cachedTeams = enriched;
+                _cachedTeams = dedupedTeams;
                 try {
-                    localStorage.setItem('unibox_teams', JSON.stringify(enriched));
+                    localStorage.setItem('unibox_teams', JSON.stringify(dedupedTeams));
                 } catch (e) {}
-                return { success: true, data: enriched, error: null, source: 'google_sheets' };
+                return { success: true, data: dedupedTeams, error: null, source: 'google_sheets' };
             }
 
             if (_cachedTeams && _cachedTeams.length > 0) {
@@ -1352,10 +1360,7 @@
 
             // Remove from local cache on confirmed Google Sheets deletion
             try {
-                const deletedSet = new Set(JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]'));
-                deletedSet.add(cleanId);
-                localStorage.setItem('unibox_deleted_teams', JSON.stringify([...deletedSet]));
-
+                localStorage.removeItem('unibox_deleted_teams');
                 let teams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
                 teams = teams.filter(t => String(t.id).trim() !== cleanId && String(t.team_name || t.name).trim() !== cleanId);
                 localStorage.setItem('unibox_teams', JSON.stringify(teams));

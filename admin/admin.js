@@ -193,16 +193,13 @@ function isAthleteSelectable(player) {
     return s !== 'rejected';
 }
 
-// Guard set against deleted teams resurrection from in-flight/stale background polls
-const pendingOrDeletedTeamIds = new Set(
-    (function() {
-        try {
-            return JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]').map(id => String(id).trim());
-        } catch (e) {
-            return [];
-        }
-    })()
-);
+// Section 2: Never use localStorage as team source of truth. Purge any legacy deleted teams blacklist.
+try {
+    localStorage.removeItem('unibox_deleted_teams');
+} catch (e) {}
+
+// In-memory guard set against deleted teams resurrection ONLY during active in-flight delete operations
+const inFlightDeletingTeamIds = new Set();
 
 // Skeletons for independent, non-blocking section rendering (Requirement 3)
 function renderRosterSkeletonRows() {
@@ -374,16 +371,28 @@ async function initAdminDashboard() {
         let teamsSuccess = false;
         let teamsError = null;
 
-        // Process Teams
+        // Process Teams — Deduplicate strictly by team_id (Sections 11 & 12)
         if (teamsResVal && (teamsResVal.success || Array.isArray(teamsResVal.data))) {
             const rawTeams = Array.isArray(teamsResVal.data) ? teamsResVal.data : [];
-            const filteredTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
-            adminState.teams = filteredTeams;
-            allTeams = filteredTeams;
+            const teamMap = new Map();
+            for (const t of rawTeams) {
+                if (t && t.id) {
+                    const tid = String(t.id).trim();
+                    if (!inFlightDeletingTeamIds.has(tid)) {
+                        teamMap.set(tid, t);
+                    }
+                }
+            }
+            const authoritativeTeams = Array.from(teamMap.values());
+            adminState.teams = authoritativeTeams;
+            allTeams = authoritativeTeams;
             adminState.teamsSignature = computeTeamsSignature(allTeams);
             lastTeamsSignature = adminState.teamsSignature;
             teamsSuccess = teamsResVal.success !== false;
-            console.log(`[ADMIN] Teams received: ${allTeams.length}`);
+            console.log(`[TEAM SYNC] Source: Google Sheets | Team count: ${allTeams.length}`);
+            allTeams.forEach(t => {
+                console.log(`[TEAM] id=${t.id} name=${t.team_name || t.name} owner=${t.owner_name} status=${t.status}`);
+            });
         } else {
             teamsError = teamsResVal ? (teamsResVal.error || 'Failed to retrieve franchises') : 'Teams request failed';
             console.error(`[ADMIN ERROR] Teams fetch failed:`, teamsError);
@@ -759,10 +768,19 @@ async function refreshAdminData(forceRender = false) {
             }
         }
 
-        // Ingest teams if fetched
+        // Ingest teams if fetched — Google Sheets is the single source of truth (Deduplicate strictly by team_id)
         if (teamsResVal && (teamsResVal.success || Array.isArray(teamsResVal.data))) {
             const rawTeams = Array.isArray(teamsResVal.data) ? teamsResVal.data : [];
-            const newTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
+            const teamMap = new Map();
+            for (const t of rawTeams) {
+                if (t && t.id) {
+                    const tid = String(t.id).trim();
+                    if (!inFlightDeletingTeamIds.has(tid)) {
+                        teamMap.set(tid, t);
+                    }
+                }
+            }
+            const newTeams = Array.from(teamMap.values());
             const newTeamSig = computeTeamsSignature(newTeams);
 
             if (forceRender || hasPlayersChanged || newTeamSig !== adminState.teamsSignature) {
@@ -771,6 +789,11 @@ async function refreshAdminData(forceRender = false) {
                 adminState.teams = newTeams;
                 allTeams = newTeams;
                 renderTeamBalanceHUD();
+                if (statDepts) statDepts.textContent = allTeams.length;
+                console.log(`[TEAM SYNC] Source: Google Sheets | Team count: ${allTeams.length}`);
+                allTeams.forEach(t => {
+                    console.log(`[TEAM] id=${t.id} name=${t.team_name || t.name} owner=${t.owner_name} status=${t.status}`);
+                });
             }
         }
 
@@ -804,25 +827,37 @@ function initDbStatus() {
 // 3. Load Teams Data & Live Leftover Balance HUD
 async function loadTeamsData(providedPlayers = null) {
     try {
+        let rawTeams = [];
         if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getTeams === 'function') {
             const res = await window.GoogleTourneyApi.getTeams(providedPlayers || allPlayers);
             if (res.success && Array.isArray(res.data)) {
-                allTeams = res.data.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
-                adminState.teams = allTeams;
+                rawTeams = res.data;
             }
         } else if (window.UniBoxDb) {
             const { data } = await window.UniBoxDb.getAllTeams(providedPlayers || allPlayers);
-            const rawTeams = Array.isArray(data) ? data : [];
-            allTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
-            adminState.teams = allTeams;
-        } else {
-            const rawTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
-            allTeams = rawTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
-            adminState.teams = allTeams;
+            if (Array.isArray(data)) rawTeams = data;
         }
+
+        const teamMap = new Map();
+        for (const t of rawTeams) {
+            if (t && t.id) {
+                const tid = String(t.id).trim();
+                if (!inFlightDeletingTeamIds.has(tid)) {
+                    teamMap.set(tid, t);
+                }
+            }
+        }
+        allTeams = Array.from(teamMap.values());
+        adminState.teams = allTeams;
+        console.log(`[TEAM SYNC] Source: Google Sheets | Team count: ${allTeams.length}`);
+        allTeams.forEach(t => {
+            console.log(`[TEAM] id=${t.id} name=${t.team_name || t.name} owner=${t.owner_name} status=${t.status}`);
+        });
+
         lastTeamsSignature = computeTeamsSignature(allTeams);
         adminState.teamsSignature = lastTeamsSignature;
         renderTeamBalanceHUD();
+        if (statDepts) statDepts.textContent = allTeams.length;
     } catch (err) {
         console.error('Error loading team data:', err);
         renderTeamBalanceError(err);
@@ -2206,25 +2241,19 @@ async function handleDeleteTeam(rawTeamId, btnElement = null) {
     const teamBackup = { ...team };
     const originalIndex = allTeams.indexOf(team);
 
-    // 2. Immediately remove from local state and UI (Optimistic UI)
-    pendingOrDeletedTeamIds.add(String(team.id).trim());
-    if (cleanTeamId) pendingOrDeletedTeamIds.add(cleanTeamId);
+    // 2. Immediately remove from local state and UI (Optimistic UI - in-memory only)
+    inFlightDeletingTeamIds.add(String(team.id).trim());
+    if (cleanTeamId) inFlightDeletingTeamIds.add(cleanTeamId);
 
     try {
-        const deletedSet = new Set(JSON.parse(localStorage.getItem('unibox_deleted_teams') || '[]'));
-        deletedSet.add(String(team.id).trim());
-        if (cleanTeamId) deletedSet.add(cleanTeamId);
-        localStorage.setItem('unibox_deleted_teams', JSON.stringify([...deletedSet]));
+        localStorage.removeItem('unibox_deleted_teams');
     } catch (e) {}
 
     allTeams = allTeams.filter(t => 
         String(t.id).trim() !== String(team.id).trim() && 
         String(t.id).trim() !== cleanTeamId
     );
-
-    try {
-        localStorage.setItem('unibox_teams', JSON.stringify(allTeams));
-    } catch (e) {}
+    adminState.teams = allTeams;
 
     lastTeamsSignature = computeTeamsSignature(allTeams);
     renderTeamBalanceHUD();
@@ -2249,18 +2278,25 @@ async function handleDeleteTeam(rawTeamId, btnElement = null) {
             throw new Error(res.error || 'Failed to delete franchise team from Google Sheets.');
         }
 
+        // On success, Google Sheets is the source of truth. Release after brief buffer
+        setTimeout(() => {
+            inFlightDeletingTeamIds.delete(String(team.id).trim());
+            if (cleanTeamId) inFlightDeletingTeamIds.delete(cleanTeamId);
+        }, 5000);
+
         refreshTeamsInBackground();
 
     } catch (err) {
         console.error('Delete team failed on backend, rolling back:', err);
         // Rollback optimistic deletion
-        pendingOrDeletedTeamIds.delete(String(team.id).trim());
-        if (cleanTeamId) pendingOrDeletedTeamIds.delete(cleanTeamId);
+        inFlightDeletingTeamIds.delete(String(team.id).trim());
+        if (cleanTeamId) inFlightDeletingTeamIds.delete(cleanTeamId);
         if (originalIndex >= 0) {
             allTeams.splice(originalIndex, 0, teamBackup);
         } else {
             allTeams.push(teamBackup);
         }
+        adminState.teams = allTeams;
         lastTeamsSignature = computeTeamsSignature(allTeams);
         renderTeamBalanceHUD();
         if (statDepts) statDepts.textContent = allTeams.length;
@@ -2292,18 +2328,28 @@ async function refreshTeamsInBackground() {
         }
 
         if (latestTeams.length > 0) {
-            // Keep local UI: filter out any deleted teams
-            allTeams = latestTeams.filter(t => !pendingOrDeletedTeamIds.has(String(t.id).trim()));
-            try {
-                localStorage.setItem('unibox_teams', JSON.stringify(allTeams));
-            } catch (e) {}
+            // Deduplicate strictly by team_id and respect Google Sheets as source of truth
+            const teamMap = new Map();
+            for (const t of latestTeams) {
+                if (t && t.id) {
+                    const tid = String(t.id).trim();
+                    if (!inFlightDeletingTeamIds.has(tid)) {
+                        teamMap.set(tid, t);
+                    }
+                }
+            }
+            allTeams = Array.from(teamMap.values());
+            adminState.teams = allTeams;
+            console.log(`[TEAM SYNC] Source: Google Sheets | Team count: ${allTeams.length}`);
+            allTeams.forEach(t => {
+                console.log(`[TEAM] id=${t.id} name=${t.team_name || t.name} owner=${t.owner_name} status=${t.status}`);
+            });
             lastTeamsSignature = computeTeamsSignature(allTeams);
             renderTeamBalanceHUD();
             if (statDepts) statDepts.textContent = allTeams.length;
         }
     } catch (error) {
         console.warn('Background team refresh failed:', error);
-        // Keep the already-updated UI. Do not restore the deleted team because of a temporary refresh failure.
     }
 }
 
@@ -2883,13 +2929,21 @@ async function handleCreateFranchiseSubmit(event) {
         showToast(`✓ FRANCHISE CREATED: "${teamName}" (Login ID: ${ownerEmail})`, 'success');
 
         // Immediately update Admin state and render HUD without waiting (Requirement 11 & 12)
-        if (createdTeam && !allTeams.some(t => t.id === createdTeam.id || (t.team_name && t.team_name.toLowerCase() === teamName.toLowerCase()))) {
-            allTeams.push(createdTeam);
+        if (createdTeam && createdTeam.id) {
+            const teamMap = new Map();
+            for (const t of allTeams) {
+                if (t && t.id) teamMap.set(String(t.id).trim(), t);
+            }
+            teamMap.set(String(createdTeam.id).trim(), createdTeam);
+            allTeams = Array.from(teamMap.values());
             adminState.teams = allTeams;
         }
+        lastTeamsSignature = computeTeamsSignature(allTeams);
+        adminState.teamsSignature = lastTeamsSignature;
         renderTeamBalanceHUD();
+        if (statDepts) statDepts.textContent = allTeams.length;
 
-        // Requirement 10 & 13: Background team refresh WITHOUT awaiting it!
+        // Requirement 10 & 13: Background team refresh to reconcile with authoritative Google Sheets
         setTimeout(() => {
             loadTeamsData();
         }, 1000);
