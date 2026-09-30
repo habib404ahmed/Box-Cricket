@@ -1208,7 +1208,7 @@
                 purse: Number(franchiseData.purse) || 1000,
                 budget: Number(franchiseData.purse) || 1000,
                 logo: franchiseData.logo || '🏏',
-                department: franchiseData.department || franchiseData.short_name || 'Campus',
+                department: franchiseData.department || 'BTech',
                 role: 'ADMIN',
                 admin_token: adminSession.admin_token || ADMIN_SECRET_KEY,
                 actor: adminSession.username || adminSession.email || 'admin',
@@ -1238,6 +1238,7 @@
                 team_name: rawTeam.team_name || rawTeam.name || teamPayload.team_name,
                 name: rawTeam.name || rawTeam.team_name || teamPayload.team_name,
                 short_name: rawTeam.short_name || teamPayload.short_name,
+                department: rawTeam.department || teamPayload.department || 'BTech',
                 owner_name: rawTeam.owner_name || teamPayload.owner_name,
                 owner_email: rawTeam.owner_email || teamPayload.owner_email,
                 purse: Number(rawTeam.purse || teamPayload.purse || 1000),
@@ -1250,7 +1251,9 @@
                 squad_count: 0,
                 squad: [],
                 status: 'Active',
-                logo: rawTeam.logo || teamPayload.logo || '🏏',
+                logo_file_id: rawTeam.logo_file_id || '',
+                logo_file_url: rawTeam.logo_file_url || '',
+                logo: rawTeam.logo_file_url || rawTeam.logo || teamPayload.logo || '🏏',
                 created_at: rawTeam.created_at || new Date().toISOString()
             };
 
@@ -1370,6 +1373,48 @@
                 success: true,
                 data: res.data || { deleted: true, teamId: cleanId }
             };
+        },
+
+        // --- TEAM LOGO UPLOAD TO GOOGLE DRIVE ---
+        uploadTeamLogo: async (params) => {
+            const teamId = params.teamId || params.team_id || params.id;
+            const fileData = params.fileData || params.file_data || params.logoData || params.logo_data || params.logo;
+            if (!teamId || !fileData) {
+                return { success: false, error: 'Team ID and logo file data are required.' };
+            }
+
+            if (!isConfigured()) {
+                return { success: false, error: 'Google backend is not configured yet.' };
+            }
+
+            let adminSession = null;
+            try {
+                const raw = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+                if (raw) adminSession = JSON.parse(raw);
+            } catch (e) {}
+
+            const payload = {
+                action: 'uploadTeamLogo',
+                team_id: String(teamId).trim(),
+                file_data: fileData,
+                role: 'ADMIN',
+                admin_token: (adminSession && adminSession.admin_token) || ADMIN_SECRET_KEY,
+                actor: (adminSession && (adminSession.username || adminSession.email)) || 'admin'
+            };
+
+            const res = await postApi('uploadTeamLogo', payload, 45000);
+            if (res && res.success && res.logo_file_url) {
+                // Update in-memory cached teams if present
+                if (_cachedTeams) {
+                    const match = _cachedTeams.find(t => t.id === teamId);
+                    if (match) {
+                        match.logo_file_id = res.logo_file_id;
+                        match.logo_file_url = res.logo_file_url;
+                        match.logo = res.logo_file_url;
+                    }
+                }
+            }
+            return res;
         },
 
         // --- AUCTION PURCHASE & REVOCATION ---

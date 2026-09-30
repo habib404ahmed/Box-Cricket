@@ -95,6 +95,7 @@ var HEADERS = {
     'id',
     'team_name',
     'short_name',
+    'department',
     'owner_name',
     'owner_email',
     'logo_file_id',
@@ -554,7 +555,7 @@ function ensureTeamSheetHeaders(sheet) {
     return HEADERS.TEAMS;
   }
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h).trim(); });
-  var needed = ['owner_name', 'owner_email'];
+  var needed = ['owner_name', 'owner_email', 'department', 'logo_file_id', 'logo_file_url'];
   var modified = false;
   needed.forEach(function(col) {
     if (headers.indexOf(col) === -1) {
@@ -960,6 +961,10 @@ function doPost(e) {
         result = apiUploadFileAndUpdatePlayer(payload, CONFIG.FOLDERS.CERTIFICATES, 'athlete_cert', 'certificate');
         break;
 
+      case 'uploadTeamLogo':
+        result = apiUploadTeamLogo(payload);
+        break;
+
       default:
         result = { success: false, error: 'Unknown POST action: ' + action };
         break;
@@ -1348,6 +1353,10 @@ function apiGetTeams(params) {
     team.name = teamName;
     team.team_name = teamName;
     team.short_name = String(team.short_name || teamName.substring(0, 4).toUpperCase()).trim();
+    team.department = String(team.department || team.short_name || '').trim();
+    team.logo_file_id = String(team.logo_file_id || '').trim();
+    team.logo_file_url = String(team.logo_file_url || (String(team.logo || '').startsWith('http') ? team.logo : '')).trim();
+    team.logo = team.logo_file_url || team.logo || '🏏';
     team.owner_name = String(team.owner_name || '').trim();
     team.owner_email = String(team.owner_email || '').trim().toLowerCase();
     team.purse = purse;
@@ -1457,6 +1466,9 @@ function saveBase64ToDrive(base64Data, folderName, fileNamePrefix) {
     } else if (meta.indexOf('image/webp') !== -1) {
       mimeType = 'image/webp';
       ext = 'webp';
+    } else if (meta.indexOf('image/svg') !== -1) {
+      mimeType = 'image/svg+xml';
+      ext = 'svg';
     } else if (meta.indexOf('application/pdf') !== -1) {
       mimeType = 'application/pdf';
       ext = 'pdf';
@@ -1589,6 +1601,106 @@ function apiUploadFileAndUpdatePlayer(payload, folderName, prefix, fileType) {
     success: true,
     file_id: saved.fileId,
     file_url: saved.fileUrl
+  };
+}
+
+/**
+ * SECTION 9 — UPLOAD TEAM LOGO TO GOOGLE DRIVE & UPDATE TEAMS SHEET
+ *
+ * Requirements:
+ * 1. Authenticate the Admin session.
+ * 2. Validate team_id.
+ * 3. Validate file type (PNG, JPG, WEBP, SVG).
+ * 4. Validate file size (<= 5 MB).
+ * 5. Upload image to configured Google Drive folder (CONFIG.FOLDERS.LOGOS).
+ * 6. Obtain file_id, file_url.
+ * 7. Update correct Teams row (logo_file_id, logo_file_url, logo).
+ * 8. Return { success: true, team_id, logo_file_id, logo_file_url }.
+ */
+function apiUploadTeamLogo(payload) {
+  if (!isAdminAuthorized(payload)) {
+    Logger.log('[AUTH REJECTED] apiUploadTeamLogo called without valid Admin credentials.');
+    return { success: false, error: 'Unauthorized: Admin access required' };
+  }
+
+  var teamId = String(payload.team_id || payload.teamId || payload.id || '').trim();
+  if (!teamId) {
+    return { success: false, error: 'Team ID is required for logo upload.' };
+  }
+
+  var fileData = payload.file_data || payload.logo_data || payload.fileData || payload.logo;
+  if (!fileData || typeof fileData !== 'string') {
+    return { success: false, error: 'No team logo file data provided.' };
+  }
+
+  // Validate approximate base64 length for 5 MB (5 MB binary ~= 7.5 MB base64 string)
+  if (fileData.length > 7500000) {
+    return { success: false, error: 'Team logo must be 5 MB or smaller.' };
+  }
+
+  var parts = fileData.split(',');
+  var meta = (parts[0] || '').toLowerCase();
+  var isAllowedMime = meta.indexOf('image/png') !== -1 ||
+                      meta.indexOf('image/jpeg') !== -1 ||
+                      meta.indexOf('image/jpg') !== -1 ||
+                      meta.indexOf('image/webp') !== -1 ||
+                      meta.indexOf('image/svg') !== -1;
+  if (!isAllowedMime) {
+    return { success: false, error: 'Please upload PNG, JPG, WEBP, or SVG.' };
+  }
+
+  var saved = saveBase64ToDrive(fileData, CONFIG.FOLDERS.LOGOS, 'team_logo_' + teamId);
+  if (!saved || !saved.fileId) {
+    return { success: false, error: 'Failed to upload team logo to Google Drive.' };
+  }
+
+  // Update Teams sheet row by team_id
+  var ss = getSpreadsheet();
+  var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
+  var teamsHeaders = ensureTeamSheetHeaders(teamsSheet);
+  var lastRow = teamsSheet.getLastRow();
+  var lastCol = teamsSheet.getLastColumn();
+
+  if (lastRow > 1) {
+    var idColIdx = teamsHeaders.indexOf('id');
+    var logoIdColIdx = teamsHeaders.indexOf('logo_file_id');
+    var logoUrlColIdx = teamsHeaders.indexOf('logo_file_url');
+    var logoColIdx = teamsHeaders.indexOf('logo');
+
+    if (logoIdColIdx === -1) {
+      teamsSheet.getRange(1, lastCol + 1).setValue('logo_file_id');
+      logoIdColIdx = lastCol;
+      lastCol++;
+    }
+    if (logoUrlColIdx === -1) {
+      teamsSheet.getRange(1, lastCol + 1).setValue('logo_file_url');
+      logoUrlColIdx = lastCol;
+      lastCol++;
+    }
+
+    var values = teamsSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    for (var i = 0; i < values.length; i++) {
+      var rowId = String(values[i][idColIdx] || '').trim();
+      if (rowId.toLowerCase() === teamId.toLowerCase()) {
+        var rowNum = i + 2;
+        teamsSheet.getRange(rowNum, logoIdColIdx + 1).setValue(saved.fileId);
+        teamsSheet.getRange(rowNum, logoUrlColIdx + 1).setValue(saved.fileUrl);
+        if (logoColIdx !== -1) {
+          teamsSheet.getRange(rowNum, logoColIdx + 1).setValue(saved.fileUrl);
+        }
+        SpreadsheetApp.flush();
+        Logger.log('[LOGO UPLOAD] Updated logo for team ' + teamId + ' -> ' + saved.fileUrl);
+        break;
+      }
+    }
+  }
+
+  return {
+    success: true,
+    team_id: teamId,
+    logo_file_id: saved.fileId,
+    logo_file_url: saved.fileUrl,
+    message: 'Team logo uploaded and updated successfully.'
   };
 }
 
@@ -2487,7 +2599,16 @@ function apiRegisterFranchise(payload) {
   var teamName = String(payload.team_name || payload.customTeamName || payload.name || '').trim();
   var rawPassword = String(payload.password || payload.rawPassword || '');
   var passwordHash = String(payload.password_hash || '');
-  var department = String(payload.department || payload.branch || 'B.Tech').trim();
+  
+  // Section 13: Strict Department Backend Validation (Allowed: BTech, BBA, BCA)
+  var allowedDepartments = ["BTech", "BBA", "BCA"];
+  var rawDept = String(payload.department || payload.branch || '').trim();
+  if (rawDept === 'B.Tech') rawDept = 'BTech';
+  if (!rawDept || allowedDepartments.indexOf(rawDept) === -1) {
+    return { success: false, error: 'INVALID_DEPARTMENT' };
+  }
+  var department = rawDept;
+
   var logo = String(payload.logo || '🏏').trim();
   var purse = Number(payload.purse || payload.budget || payload.total_budget || 1000);
   var shortName = String(payload.short_name || teamName.substring(0, 4).toUpperCase()).trim();
@@ -2594,10 +2715,11 @@ function apiRegisterFranchise(payload) {
     if (col === 'id') teamRow.push(teamId);
     else if (col === 'team_name') teamRow.push(teamName);
     else if (col === 'short_name') teamRow.push(shortName);
+    else if (col === 'department') teamRow.push(department);
     else if (col === 'owner_name') teamRow.push(ownerName);
     else if (col === 'owner_email') teamRow.push(ownerEmail);
-    else if (col === 'logo_file_id') teamRow.push('');
-    else if (col === 'logo_file_url' || col === 'logo') teamRow.push(logo);
+    else if (col === 'logo_file_id') teamRow.push(String(payload.logo_file_id || ''));
+    else if (col === 'logo_file_url' || col === 'logo') teamRow.push(String(payload.logo_file_url || logo));
     else if (col === 'purse') teamRow.push(purse);
     else if (col === 'total_spent') teamRow.push(0);
     else if (col === 'remaining_purse') teamRow.push(purse);
@@ -2635,8 +2757,11 @@ function apiRegisterFranchise(payload) {
     team_name: teamName,
     name: teamName,
     short_name: shortName,
+    department: department,
     owner_name: ownerName,
     owner_email: ownerEmail,
+    logo_file_id: String(payload.logo_file_id || ''),
+    logo_file_url: String(payload.logo_file_url || (logo.startsWith('http') ? logo : '')),
     purse: purse,
     total_budget: purse,
     total_spent: 0,
@@ -2646,8 +2771,7 @@ function apiRegisterFranchise(payload) {
     player_count: 0,
     squad_count: 0,
     squad: [],
-    department: department,
-    logo: logo,
+    logo: payload.logo_file_url || logo || '🏏',
     status: 'Active',
     created_at: now
   };

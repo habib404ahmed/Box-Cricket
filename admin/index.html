@@ -787,6 +787,15 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
+                        <input type="file" id="change-squad-team-logo-file" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden" onchange="handleChangeTeamLogoFromModal(event)">
+                        <button type="button" onclick="document.getElementById('change-squad-team-logo-file').click()"
+                            class="text-xs font-bold text-sky-400 hover:text-white bg-sky-500/10 hover:bg-sky-500/25 border border-sky-500/30 px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                            title="Upload new logo for this Franchise">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                            <span>Logo</span>
+                        </button>
                         <button type="button" id="team-modal-delete-btn" onclick="handleDeleteTeamFromModal()"
                             class="text-xs font-bold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500 border border-rose-500/20 px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
                             title="Delete this Franchise">
@@ -1128,23 +1137,73 @@
                                 class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-sky-500 outline-none">
                         </div>
                         <div>
-                            <label for="new-team-short" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Short Code / Dept *</label>
-                            <input id="new-team-short" type="text" placeholder="e.g. TTI / CSE" maxlength="8" required
-                                class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs uppercase font-mono focus:ring-2 focus:ring-sky-500 outline-none">
+                            <label for="new-team-dept" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Department *</label>
+                            <select id="new-team-dept" required
+                                class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-sky-500 outline-none cursor-pointer">
+                                <option value="" disabled selected>Select Department</option>
+                                <option value="BTech">BTech</option>
+                                <option value="BBA">BBA</option>
+                                <option value="BCA">BCA</option>
+                            </select>
                         </div>
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
+                            <label for="new-team-short" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Short Code *</label>
+                            <input id="new-team-short" type="text" placeholder="e.g. TIT" maxlength="8" required
+                                class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs uppercase font-mono focus:ring-2 focus:ring-sky-500 outline-none">
+                        </div>
+                        <div>
                             <label for="new-team-owner-name" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Owner Full Name *</label>
                             <input id="new-team-owner-name" type="text" placeholder="e.g. Habib Owner" required
                                 class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-sky-500 outline-none">
                         </div>
-                        <div>
-                            <label for="new-team-logo" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Team Logo Emoji</label>
-                            <input id="new-team-logo" type="text" value="🏏" maxlength="4"
-                                class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs text-center focus:ring-2 focus:ring-sky-500 outline-none">
+                    </div>
+
+                    <!-- Team Logo Upload Component (Sections 3, 4, 5) -->
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Team Logo</label>
+                        <!-- Hidden real file input -->
+                        <input type="file" id="new-team-logo-file" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden" onchange="handleTeamLogoFileSelect(event)">
+                        
+                        <!-- Upload Dropzone (Default state) -->
+                        <div id="team-logo-dropzone" onclick="document.getElementById('new-team-logo-file').click()"
+                            class="border-2 border-dashed border-slate-700 hover:border-sky-500/60 bg-[#050816]/70 hover:bg-slate-900/50 rounded-2xl p-4 text-center cursor-pointer transition-all duration-200 group">
+                            <div class="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform">
+                                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                            </div>
+                            <p class="text-xs font-bold text-white group-hover:text-sky-300 transition-colors">Upload Team Logo</p>
+                            <p class="text-[10px] text-slate-400 mt-0.5">PNG • JPG • WEBP • SVG (Max 5 MB)</p>
                         </div>
+
+                        <!-- Preview State (Hidden by default) -->
+                        <div id="team-logo-preview-box" class="hidden p-3 rounded-2xl bg-slate-950/80 border border-sky-500/30 flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <div class="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 p-1 flex items-center justify-center shrink-0 overflow-hidden">
+                                    <img id="team-logo-preview-img" src="" alt="Logo Preview" class="w-full h-full object-contain">
+                                </div>
+                                <div class="min-w-0">
+                                    <p id="team-logo-filename" class="text-xs font-bold text-white truncate">logo.png</p>
+                                    <p id="team-logo-filesize" class="text-[10px] text-slate-400 font-mono">0 KB</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button type="button" onclick="document.getElementById('new-team-logo-file').click()"
+                                    class="text-[11px] font-bold text-sky-400 hover:text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 px-3 py-1.5 rounded-lg border border-sky-500/20 transition-all cursor-pointer">
+                                    Change Logo
+                                </button>
+                                <button type="button" onclick="clearTeamLogoUpload()"
+                                    class="text-[11px] font-bold text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 px-2.5 py-1.5 rounded-lg border border-rose-500/20 transition-all cursor-pointer" title="Remove Logo">
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- File Error Message -->
+                        <p id="team-logo-error" class="hidden text-[11px] text-rose-400 font-semibold mt-1.5"></p>
                     </div>
 
                     <!-- Owner Credentials Box -->

@@ -242,9 +242,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderHeader() {
         if (!currentTeam) return;
 
-        if (headerLogo) headerLogo.textContent = currentTeam.logo || '🏏';
+        if (headerLogo) {
+            const logoUrl = currentTeam.logo_file_url || (currentTeam.logo && String(currentTeam.logo).startsWith('http') ? currentTeam.logo : '');
+            if (logoUrl) {
+                headerLogo.innerHTML = `<img src="${logoUrl}" alt="${currentTeam.team_name || 'Logo'}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="this.parentElement.textContent='🏏';">`;
+            } else {
+                headerLogo.textContent = currentTeam.logo || '🏏';
+            }
+        }
         if (headerName) headerName.textContent = currentTeam.team_name || currentTeam.name || 'My Franchise';
-        if (headerDept) headerDept.textContent = currentTeam.short_name || currentTeam.department || 'SPL';
+        if (headerDept) {
+            const dept = currentTeam.department || '';
+            const code = currentTeam.short_name || '';
+            headerDept.textContent = dept && code && dept !== code ? `${dept} • ${code}` : (dept || code || 'SPL');
+        }
         if (headerOwner) headerOwner.textContent = currentTeam.owner_name || session.ownerName || 'Franchise Owner';
 
         // Update ambient glow color if custom color specified

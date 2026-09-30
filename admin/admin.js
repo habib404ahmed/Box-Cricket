@@ -943,7 +943,12 @@ function renderTeamBalanceHUD() {
                 <!-- Team Card Header -->
                 <div>
                     <div class="flex items-center justify-between gap-2 mb-2">
-                        <span class="text-xl p-1.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0 group-hover:scale-110 transition-transform">${team.logo || '🏏'}</span>
+                        ${(() => {
+                            const hasImgLogo = Boolean(team.logo_file_url || (team.logo && (String(team.logo).startsWith('http') || String(team.logo).startsWith('/'))));
+                            return hasImgLogo
+                                ? `<img src="${team.logo_file_url || team.logo}" alt="${teamName}" class="w-9 h-9 p-1 rounded-xl bg-slate-900 border border-slate-800 shrink-0 object-contain group-hover:scale-110 transition-transform" onerror="this.outerHTML='<span class=\\'text-xl p-1.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0\\'>🏏</span>'">`
+                                : `<span class="text-xl p-1.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0 group-hover:scale-110 transition-transform">${team.logo || '🏏'}</span>`;
+                        })()}
                         <div class="flex items-center gap-1.5">
                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-900 text-slate-400 border border-slate-800">
                                 ${shortName}
@@ -2118,7 +2123,15 @@ function openTeamSquadModal(teamId) {
 
     activeSquadTeamId = teamId;
     const modal = document.getElementById('team-squad-modal');
-    document.getElementById('team-squad-logo').textContent = team.logo || '🏏';
+    const modalLogo = document.getElementById('team-squad-logo');
+    if (modalLogo) {
+        const hasImgLogo = Boolean(team.logo_file_url || (team.logo && (String(team.logo).startsWith('http') || String(team.logo).startsWith('/'))));
+        if (hasImgLogo) {
+            modalLogo.innerHTML = `<img src="${team.logo_file_url || team.logo}" alt="${team.name}" class="w-10 h-10 object-contain rounded-xl" onerror="this.outerHTML='<span id=\\'team-squad-logo\\' class=\\'text-3xl p-2 rounded-2xl bg-[#050816] border border-sky-950\\'>🏏</span>'">`;
+        } else {
+            modalLogo.textContent = team.logo || '🏏';
+        }
+    }
     document.getElementById('team-squad-name').textContent = team.name;
 
     const squad = getTeamActiveSquad(team);
@@ -2724,7 +2737,155 @@ function openCertViewerFromRow(playerId) {
     }
 }
 
-// ===== CREATE FRANCHISE MODAL CONTROLLER =====
+// ===== CREATE FRANCHISE & LOGO CONTROLLER =====
+let selectedTeamLogoFile = null;
+let selectedTeamLogoBase64 = null;
+let selectedTeamLogoObjectUrl = null;
+
+function handleTeamLogoFileSelect(event) {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+
+    const errorEl = document.getElementById('team-logo-error');
+    const dropzone = document.getElementById('team-logo-dropzone');
+    const previewBox = document.getElementById('team-logo-preview-box');
+    const previewImg = document.getElementById('team-logo-preview-img');
+    const filenameEl = document.getElementById('team-logo-filename');
+    const filesizeEl = document.getElementById('team-logo-filesize');
+
+    const showError = (msg) => {
+        if (errorEl) {
+            errorEl.textContent = msg;
+            errorEl.classList.remove('hidden');
+        }
+        clearTeamLogoUpload();
+    };
+
+    // Validate file type (Section 3: Allowed PNG, JPG/JPEG, WEBP, SVG)
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'];
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const allowedExts = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+    if (!allowedTypes.includes(file.type) && !allowedExts.includes(ext)) {
+        showError('Please upload PNG, JPG, WEBP, or SVG.');
+        return;
+    }
+
+    // Validate file size (Section 3: Maximum 5 MB)
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+        showError('Team logo must be 5 MB or smaller.');
+        return;
+    }
+
+    if (errorEl) errorEl.classList.add('hidden');
+
+    selectedTeamLogoFile = file;
+
+    // Instant preview via URL.createObjectURL (Section 5)
+    if (selectedTeamLogoObjectUrl) {
+        URL.revokeObjectURL(selectedTeamLogoObjectUrl);
+    }
+    selectedTeamLogoObjectUrl = URL.createObjectURL(file);
+
+    if (previewImg) previewImg.src = selectedTeamLogoObjectUrl;
+    if (filenameEl) filenameEl.textContent = file.name;
+    if (filesizeEl) {
+        const sizeKb = (file.size / 1024).toFixed(1);
+        filesizeEl.textContent = `${sizeKb} KB`;
+    }
+
+    if (dropzone) dropzone.classList.add('hidden');
+    if (previewBox) previewBox.classList.remove('hidden');
+
+    // Read as Base64 for Google Apps Script / Drive upload
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        selectedTeamLogoBase64 = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearTeamLogoUpload() {
+    selectedTeamLogoFile = null;
+    selectedTeamLogoBase64 = null;
+    if (selectedTeamLogoObjectUrl) {
+        URL.revokeObjectURL(selectedTeamLogoObjectUrl);
+        selectedTeamLogoObjectUrl = null;
+    }
+
+    const fileInput = document.getElementById('new-team-logo-file');
+    if (fileInput) fileInput.value = '';
+
+    const dropzone = document.getElementById('team-logo-dropzone');
+    const previewBox = document.getElementById('team-logo-preview-box');
+    const previewImg = document.getElementById('team-logo-preview-img');
+    const errorEl = document.getElementById('team-logo-error');
+
+    if (previewImg) previewImg.src = '';
+    if (previewBox) previewBox.classList.add('hidden');
+    if (dropzone) dropzone.classList.remove('hidden');
+    if (errorEl) errorEl.classList.add('hidden');
+}
+window.handleTeamLogoFileSelect = handleTeamLogoFileSelect;
+window.clearTeamLogoUpload = clearTeamLogoUpload;
+
+async function handleChangeTeamLogoFromModal(event) {
+    const file = event?.target?.files?.[0];
+    if (!file || !activeSquadTeamId) return;
+
+    const team = allTeams.find(t => t.id === activeSquadTeamId);
+    if (!team) return;
+
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'];
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const allowedExts = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+    if (!allowedTypes.includes(file.type) && !allowedExts.includes(ext)) {
+        showToast('Please upload PNG, JPG, WEBP, or SVG.', 'error');
+        if (event.target) event.target.value = '';
+        return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+        showToast('Team logo must be 5 MB or smaller.', 'error');
+        if (event.target) event.target.value = '';
+        return;
+    }
+
+    showToast(`Uploading logo for "${team.name}" to Google Drive...`, 'info');
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const base64Data = e.target.result;
+        try {
+            const res = await window.GoogleTourneyApi.uploadTeamLogo({
+                teamId: team.id,
+                fileData: base64Data
+            });
+            if (res && res.success && res.logo_file_url) {
+                team.logo_file_id = res.logo_file_id;
+                team.logo_file_url = res.logo_file_url;
+                team.logo = res.logo_file_url;
+                lastTeamsSignature = computeTeamsSignature(allTeams);
+                renderTeamBalanceHUD();
+                const modalLogo = document.getElementById('team-squad-logo');
+                if (modalLogo) {
+                    modalLogo.innerHTML = `<img src="${res.logo_file_url}" alt="${team.name}" class="w-10 h-10 object-contain rounded-xl">`;
+                }
+                showToast(`Team logo updated successfully for "${team.name}".`, 'success');
+            } else {
+                showToast(res?.error || 'Failed to upload team logo to Google Drive.', 'error');
+            }
+        } catch (err) {
+            console.error('Error uploading team logo:', err);
+            showToast('Failed to upload team logo: ' + (err.message || 'Network error'), 'error');
+        } finally {
+            if (event.target) event.target.value = '';
+        }
+    };
+    reader.readAsDataURL(file);
+}
+window.handleChangeTeamLogoFromModal = handleChangeTeamLogoFromModal;
+
 function openCreateFranchiseModal() {
     const modal = document.getElementById('modal-create-franchise');
     if (!modal) return;
@@ -2735,8 +2896,11 @@ function openCreateFranchiseModal() {
     // Clear / reset inputs
     const form = document.getElementById('create-franchise-form');
     if (form) form.reset();
-    const logoInput = document.getElementById('new-team-logo');
-    if (logoInput) logoInput.value = '🏏';
+    clearTeamLogoUpload();
+
+    const deptSelect = document.getElementById('new-team-dept');
+    if (deptSelect) deptSelect.value = '';
+
     const purseInput = document.getElementById('new-team-purse');
     if (purseInput) purseInput.value = '1000';
 
@@ -2767,6 +2931,7 @@ function closeCreateFranchiseModal() {
         modal.classList.remove('flex');
     }
     document.body.classList.remove('overflow-hidden');
+    clearTeamLogoUpload();
 
     // Reset button and spinner states upon closing so it is NEVER stuck on "Creating..." (Requirement 16)
     const submitBtn = document.getElementById('btn-submit-create-franchise');
@@ -2809,15 +2974,28 @@ async function handleCreateFranchiseSubmit(event) {
     };
 
     const teamName = document.getElementById('new-team-name')?.value?.trim();
+    const dept = document.getElementById('new-team-dept')?.value?.trim();
     const shortName = document.getElementById('new-team-short')?.value?.trim()?.toUpperCase();
     const ownerName = document.getElementById('new-team-owner-name')?.value?.trim();
     const ownerEmail = document.getElementById('new-team-owner-email')?.value?.trim()?.toLowerCase();
     const password = document.getElementById('new-team-password')?.value;
-    const logo = document.getElementById('new-team-logo')?.value?.trim() || '🏏';
     const purse = Number(document.getElementById('new-team-purse')?.value) || 1000;
 
-    if (!teamName || !shortName || !ownerName || !ownerEmail || !password) {
+    if (!teamName || !ownerName || !ownerEmail || !password) {
         showAlert('Please complete all required fields.');
+        return;
+    }
+
+    // Section 1 & 12: Validate Department (Only BTech, BBA, BCA allowed)
+    const ALLOWED_DEPTS = ['BTech', 'BBA', 'BCA'];
+    if (!dept || !ALLOWED_DEPTS.includes(dept)) {
+        showAlert('Please select a valid Department (BTech, BBA, or BCA).');
+        return;
+    }
+
+    // Section 2: Validate Short Code
+    if (!shortName) {
+        showAlert('Please enter a Short Code for the franchise (e.g. TIT).');
         return;
     }
 
@@ -2838,7 +3016,7 @@ async function handleCreateFranchiseSubmit(event) {
         submitBtn.disabled = true;
         submitBtn.classList.add('opacity-80', 'cursor-not-allowed');
     }
-    if (submitBtnText) submitBtnText.textContent = 'Creating...';
+    if (submitBtnText) submitBtnText.textContent = 'Creating Franchise...';
     if (alertBox) alertBox.classList.add('hidden');
 
     try {
@@ -2851,14 +3029,14 @@ async function handleCreateFranchiseSubmit(event) {
             team_name: teamName,
             name: teamName,
             short_name: shortName,
-            department: shortName,
+            department: dept,
             owner_name: ownerName,
             owner_email: ownerEmail,
             email: ownerEmail,
             password: password,
             rawPassword: password,
-            logo: logo,
             purse: purse,
+            logo: '🏏',
             role: 'ADMIN'
         };
 
@@ -2904,9 +3082,12 @@ async function handleCreateFranchiseSubmit(event) {
             team_name: teamName,
             name: teamName,
             short_name: shortName,
+            department: dept,
             owner_name: ownerName,
             owner_email: ownerEmail,
-            logo: logo,
+            logo_file_id: '',
+            logo_file_url: '',
+            logo: '🏏',
             purse: purse,
             total_budget: purse,
             total_spent: 0,
@@ -2918,15 +3099,37 @@ async function handleCreateFranchiseSubmit(event) {
             status: 'Active'
         };
 
+        // Section 6 & 7: Upload logo if a file was selected
+        if (selectedTeamLogoBase64 && createdTeam && createdTeam.id) {
+            if (submitBtnText) submitBtnText.textContent = 'Uploading Logo to Drive...';
+            try {
+                const logoRes = await window.GoogleTourneyApi.uploadTeamLogo({
+                    teamId: createdTeam.id,
+                    fileData: selectedTeamLogoBase64
+                });
+                if (logoRes && logoRes.success && logoRes.logo_file_url) {
+                    createdTeam.logo_file_id = logoRes.logo_file_id;
+                    createdTeam.logo_file_url = logoRes.logo_file_url;
+                    createdTeam.logo = logoRes.logo_file_url;
+                } else {
+                    showToast('Franchise created, but team logo upload failed. You can upload/change the logo later.', 'info');
+                }
+            } catch (logoErr) {
+                console.warn('Team logo upload failed:', logoErr);
+                showToast('Franchise created, but team logo upload failed. You can upload/change the logo later.', 'info');
+            }
+        }
+
         // SUCCESS — IMMEDIATELY CLOSE MODAL & STOP SPINNER (Requirement 3, 8 & 12)
         closeCreateFranchiseModal();
 
         // Reset form inputs only on success (Requirement 17)
         const form = document.getElementById('create-franchise-form');
         if (form) form.reset();
+        clearTeamLogoUpload();
 
         // Show toast notification (Requirement 12 & 17)
-        showToast(`✓ FRANCHISE CREATED: "${teamName}" (Login ID: ${ownerEmail})`, 'success');
+        showToast(`✓ FRANCHISE CREATED: "${teamName}" (${dept} • Login: ${ownerEmail})`, 'success');
 
         // Immediately update Admin state and render HUD without waiting (Requirement 11 & 12)
         if (createdTeam && createdTeam.id) {
@@ -2960,7 +3163,7 @@ async function handleCreateFranchiseSubmit(event) {
             submitBtn.classList.remove('opacity-80', 'cursor-not-allowed');
         }
         setTimeout(() => {
-            if (submitBtnText && submitBtnText.textContent !== 'Creating...') {
+            if (submitBtnText && submitBtnText.textContent !== 'Creating Franchise...') {
                 submitBtnText.textContent = 'Create Franchise & Credentials';
             }
         }, 1200);
