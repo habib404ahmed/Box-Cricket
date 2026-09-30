@@ -3171,6 +3171,414 @@ async function handleCreateFranchiseSubmit(event) {
 }
 
 // ==============================================================================
+// EDIT FRANCHISE CONTROLLER (Sections 1, 2, 3, 4, 5, 8, 9, 10, 11, 14, 15)
+// ==============================================================================
+let activeEditTeamId = null;
+let isEditingFranchise = false;
+let selectedEditTeamLogoFile = null;
+let selectedEditTeamLogoBase64 = null;
+let selectedEditTeamLogoObjectUrl = null;
+
+function handleEditTeamLogoFileSelect(event) {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+
+    const errorEl = document.getElementById('edit-team-logo-error');
+    const previewBox = document.getElementById('edit-team-logo-preview-box');
+    const previewImg = document.getElementById('edit-team-logo-preview-img');
+    const filenameEl = document.getElementById('edit-team-logo-filename');
+    const filesizeEl = document.getElementById('edit-team-logo-filesize');
+
+    const showError = (msg) => {
+        if (errorEl) {
+            errorEl.textContent = msg;
+            errorEl.classList.remove('hidden');
+        }
+        clearEditTeamLogoUpload();
+    };
+
+    // Validate file type (Allowed PNG, JPG/JPEG, WEBP, SVG)
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'];
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const allowedExts = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+    if (!allowedTypes.includes(file.type) && !allowedExts.includes(ext)) {
+        showError('Please upload PNG, JPG, WEBP, or SVG.');
+        return;
+    }
+
+    // Validate file size (Maximum 5 MB)
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+        showError('Team logo must be 5 MB or smaller.');
+        return;
+    }
+
+    if (errorEl) errorEl.classList.add('hidden');
+
+    selectedEditTeamLogoFile = file;
+
+    // Instant preview via URL.createObjectURL
+    if (selectedEditTeamLogoObjectUrl) {
+        URL.revokeObjectURL(selectedEditTeamLogoObjectUrl);
+    }
+    selectedEditTeamLogoObjectUrl = URL.createObjectURL(file);
+
+    if (previewImg) previewImg.src = selectedEditTeamLogoObjectUrl;
+    if (filenameEl) filenameEl.textContent = file.name;
+    if (filesizeEl) {
+        const sizeKb = (file.size / 1024).toFixed(1);
+        filesizeEl.textContent = `${sizeKb} KB`;
+    }
+
+    if (previewBox) previewBox.classList.remove('hidden');
+
+    // Read as Base64 for Google Apps Script / Drive upload
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        selectedEditTeamLogoBase64 = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearEditTeamLogoUpload() {
+    selectedEditTeamLogoFile = null;
+    selectedEditTeamLogoBase64 = null;
+    if (selectedEditTeamLogoObjectUrl) {
+        URL.revokeObjectURL(selectedEditTeamLogoObjectUrl);
+        selectedEditTeamLogoObjectUrl = null;
+    }
+
+    const fileInput = document.getElementById('edit-team-logo-file');
+    if (fileInput) fileInput.value = '';
+
+    const previewBox = document.getElementById('edit-team-logo-preview-box');
+    const previewImg = document.getElementById('edit-team-logo-preview-img');
+    const errorEl = document.getElementById('edit-team-logo-error');
+
+    if (previewImg) previewImg.src = '';
+    if (previewBox) previewBox.classList.add('hidden');
+    if (errorEl) errorEl.classList.add('hidden');
+}
+
+function openEditFranchiseModal(teamId) {
+    const targetId = teamId || activeSquadTeamId;
+    if (!targetId) return;
+
+    const team = allTeams.find(t => t.id === targetId);
+    if (!team) {
+        showToast('Franchise not found.', 'error');
+        return;
+    }
+
+    activeEditTeamId = team.id;
+    isEditingFranchise = false;
+
+    const modal = document.getElementById('modal-edit-franchise');
+    if (!modal) return;
+
+    const alertBox = document.getElementById('edit-franchise-alert');
+    if (alertBox) alertBox.classList.add('hidden');
+
+    // Clear any new logo upload state
+    clearEditTeamLogoUpload();
+
+    // Pre-fill fields (Section 2)
+    const idInput = document.getElementById('edit-team-id');
+    if (idInput) idInput.value = team.id;
+
+    const nameInput = document.getElementById('edit-team-name');
+    if (nameInput) nameInput.value = team.team_name || team.name || '';
+
+    const deptSelect = document.getElementById('edit-team-dept');
+    if (deptSelect) {
+        const d = String(team.department || '').trim();
+        deptSelect.value = (['BTech', 'BBA', 'BCA'].includes(d)) ? d : 'BTech';
+    }
+
+    const shortInput = document.getElementById('edit-team-short');
+    if (shortInput) shortInput.value = team.short_name || '';
+
+    const ownerNameInput = document.getElementById('edit-team-owner-name');
+    if (ownerNameInput) ownerNameInput.value = team.owner_name || '';
+
+    const ownerEmailInput = document.getElementById('edit-team-owner-email');
+    if (ownerEmailInput) ownerEmailInput.value = team.owner_email || '';
+
+    const passwordInput = document.getElementById('edit-team-password');
+    if (passwordInput) passwordInput.value = '';
+
+    const purseInput = document.getElementById('edit-team-purse');
+    const totalPurse = Number(team.purse ?? team.total_budget ?? 1000);
+    if (purseInput) purseInput.value = totalPurse;
+
+    const spent = Number(team.total_spent ?? team.spent ?? 0);
+    const purseHint = document.getElementById('edit-team-purse-hint');
+    if (purseHint) {
+        purseHint.textContent = `Spent: ${spent.toFixed(1)} Pts | Balance recalculates as (Purse - Spent)`;
+    }
+
+    // Current logo preview (Section 4)
+    const currentLogoWrapper = document.getElementById('edit-team-current-logo-img-wrapper');
+    const currentLogoStatus = document.getElementById('edit-team-current-logo-status');
+    const hasImgLogo = Boolean(team.logo_file_url || (team.logo && (String(team.logo).startsWith('http') || String(team.logo).startsWith('/'))));
+
+    if (currentLogoWrapper) {
+        if (hasImgLogo) {
+            currentLogoWrapper.innerHTML = `<img src="${team.logo_file_url || team.logo}" alt="${team.name}" class="w-full h-full object-contain">`;
+            if (currentLogoStatus) currentLogoStatus.textContent = 'Drive Uploaded Image';
+        } else {
+            currentLogoWrapper.textContent = team.logo || '🏏';
+            if (currentLogoStatus) currentLogoStatus.textContent = 'Default Icon';
+        }
+    }
+
+    // Reset button states
+    const submitBtn = document.getElementById('btn-submit-edit-franchise');
+    const submitBtnText = document.getElementById('btn-submit-edit-franchise-text');
+    const spinner = document.getElementById('edit-franchise-spinner');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-80', 'cursor-not-allowed');
+    }
+    if (submitBtnText) submitBtnText.textContent = 'Save Changes';
+    if (spinner) spinner.classList.add('hidden');
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.body.classList.add('overflow-hidden');
+}
+
+function closeEditFranchiseModal() {
+    isEditingFranchise = false;
+    const modal = document.getElementById('modal-edit-franchise');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    document.body.classList.remove('overflow-hidden');
+    clearEditTeamLogoUpload();
+
+    const submitBtn = document.getElementById('btn-submit-edit-franchise');
+    const submitBtnText = document.getElementById('btn-submit-edit-franchise-text');
+    const spinner = document.getElementById('edit-franchise-spinner');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-80', 'cursor-not-allowed');
+    }
+    if (submitBtnText) submitBtnText.textContent = 'Save Changes';
+    if (spinner) spinner.classList.add('hidden');
+
+    const alertBox = document.getElementById('edit-franchise-alert');
+    if (alertBox) alertBox.classList.add('hidden');
+}
+
+async function handleEditFranchiseSubmit(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    if (isEditingFranchise || !activeEditTeamId) return;
+
+    const team = allTeams.find(t => t.id === activeEditTeamId);
+    if (!team) {
+        showToast('Franchise not found.', 'error');
+        closeEditFranchiseModal();
+        return;
+    }
+
+    const alertBox = document.getElementById('edit-franchise-alert');
+    const alertText = document.getElementById('edit-franchise-alert-text');
+    const alertIcon = document.getElementById('edit-franchise-alert-icon');
+    const spinner = document.getElementById('edit-franchise-spinner');
+    const submitBtn = document.getElementById('btn-submit-edit-franchise');
+    const submitBtnText = document.getElementById('btn-submit-edit-franchise-text');
+
+    const showAlert = (msg, isSuccess = false) => {
+        if (!alertBox || !alertText) return;
+        alertBox.className = isSuccess 
+            ? 'p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+            : 'p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5 bg-rose-500/15 border border-rose-500/30 text-rose-300';
+        if (alertIcon) alertIcon.textContent = isSuccess ? '✅' : '⚠️';
+        alertText.textContent = msg;
+        alertBox.classList.remove('hidden');
+    };
+
+    const teamName = document.getElementById('edit-team-name')?.value?.trim();
+    const dept = document.getElementById('edit-team-dept')?.value?.trim();
+    const shortName = document.getElementById('edit-team-short')?.value?.trim()?.toUpperCase();
+    const ownerName = document.getElementById('edit-team-owner-name')?.value?.trim();
+    const ownerEmail = document.getElementById('edit-team-owner-email')?.value?.trim()?.toLowerCase();
+    const password = document.getElementById('edit-team-password')?.value?.trim() || '';
+    const purse = Number(document.getElementById('edit-team-purse')?.value) || 1000;
+
+    if (!teamName || !ownerName || !ownerEmail) {
+        showAlert('Please complete all required fields.');
+        return;
+    }
+
+    // Validate Department (Section 3: Only BTech, BBA, BCA)
+    const ALLOWED_DEPTS = ['BTech', 'BBA', 'BCA'];
+    if (!dept || !ALLOWED_DEPTS.includes(dept)) {
+        showAlert('Please select a valid Department (BTech, BBA, or BCA).');
+        return;
+    }
+
+    if (!shortName) {
+        showAlert('Please enter a Short Code for the franchise (e.g. TIT).');
+        return;
+    }
+
+    if (password && password.length < 6) {
+        showAlert('New password must be at least 6 characters long.');
+        return;
+    }
+
+    // Duplicate validation against OTHER teams (Section 11)
+    const normTeamName = teamName.toLowerCase();
+    const normShortName = shortName.toUpperCase();
+    const normOwnerEmail = ownerEmail.toLowerCase();
+
+    for (const other of allTeams) {
+        if (other.id === team.id) continue;
+        const otherName = (other.team_name || other.name || '').trim().toLowerCase();
+        if (otherName === normTeamName) {
+            showAlert('Another franchise already has this name.');
+            return;
+        }
+        const otherShort = (other.short_name || '').trim().toUpperCase();
+        if (otherShort && otherShort === normShortName) {
+            showAlert('Another franchise already has this short code.');
+            return;
+        }
+        const otherEmail = (other.owner_email || '').trim().toLowerCase();
+        if (otherEmail && otherEmail === normOwnerEmail) {
+            showAlert('Another franchise owner is registered with this email address.');
+            return;
+        }
+    }
+
+    // Set loading state (Section 14)
+    isEditingFranchise = true;
+    if (spinner) spinner.classList.remove('hidden');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add('opacity-80', 'cursor-not-allowed');
+    }
+    if (submitBtnText) submitBtnText.textContent = 'Saving...';
+    if (alertBox) alertBox.classList.add('hidden');
+
+    try {
+        if (!window.GoogleTourneyApi || !window.GoogleTourneyApi.isConfigured()) {
+            showAlert('Tournament database is not configured. Please verify connection.');
+            return;
+        }
+
+        // 1. If a new logo was selected, upload it first to Google Drive (Section 4 & 5)
+        let newLogoFileId = team.logo_file_id || '';
+        let newLogoFileUrl = team.logo_file_url || '';
+        let logoUploadFailed = false;
+
+        if (selectedEditTeamLogoBase64) {
+            if (submitBtnText) submitBtnText.textContent = 'Uploading New Logo...';
+            try {
+                const logoRes = await window.GoogleTourneyApi.uploadTeamLogo({
+                    teamId: team.id,
+                    fileData: selectedEditTeamLogoBase64
+                });
+                if (logoRes && logoRes.success && logoRes.logo_file_url) {
+                    newLogoFileId = logoRes.logo_file_id;
+                    newLogoFileUrl = logoRes.logo_file_url;
+                } else {
+                    logoUploadFailed = true;
+                }
+            } catch (logoErr) {
+                console.warn('New logo upload failed:', logoErr);
+                logoUploadFailed = true;
+            }
+        }
+
+        if (submitBtnText) submitBtnText.textContent = 'Saving Changes...';
+
+        // 2. Prepare changes payload (Section 24)
+        const changes = {
+            team_name: teamName,
+            name: teamName,
+            short_name: shortName,
+            department: dept,
+            owner_name: ownerName,
+            owner_email: ownerEmail,
+            purse: purse,
+            logo_file_id: newLogoFileId,
+            logo_file_url: newLogoFileUrl
+        };
+        if (password) {
+            changes.password = password;
+        }
+
+        // 3. Send updateTeam request
+        const res = await window.GoogleTourneyApi.updateTeam(team.id, changes);
+        if (!res || !res.success) {
+            const errMsg = res?.error === 'DUPLICATE_TEAM_NAME' ? 'Another franchise already has this name.'
+                : res?.error === 'DUPLICATE_SHORT_CODE' ? 'Another franchise already has this short code.'
+                : res?.error === 'DUPLICATE_OWNER_EMAIL' ? 'Another franchise owner is registered with this email address.'
+                : res?.error === 'INVALID_DEPARTMENT' ? 'Department must be BTech, BBA, or BCA.'
+                : (res?.error || 'Failed to update franchise in Google Sheets.');
+            showAlert(errMsg);
+            return;
+        }
+
+        // 4. Update local team object optimistically (Section 16)
+        const updatedData = res.team || {};
+        team.team_name = updatedData.team_name || teamName;
+        team.name = team.team_name;
+        team.short_name = updatedData.short_name || shortName;
+        team.department = updatedData.department || dept;
+        team.owner_name = updatedData.owner_name || ownerName;
+        team.owner_email = updatedData.owner_email || ownerEmail;
+        team.purse = Number(updatedData.purse || purse);
+        team.total_budget = team.purse;
+        team.remaining_purse = Number(updatedData.remaining_purse ?? (team.purse - (team.total_spent || 0)));
+        team.leftover_balance = team.remaining_purse;
+
+        if (newLogoFileUrl) {
+            team.logo_file_id = newLogoFileId;
+            team.logo_file_url = newLogoFileUrl;
+            team.logo = newLogoFileUrl;
+        }
+
+        // Recompute signature and update UI
+        lastTeamsSignature = computeTeamsSignature(allTeams);
+        renderTeamBalanceHUD();
+
+        // Refresh squad inspection modal if open for this team
+        if (activeSquadTeamId === team.id) {
+            openTeamSquadModal(team.id);
+        }
+
+        closeEditFranchiseModal();
+
+        if (logoUploadFailed) {
+            showToast('Team details updated, but the new logo could not be uploaded.', 'warning');
+        } else {
+            showToast(`Franchise "${team.name}" updated successfully!`, 'success');
+        }
+
+    } catch (err) {
+        console.error('Error updating franchise:', err);
+        showAlert(err.message || 'Unable to connect to tournament database. Please try again.');
+    } finally {
+        isEditingFranchise = false;
+        if (spinner) spinner.classList.add('hidden');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-80', 'cursor-not-allowed');
+        }
+        if (submitBtnText) submitBtnText.textContent = 'Save Changes';
+    }
+}
+
+// ==============================================================================
 // BULK ATHLETE APPROVAL SYSTEM CONTROLLER
 // ==============================================================================
 
@@ -3762,6 +4170,11 @@ window.handleExecuteBulkDelete = handleExecuteBulkDelete;
 window.openCreateFranchiseModal = openCreateFranchiseModal;
 window.closeCreateFranchiseModal = closeCreateFranchiseModal;
 window.handleCreateFranchiseSubmit = handleCreateFranchiseSubmit;
+window.openEditFranchiseModal = openEditFranchiseModal;
+window.closeEditFranchiseModal = closeEditFranchiseModal;
+window.handleEditFranchiseSubmit = handleEditFranchiseSubmit;
+window.handleEditTeamLogoFileSelect = handleEditTeamLogoFileSelect;
+window.clearEditTeamLogoUpload = clearEditTeamLogoUpload;
 window.handleSelectAthlete = handleSelectAthlete;
 window.handleSelectAllAthletes = handleSelectAllAthletes;
 window.clearAthleteSelection = clearAthleteSelection;

@@ -1375,6 +1375,57 @@
             };
         },
 
+        // --- FRANCHISE TEAM UPDATE / EDIT (POST) ---
+        updateTeam: async (teamId, changes = {}) => {
+            if (!teamId) {
+                return { success: false, error: 'Team ID is required.' };
+            }
+
+            if (!isConfigured()) {
+                return { success: false, error: 'Google backend is not configured yet.' };
+            }
+
+            let adminSession = null;
+            try {
+                const raw = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+                if (raw) adminSession = JSON.parse(raw);
+            } catch (e) {}
+
+            const cleanId = String(teamId).trim();
+            const payload = {
+                action: 'updateTeam',
+                team_id: cleanId,
+                id: cleanId,
+                changes: changes,
+                ...changes,
+                role: 'ADMIN',
+                admin_token: (adminSession && adminSession.admin_token) || ADMIN_SECRET_KEY,
+                session_token: (adminSession && (adminSession.session_token || adminSession.admin_token)) || ADMIN_SECRET_KEY,
+                actor: (adminSession && (adminSession.username || adminSession.email)) || 'admin'
+            };
+
+            const res = await postApi('updateTeam', payload, 35000);
+            if (res && res.success && res.team) {
+                // Update in-memory cache and localStorage immediately
+                try {
+                    if (_cachedTeams) {
+                        const idx = _cachedTeams.findIndex(t => t.id === cleanId);
+                        if (idx !== -1) {
+                            _cachedTeams[idx] = { ..._cachedTeams[idx], ...res.team };
+                        }
+                    }
+                    let localTeams = JSON.parse(localStorage.getItem('unibox_teams') || '[]');
+                    const lIdx = localTeams.findIndex(t => t.id === cleanId);
+                    if (lIdx !== -1) {
+                        localTeams[lIdx] = { ...localTeams[lIdx], ...res.team };
+                        localStorage.setItem('unibox_teams', JSON.stringify(localTeams));
+                    }
+                } catch (e) {}
+            }
+
+            return res;
+        },
+
         // --- TEAM LOGO UPLOAD TO GOOGLE DRIVE ---
         uploadTeamLogo: async (params) => {
             const teamId = params.teamId || params.team_id || params.id;
