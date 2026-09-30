@@ -1165,149 +1165,175 @@
     </div>
 
     <!-- ===== EDIT FRANCHISE MODAL ===== -->
-    <div id="modal-edit-franchise" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-[#050816]/90 backdrop-blur-xl p-4 overflow-y-auto">
-        <div class="relative w-full max-w-lg my-auto">
-            <div class="modal-content p-6 sm:p-7 space-y-5 border border-cyan-900/60 shadow-2xl rounded-2xl bg-[#08111F]">
+    <div id="modal-edit-franchise" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-[#030712]/85 backdrop-blur-2xl p-3 sm:p-4 overflow-y-auto">
+        <div class="relative w-[94vw] sm:w-full max-w-[590px] my-auto">
+            <div class="modal-content max-h-[92vh] flex flex-col border border-sky-500/25 shadow-2xl shadow-sky-950/60 rounded-3xl bg-[#08111F]/95 backdrop-blur-2xl overflow-hidden">
                 <!-- Modal Header -->
-                <div class="flex items-center justify-between pb-3 border-b border-sky-950/80">
-                    <div class="flex items-center gap-3">
-                        <span class="text-2xl p-2 rounded-xl bg-cyan-950/50 border border-cyan-800/50 text-cyan-400">✏️</span>
-                        <div>
-                            <h3 class="text-lg font-black text-white uppercase tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">Edit Franchise</h3>
-                            <p class="text-xs text-slate-400">Update franchise details and team credentials.</p>
+                <div class="flex items-center justify-between px-6 sm:px-7 py-5 border-b border-sky-950/80 bg-gradient-to-r from-[#0B172E]/90 via-[#08111F] to-[#0B172E]/90 shrink-0">
+                    <div class="flex items-center gap-3.5 min-w-0">
+                        <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/10 border border-cyan-500/30 flex items-center justify-center text-xl text-cyan-300 shadow-lg shadow-cyan-500/10 shrink-0">
+                            ✏️
+                        </div>
+                        <div class="min-w-0">
+                            <h3 class="text-xl font-black text-white uppercase tracking-tight truncate" style="font-family: 'Space Grotesk', sans-serif;">Edit Franchise</h3>
+                            <p class="text-xs text-slate-400 mt-0.5 font-medium truncate">Update franchise details and team credentials.</p>
                         </div>
                     </div>
-                    <button type="button" onclick="closeEditFranchiseModal()" class="text-slate-400 hover:text-white text-sm w-8 h-8 inline-flex justify-center items-center rounded-lg hover:bg-slate-800 cursor-pointer">✕</button>
+                    <button type="button" onclick="closeEditFranchiseModal()" 
+                        class="w-10 h-10 inline-flex justify-center items-center rounded-xl text-slate-400 hover:text-white bg-slate-900/60 hover:bg-slate-800 border border-slate-800/80 hover:border-slate-700 transition-all cursor-pointer shrink-0" 
+                        title="Close Modal">✕</button>
                 </div>
 
-                <!-- Alert Box -->
-                <div id="edit-franchise-alert" class="hidden p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5">
-                    <span id="edit-franchise-alert-icon">⚠️</span>
-                    <span id="edit-franchise-alert-text">Alert message</span>
-                </div>
-
-                <!-- Form -->
-                <form id="edit-franchise-form" onsubmit="handleEditFranchiseSubmit(event)" class="space-y-4">
-                    <input type="hidden" id="edit-team-id" value="">
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label for="edit-team-name" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Franchise Name *</label>
-                            <input id="edit-team-name" type="text" placeholder="e.g. Nilachal Knights" required
-                                class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-cyan-500 outline-none">
+                <!-- Form Container with Internal Scroll -->
+                <form id="edit-franchise-form" onsubmit="handleEditFranchiseSubmit(event)" class="overflow-y-auto custom-scrollbar flex-1 flex flex-col">
+                    <div class="p-6 sm:p-7 space-y-6 flex-1">
+                        <!-- Alert Box -->
+                        <div id="edit-franchise-alert" class="hidden p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5">
+                            <span id="edit-franchise-alert-icon">⚠️</span>
+                            <span id="edit-franchise-alert-text">Alert message</span>
                         </div>
-                        <div>
-                            <label for="edit-team-dept" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Department *</label>
-                            <select id="edit-team-dept" required
-                                class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-cyan-500 outline-none cursor-pointer">
-                                <option value="" disabled>Select Department</option>
-                                <option value="BTech">BTech</option>
-                                <option value="BBA">BBA</option>
-                                <option value="BCA">BCA</option>
-                            </select>
-                        </div>
-                    </div>
 
-                    <div>
-                        <label for="edit-team-owner-name" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Owner Full Name *</label>
-                        <input id="edit-team-owner-name" type="text" placeholder="e.g. Kaustav Deka" required
-                            class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-cyan-500 outline-none">
-                    </div>
+                        <input type="hidden" id="edit-team-id" value="">
 
-                    <!-- Team Logo Section (Section 4 & 5) -->
-                    <div>
-                        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Team Logo</label>
-                        
-                        <!-- Current Logo Display -->
-                        <div id="edit-team-current-logo-box" class="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-3 mb-2.5">
-                            <div class="flex items-center gap-3 min-w-0">
-                                <div id="edit-team-current-logo-img-wrapper" class="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 p-1 flex items-center justify-center shrink-0 overflow-hidden text-2xl">
-                                    🏏
+                        <!-- Section 1: Franchise Details -->
+                        <div class="space-y-3.5">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-black uppercase tracking-wider text-cyan-400 font-mono">01. Franchise Details</span>
+                                <div class="h-px flex-1 bg-gradient-to-r from-cyan-500/30 to-transparent"></div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                <div>
+                                    <label for="edit-team-name" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Franchise Name *</label>
+                                    <input id="edit-team-name" type="text" placeholder="e.g. Nilachal Knights" required
+                                        class="w-full bg-[#050816] border border-slate-700/80 hover:border-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 text-white rounded-xl px-3.5 py-2.5 text-xs font-semibold placeholder:text-slate-600 transition-all outline-none">
                                 </div>
-                                <div class="min-w-0">
-                                    <p class="text-xs font-bold text-white">Current Logo</p>
-                                    <p id="edit-team-current-logo-status" class="text-[10px] text-slate-400 truncate">Default Icon</p>
+                                <div>
+                                    <label for="edit-team-dept" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Department *</label>
+                                    <select id="edit-team-dept" required
+                                        class="w-full bg-[#050816] border border-slate-700/80 hover:border-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 text-white rounded-xl px-3.5 py-2.5 text-xs font-semibold cursor-pointer transition-all outline-none">
+                                        <option value="" disabled>Select Department</option>
+                                        <option value="BTech">BTech</option>
+                                        <option value="BBA">BBA</option>
+                                        <option value="BCA">BCA</option>
+                                    </select>
                                 </div>
                             </div>
-                            <button type="button" onclick="document.getElementById('edit-team-logo-file').click()"
-                                class="text-[11px] font-bold text-cyan-400 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/25 px-3 py-1.5 rounded-lg border border-cyan-500/30 transition-all cursor-pointer">
-                                Change Logo
-                            </button>
+
+                            <div>
+                                <label for="edit-team-owner-name" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Owner Full Name *</label>
+                                <input id="edit-team-owner-name" type="text" placeholder="e.g. Kaustav Deka" required
+                                    class="w-full bg-[#050816] border border-slate-700/80 hover:border-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 text-white rounded-xl px-3.5 py-2.5 text-xs font-semibold placeholder:text-slate-600 transition-all outline-none">
+                            </div>
                         </div>
 
-                        <!-- Hidden real file input -->
-                        <input type="file" id="edit-team-logo-file" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden" onchange="handleEditTeamLogoFileSelect(event)">
-
-                        <!-- Preview State for NEW Selected Logo -->
-                        <div id="edit-team-logo-preview-box" class="hidden p-3 rounded-2xl bg-slate-950/80 border border-cyan-500/40 flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-3 min-w-0">
-                                <div class="w-12 h-12 rounded-xl bg-slate-900 border border-cyan-500/30 p-1 flex items-center justify-center shrink-0 overflow-hidden">
-                                    <img id="edit-team-logo-preview-img" src="" alt="New Logo Preview" class="w-full h-full object-contain">
-                                </div>
-                                <div class="min-w-0">
-                                    <span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 mb-0.5">NEW SELECTED</span>
-                                    <p id="edit-team-logo-filename" class="text-xs font-bold text-white truncate">logo.png</p>
-                                    <p id="edit-team-logo-filesize" class="text-[10px] text-slate-400 font-mono">0 KB</p>
-                                </div>
+                        <!-- Section 2: Team Logo -->
+                        <div class="space-y-3.5">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-black uppercase tracking-wider text-cyan-400 font-mono">02. Team Logo</span>
+                                <div class="h-px flex-1 bg-gradient-to-r from-cyan-500/30 to-transparent"></div>
                             </div>
-                            <div class="flex items-center gap-2 shrink-0">
+                            
+                            <!-- Current Logo Display -->
+                            <div id="edit-team-current-logo-box" class="p-3.5 rounded-2xl bg-[#050816]/90 border border-slate-800 hover:border-slate-700/80 flex items-center justify-between gap-3.5 transition-all">
+                                <div class="flex items-center gap-3.5 min-w-0">
+                                    <div id="edit-team-current-logo-img-wrapper" class="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 p-1 flex items-center justify-center shrink-0 overflow-hidden text-2xl shadow-inner">
+                                        🏏
+                                    </div>
+                                    <div class="min-w-0">
+                                        <p class="text-xs font-bold text-white">Current Logo</p>
+                                        <p id="edit-team-current-logo-status" class="text-[10px] text-slate-400 truncate">Default Icon</p>
+                                    </div>
+                                </div>
                                 <button type="button" onclick="document.getElementById('edit-team-logo-file').click()"
-                                    class="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-1.5 rounded-lg border border-cyan-500/20 transition-all cursor-pointer">
-                                    Replace
+                                    class="text-xs font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3.5 py-2 rounded-xl border border-cyan-500/30 hover:border-cyan-500/50 transition-all cursor-pointer shrink-0">
+                                    Change Logo
                                 </button>
-                                <button type="button" onclick="clearEditTeamLogoUpload()"
-                                    class="text-[11px] font-bold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer" title="Keep Current Logo">
-                                    ✕
-                                </button>
+                            </div>
+
+                            <!-- Hidden real file input -->
+                            <input type="file" id="edit-team-logo-file" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden" onchange="handleEditTeamLogoFileSelect(event)">
+
+                            <!-- Preview State for NEW Selected Logo -->
+                            <div id="edit-team-logo-preview-box" class="hidden p-3.5 rounded-2xl bg-[#050816]/95 border border-cyan-500/50 shadow-lg shadow-cyan-500/10 flex items-center justify-between gap-3.5">
+                                <div class="flex items-center gap-3.5 min-w-0">
+                                    <div class="w-12 h-12 rounded-xl bg-slate-900 border border-cyan-500/30 p-1 flex items-center justify-center shrink-0 overflow-hidden shadow-inner">
+                                        <img id="edit-team-logo-preview-img" src="" alt="New Logo Preview" class="w-full h-full object-contain">
+                                    </div>
+                                    <div class="min-w-0">
+                                        <span class="inline-block px-2 py-0.5 rounded text-[9px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 mb-0.5">NEW SELECTED</span>
+                                        <p id="edit-team-logo-filename" class="text-xs font-bold text-white truncate">logo.png</p>
+                                        <p id="edit-team-logo-filesize" class="text-[10px] text-slate-400 font-mono">0 KB</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <button type="button" onclick="document.getElementById('edit-team-logo-file').click()"
+                                        class="text-xs font-bold text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-1.5 rounded-xl border border-cyan-500/25 transition-all cursor-pointer">
+                                        Replace
+                                    </button>
+                                    <button type="button" onclick="clearEditTeamLogoUpload()"
+                                        class="w-8 h-8 inline-flex items-center justify-center text-xs font-bold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-all cursor-pointer" title="Keep Current Logo">
+                                        ✕
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- File Error Message -->
+                            <p id="edit-team-logo-error" class="hidden text-[11px] text-rose-400 font-semibold mt-1.5"></p>
+                        </div>
+
+                        <!-- Section 3: Owner Credentials Box -->
+                        <div class="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#060D1A] to-[#040812] border border-amber-500/25 shadow-lg shadow-amber-500/5 space-y-3.5">
+                            <div class="flex items-center justify-between pb-1">
+                                <div class="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                                    <span class="p-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs">🔑</span> Franchise HQ Owner Account
+                                </div>
+                                <span class="text-[9px] font-mono uppercase tracking-widest text-slate-500">Secure Access</span>
+                            </div>
+                            <div>
+                                <label for="edit-team-owner-email" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Owner Email (Login ID) *</label>
+                                <input id="edit-team-owner-email" type="email" placeholder="owner@franchise.com" required
+                                    class="w-full bg-[#050816] border border-slate-700/80 focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 text-white rounded-xl px-3.5 py-2.5 text-xs font-semibold placeholder:text-slate-600 transition-all outline-none">
+                            </div>
+                            <div>
+                                <label for="edit-team-password" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                                    New Owner Password <span class="text-slate-500 font-normal lowercase">(optional)</span>
+                                </label>
+                                <div class="relative">
+                                    <input id="edit-team-password" type="password" placeholder="Leave blank to keep current password" minlength="6"
+                                        class="w-full bg-[#050816] border border-slate-700/80 focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 text-white rounded-xl px-3.5 py-2.5 pr-10 text-xs font-semibold placeholder:text-slate-600 transition-all outline-none">
+                                    <button type="button" class="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-white"
+                                        onclick="const el=document.getElementById('edit-team-password');el.type=el.type==='password'?'text':'password'" title="Toggle Password Visibility">
+                                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- File Error Message -->
-                        <p id="edit-team-logo-error" class="hidden text-[11px] text-rose-400 font-semibold mt-1.5"></p>
-                    </div>
-
-                    <!-- Owner Credentials Box -->
-                    <div class="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
-                        <div class="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                            <span>🔑</span> Franchise HQ Owner Account
-                        </div>
-                        <div>
-                            <label for="edit-team-owner-email" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Owner Email (Login ID) *</label>
-                            <input id="edit-team-owner-email" type="email" placeholder="owner@franchise.com" required
-                                class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-amber-500 outline-none">
-                        </div>
-                        <div>
-                            <label for="edit-team-password" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                                New Owner Password <span class="text-slate-500 font-normal lowercase">(optional)</span>
-                            </label>
+                        <!-- Section 4: Auction Purse -->
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-2 mb-1.5">
+                                <span class="text-[10px] font-black uppercase tracking-wider text-cyan-400 font-mono">03. Financial Purse</span>
+                                <div class="h-px flex-1 bg-gradient-to-r from-cyan-500/30 to-transparent"></div>
+                            </div>
+                            <label for="edit-team-purse" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Auction Purse (Points)</label>
                             <div class="relative">
-                                <input id="edit-team-password" type="password" placeholder="Leave blank to keep current password" minlength="6"
-                                    class="w-full bg-[#050816] border border-slate-700 text-white rounded-xl px-3 py-2.5 pr-10 text-xs focus:ring-2 focus:ring-amber-500 outline-none">
-                                <button type="button" class="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-white"
-                                    onclick="const el=document.getElementById('edit-team-password');el.type=el.type==='password'?'text':'password'">
-                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                                </button>
+                                <input id="edit-team-purse" type="number" min="100" step="50" required
+                                    class="w-full bg-[#050816] border border-slate-700/80 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 text-white font-mono font-bold rounded-xl px-3.5 py-2.5 pr-12 text-xs transition-all outline-none">
+                                <span class="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-slate-400 text-xs font-bold font-mono">Pts</span>
                             </div>
+                            <p id="edit-team-purse-hint" class="text-[10px] text-slate-400 mt-1 font-mono"></p>
                         </div>
                     </div>
 
-                    <div>
-                        <label for="edit-team-purse" class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Auction Purse (Points)</label>
-                        <div class="relative">
-                            <input id="edit-team-purse" type="number" min="100" step="50" required
-                                class="w-full bg-[#050816] border border-slate-700 text-white font-mono font-bold rounded-xl px-3 py-2.5 pr-12 text-xs focus:ring-2 focus:ring-cyan-500 outline-none">
-                            <span class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400 text-xs font-bold">Pts</span>
-                        </div>
-                        <p id="edit-team-purse-hint" class="text-[10px] text-slate-400 mt-1 font-mono"></p>
-                    </div>
-
-                    <!-- Modal Actions -->
-                    <div class="flex items-center justify-end gap-3 pt-2">
-                        <button type="button" onclick="closeEditFranchiseModal()" class="text-xs font-bold text-slate-400 hover:text-white px-4 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800 cursor-pointer">
+                    <!-- Modal Actions (Sticky Footer) -->
+                    <div class="px-6 sm:px-7 py-4 border-t border-sky-950/80 bg-[#060D1A]/95 backdrop-blur-md flex items-center justify-end gap-3 shrink-0">
+                        <button type="button" onclick="closeEditFranchiseModal()" 
+                            class="text-xs font-bold text-slate-400 hover:text-white px-5 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800/80 hover:border-slate-700 transition-all cursor-pointer">
                             Cancel
                         </button>
                         <button id="btn-submit-edit-franchise" type="submit"
-                            class="text-xs font-black px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-slate-950 shadow-lg shadow-cyan-900/30 flex items-center gap-2 cursor-pointer transition-all">
+                            class="text-xs font-black px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-slate-950 shadow-lg shadow-cyan-900/40 hover:shadow-cyan-500/30 flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98]">
                             <span id="btn-submit-edit-franchise-text">Save Changes</span>
                             <svg id="edit-franchise-spinner" class="hidden w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
