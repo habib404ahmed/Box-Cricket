@@ -413,12 +413,15 @@ const UniBoxDb = {
                 };
             }
 
-            // Session data: only non-sensitive info (team_id, owner_name, owner_email, team_name)
+            // Session data: non-sensitive info (team_id, owner_name, owner_email, team_name, logo)
             const sessionData = {
                 email: normalizedEmail,
                 ownerName: authData.owner_name || authData.ownerName || team.owner_name || 'Franchise Owner',
                 teamId: authData.team_id || authData.teamId || team.id,
                 teamName: authData.team_name || authData.teamName || team.name || team.team_name,
+                logo_file_id: team.logo_file_id || authData.logo_file_id || '',
+                logo_file_url: team.logo_file_url || authData.logo_file_url || '',
+                logo: team.logo || authData.logo || '',
                 timestamp: Date.now()
             };
             localStorage.setItem('unibox_team_owner_session', JSON.stringify(sessionData));

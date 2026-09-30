@@ -971,7 +971,7 @@ function renderTeamBalanceHUD() {
                         ${(() => {
                             const hasImgLogo = Boolean(team.logo_file_url || (team.logo && (String(team.logo).startsWith('http') || String(team.logo).startsWith('/'))));
                             return hasImgLogo
-                                ? `<img src="${team.logo_file_url || team.logo}" alt="${teamName}" class="w-9 h-9 p-1 rounded-xl bg-slate-900 border border-slate-800 shrink-0 object-contain group-hover:scale-110 transition-transform" onerror="this.outerHTML='<span class=\\'text-xl p-1.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0\\'>🏏</span>'">`
+                                ? `<img src="${team.logo_file_url || team.logo}" alt="${teamName}" class="w-9 h-9 p-1 rounded-xl bg-slate-900 border border-slate-800 shrink-0 object-contain group-hover:scale-110 transition-transform" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=\\'text-xl p-1.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0\\'>🏏</span>'">`
                                 : `<span class="text-xl p-1.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0 group-hover:scale-110 transition-transform">${team.logo || '🏏'}</span>`;
                         })()}
                         <div class="flex items-center gap-1.5">
@@ -2152,7 +2152,7 @@ function openTeamSquadModal(teamId) {
     if (modalLogo) {
         const hasImgLogo = Boolean(team.logo_file_url || (team.logo && (String(team.logo).startsWith('http') || String(team.logo).startsWith('/'))));
         if (hasImgLogo) {
-            modalLogo.innerHTML = `<img src="${team.logo_file_url || team.logo}" alt="${team.name}" class="w-10 h-10 object-contain rounded-xl" onerror="this.outerHTML='<span id=\\'team-squad-logo\\' class=\\'text-3xl p-2 rounded-2xl bg-[#050816] border border-sky-950\\'>🏏</span>'">`;
+            modalLogo.innerHTML = `<img src="${team.logo_file_url || team.logo}" alt="${team.name}" class="w-10 h-10 object-contain rounded-xl" referrerpolicy="no-referrer" onerror="this.outerHTML='<span id=\\'team-squad-logo\\' class=\\'text-3xl p-2 rounded-2xl bg-[#050816] border border-sky-950\\'>🏏</span>'">`;
         } else {
             modalLogo.textContent = team.logo || '🏏';
         }
@@ -2894,7 +2894,7 @@ async function handleChangeTeamLogoFromModal(event) {
                 renderTeamBalanceHUD();
                 const modalLogo = document.getElementById('team-squad-logo');
                 if (modalLogo) {
-                    modalLogo.innerHTML = `<img src="${res.logo_file_url}" alt="${team.name}" class="w-10 h-10 object-contain rounded-xl">`;
+                    modalLogo.innerHTML = `<img src="${res.logo_file_url}" alt="${team.name}" class="w-10 h-10 object-contain rounded-xl" referrerpolicy="no-referrer">`;
                 }
                 showToast(`Team logo updated successfully for "${team.name}".`, 'success');
             } else {

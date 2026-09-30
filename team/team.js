@@ -84,9 +84,88 @@ document.addEventListener('DOMContentLoaded', async () => {
     const logoutBtn = document.getElementById('owner-logout-btn');
     const switchToAuctionBtn = document.getElementById('switch-to-auction-btn');
 
+    /**
+     * Extracts Google Drive file ID from URLs or raw file IDs
+     */
+    function extractDriveFileId(str) {
+        if (!str || typeof str !== 'string') return '';
+        str = str.trim();
+        const m1 = str.match(/\/file\/d\/([a-zA-Z0-9_-]{15,})/i);
+        if (m1) return m1[1];
+        const m2 = str.match(/[?&]id=([a-zA-Z0-9_-]{15,})/i);
+        if (m2) return m2[1];
+        const m3 = str.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]{15,})/i);
+        if (m3) return m3[1];
+        const m4 = str.match(/\/open\?id=([a-zA-Z0-9_-]{15,})/i);
+        if (m4) return m4[1];
+        if (/^[a-zA-Z0-9_-]{20,60}$/.test(str)) return str;
+        return '';
+    }
+
+    /**
+     * Generates an array of fallback candidate image URLs for a team logo
+     */
+    function getTeamLogoCandidates(team) {
+        if (!team) return [];
+        const rawId = team.logo_file_id || team.logoFileId || '';
+        const rawUrl = team.logo_file_url || team.logoFileUrl || (typeof team.logo === 'string' && (team.logo.startsWith('http') || team.logo.startsWith('data:') || team.logo.startsWith('/')) ? team.logo : '');
+
+        const driveId = extractDriveFileId(rawId) || extractDriveFileId(rawUrl) || extractDriveFileId(team.logo);
+        const candidates = [];
+
+        if (driveId) {
+            candidates.push(`https://lh3.googleusercontent.com/d/${driveId}`);
+            candidates.push(`https://drive.google.com/thumbnail?id=${driveId}&sz=w500`);
+            candidates.push(`https://drive.google.com/uc?export=view&id=${driveId}`);
+            candidates.push(`https://drive.google.com/uc?id=${driveId}`);
+        } else if (rawUrl && (rawUrl.startsWith('http') || rawUrl.startsWith('data:') || rawUrl.startsWith('/'))) {
+            candidates.push(rawUrl);
+        }
+
+        return candidates;
+    }
+
+    /**
+     * Renders team logo element with resilient multi-tier fallback
+     */
+    function renderTeamLogo(container, team) {
+        if (!container || !team) return;
+        const candidates = getTeamLogoCandidates(team);
+        const emoji = (team.logo && !team.logo.startsWith('http') && !team.logo.startsWith('data:') && !team.logo.startsWith('/')) ? team.logo : '🏏';
+
+        if (candidates.length > 0) {
+            const teamName = team.team_name || team.name || 'Team Logo';
+            container.innerHTML = `<img src="${candidates[0]}" alt="${teamName}" class="w-full h-full object-contain p-1 rounded-xl" data-cand-idx="0" referrerpolicy="no-referrer">`;
+            const img = container.querySelector('img');
+            if (img) {
+                img.onerror = function() {
+                    let idx = parseInt(this.getAttribute('data-cand-idx') || '0', 10);
+                    idx++;
+                    if (idx < candidates.length) {
+                        this.setAttribute('data-cand-idx', idx);
+                        this.src = candidates[idx];
+                    } else {
+                        this.onerror = null;
+                        container.innerHTML = `<span class="text-xl sm:text-2xl">${emoji}</span>`;
+                    }
+                };
+            }
+        } else {
+            container.innerHTML = `<span class="text-xl sm:text-2xl">${emoji}</span>`;
+        }
+    }
+
     // Progressive Shell Render: Show known session info immediately
     if (session.teamName && headerName) headerName.textContent = session.teamName;
     if (session.ownerName && headerOwner) headerOwner.textContent = session.ownerName;
+    if (headerLogo && (session.logo_file_url || session.logo_file_id || (session.logo && session.logo.startsWith('http')))) {
+        renderTeamLogo(headerLogo, {
+            logo_file_url: session.logo_file_url,
+            logo_file_id: session.logo_file_id,
+            logo: session.logo,
+            team_name: session.teamName
+        });
+    }
 
     // 2. LOGOUT HANDLER
     if (logoutBtn) {
@@ -202,6 +281,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (!team) return;
 
+            // Cache logo in session if resolved
+            if (team.logo_file_url || team.logo_file_id) {
+                try {
+                    const sess = JSON.parse(localStorage.getItem('unibox_team_owner_session') || '{}');
+                    sess.logo_file_id = team.logo_file_id || sess.logo_file_id || '';
+                    sess.logo_file_url = team.logo_file_url || sess.logo_file_url || '';
+                    sess.logo = team.logo || sess.logo || '';
+                    localStorage.setItem('unibox_team_owner_session', JSON.stringify(sess));
+                    sessionStorage.setItem('unibox_team_owner_session', JSON.stringify(sess));
+                } catch (e) {}
+            }
+
             teamState.currentTeam = team;
             teamState.currentSquad = team.squad || [];
             currentTeam = team;
@@ -243,12 +334,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!currentTeam) return;
 
         if (headerLogo) {
-            const logoUrl = currentTeam.logo_file_url || (currentTeam.logo && String(currentTeam.logo).startsWith('http') ? currentTeam.logo : '');
-            if (logoUrl) {
-                headerLogo.innerHTML = `<img src="${logoUrl}" alt="${currentTeam.team_name || 'Logo'}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" onerror="this.parentElement.textContent='🏏';">`;
-            } else {
-                headerLogo.textContent = currentTeam.logo || '🏏';
-            }
+            renderTeamLogo(headerLogo, currentTeam);
         }
         if (headerName) headerName.textContent = currentTeam.team_name || currentTeam.name || 'My Franchise';
         if (headerDept) {

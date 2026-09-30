@@ -108,6 +108,53 @@
     }
 
     /**
+     * Extracts Google Drive file ID from URLs or raw file IDs
+     */
+    function extractDriveFileId(str) {
+        if (!str || typeof str !== 'string') return '';
+        str = str.trim();
+        const m1 = str.match(/\/file\/d\/([a-zA-Z0-9_-]{15,})/i);
+        if (m1) return m1[1];
+        const m2 = str.match(/[?&]id=([a-zA-Z0-9_-]{15,})/i);
+        if (m2) return m2[1];
+        const m3 = str.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]{15,})/i);
+        if (m3) return m3[1];
+        const m4 = str.match(/\/open\?id=([a-zA-Z0-9_-]{15,})/i);
+        if (m4) return m4[1];
+        if (/^[a-zA-Z0-9_-]{20,60}$/.test(str)) return str;
+        return '';
+    }
+
+    /**
+     * Formats a direct web-embeddable Google Drive image URL
+     */
+    function formatDriveImageUrl(urlOrId) {
+        const fileId = extractDriveFileId(urlOrId);
+        if (fileId) return `https://lh3.googleusercontent.com/d/${fileId}`;
+        if (typeof urlOrId === 'string' && (urlOrId.startsWith('http') || urlOrId.startsWith('data:') || urlOrId.startsWith('/'))) {
+            return urlOrId;
+        }
+        return '';
+    }
+
+    /**
+     * Returns fallback candidate URLs for a Drive image
+     */
+    function getDriveImageCandidates(urlOrId, fileIdFallback = '') {
+        const fileId = extractDriveFileId(urlOrId) || extractDriveFileId(fileIdFallback);
+        const candidates = [];
+        if (fileId) {
+            candidates.push(`https://lh3.googleusercontent.com/d/${fileId}`);
+            candidates.push(`https://drive.google.com/thumbnail?id=${fileId}&sz=w500`);
+            candidates.push(`https://drive.google.com/uc?export=view&id=${fileId}`);
+            candidates.push(`https://drive.google.com/uc?id=${fileId}`);
+        } else if (typeof urlOrId === 'string' && (urlOrId.startsWith('http') || urlOrId.startsWith('data:') || urlOrId.startsWith('/'))) {
+            candidates.push(urlOrId);
+        }
+        return candidates;
+    }
+
+    /**
      * Normalizes a franchise team record so numeric purse/spent fields,
      * squads, logo, and department/short_name are safe without ever rendering undefined/NaN.
      */
@@ -117,7 +164,37 @@
         const resolvedId = String(t.id || '').trim();
         const resolvedName = String(t.team_name || t.name || '').trim();
         const resolvedShort = String(t.short_name || t.shortName || '').trim();
-        const resolvedLogo = t.logo_file_url || t.logo || '🏏';
+
+        // Dynamic key detection for logo_file_id and logo_file_url
+        const rawLogoFileId = String(
+            t.logo_file_id || t.logoFileId || t['Logo File ID'] || t['Logo File Id'] || 
+            t['logo_id'] || t['Logo ID'] || t['file_id'] || ''
+        ).trim();
+
+        const rawLogoUrl = String(
+            t.logo_file_url || t.logoFileUrl || t['Logo File URL'] || t['Logo File Url'] || 
+            t['logo_url'] || t['Logo URL'] || 
+            (typeof t.logo === 'string' && (t.logo.startsWith('http') || t.logo.startsWith('data:') || t.logo.startsWith('/')) ? t.logo : '') || ''
+        ).trim();
+
+        const rawLogo = String(t.logo || '').trim();
+
+        // Extract Drive file ID if present in logo_file_id, logo_file_url, or logo
+        const driveId = extractDriveFileId(rawLogoFileId) || extractDriveFileId(rawLogoUrl) || extractDriveFileId(rawLogo);
+        const resolvedLogoId = driveId || rawLogoFileId;
+        let resolvedLogoUrl = '';
+
+        if (driveId) {
+            resolvedLogoUrl = `https://lh3.googleusercontent.com/d/${driveId}`;
+        } else if (rawLogoUrl && (rawLogoUrl.startsWith('http') || rawLogoUrl.startsWith('data:') || rawLogoUrl.startsWith('/'))) {
+            resolvedLogoUrl = rawLogoUrl;
+        } else if (rawLogo && (rawLogo.startsWith('http') || rawLogo.startsWith('data:') || rawLogo.startsWith('/'))) {
+            resolvedLogoUrl = rawLogo;
+        }
+
+        const resolvedLogoEmoji = (!resolvedLogoUrl && rawLogo && !rawLogo.startsWith('http')) ? rawLogo : '🏏';
+        const resolvedLogo = resolvedLogoUrl || resolvedLogoEmoji;
+
         const purse = Number(t.purse ?? t.total_budget ?? 1000);
 
         // Find active squad from players list (exclude Rejected, Pending, Unassigned, Deleted athletes)
@@ -143,8 +220,8 @@
             name: resolvedName,
             short_name: resolvedShort || '',
             department: t.department || 'BTech',
-            logo_file_id: t.logo_file_id || '',
-            logo_file_url: t.logo_file_url || '',
+            logo_file_id: resolvedLogoId,
+            logo_file_url: resolvedLogoUrl,
             logo: resolvedLogo,
             purse: purse,
             total_budget: purse,
@@ -1642,7 +1719,10 @@
         }
     };
 
-    // Expose constants to GoogleTourneyApi
+    // Expose helpers and constants to GoogleTourneyApi
+    GoogleTourneyApi.extractDriveFileId = extractDriveFileId;
+    GoogleTourneyApi.formatDriveImageUrl = formatDriveImageUrl;
+    GoogleTourneyApi.getDriveImageCandidates = getDriveImageCandidates;
     GoogleTourneyApi.MAX_FRANCHISES = MAX_FRANCHISES;
     GoogleTourneyApi.MAX_SQUAD_SIZE = MAX_SQUAD_SIZE;
 

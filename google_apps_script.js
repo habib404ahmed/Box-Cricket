@@ -1279,10 +1279,29 @@ function apiGetPlayer(params) {
 }
 
 /**
+ * Helper to extract Google Drive file ID from URLs or raw file IDs
+ */
+function extractDriveFileId(str) {
+  if (!str || typeof str !== 'string') return '';
+  str = str.trim();
+  var m1 = str.match(/\/file\/d\/([a-zA-Z0-9_-]{15,})/i);
+  if (m1) return m1[1];
+  var m2 = str.match(/[?&]id=([a-zA-Z0-9_-]{15,})/i);
+  if (m2) return m2[1];
+  var m3 = str.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]{15,})/i);
+  if (m3) return m3[1];
+  var m4 = str.match(/\/open\?id=([a-zA-Z0-9_-]{15,})/i);
+  if (m4) return m4[1];
+  if (/^[a-zA-Z0-9_-]{20,60}$/.test(str)) return str;
+  return '';
+}
+
+/**
  * STEP 23 — TEAMS SYSTEM (Retrieve all 8 teams with computed purse & squad)
  */
 function apiGetTeams(params) {
   var sheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
+  var teamsHeaders = ensureTeamSheetHeaders(sheet);
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
   if (lastRow <= 1) {
@@ -1290,8 +1309,47 @@ function apiGetTeams(params) {
   }
 
   var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
-    return String(h).trim();
+    return String(h || '').trim();
   });
+
+  // Dynamic header mapping for case/spacing tolerance
+  var colMap = {};
+  for (var h = 0; h < headerRow.length; h++) {
+    var rawH = headerRow[h];
+    if (rawH) {
+      colMap[rawH] = h;
+      colMap[rawH.toLowerCase()] = h;
+      colMap[rawH.toLowerCase().replace(/[\s_-]+/g, '_')] = h;
+      colMap[rawH.toLowerCase().replace(/[\s_-]+/g, '')] = h;
+    }
+  }
+
+  function getTeamColVal(row, primaryKey, aliases) {
+    if (colMap[primaryKey] !== undefined) {
+      var v = row[colMap[primaryKey]];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    var normPrimary = primaryKey.toLowerCase().replace(/[\s_-]+/g, '_');
+    if (colMap[normPrimary] !== undefined) {
+      var v = row[colMap[normPrimary]];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    if (aliases && aliases.length) {
+      for (var a = 0; a < aliases.length; a++) {
+        var alias = aliases[a];
+        if (colMap[alias] !== undefined) {
+          var av = row[colMap[alias]];
+          if (av !== undefined && av !== null && String(av).trim() !== '') return av;
+        }
+        var normAlias = alias.toLowerCase().replace(/[\s_-]+/g, '_');
+        if (colMap[normAlias] !== undefined) {
+          var av = row[colMap[normAlias]];
+          if (av !== undefined && av !== null && String(av).trim() !== '') return av;
+        }
+      }
+    }
+    return '';
+  }
 
   var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
   var teams = [];
@@ -1337,16 +1395,20 @@ function apiGetTeams(params) {
       if (hKey) team[hKey] = row[j];
     }
 
-    var teamId = String(team.id || '').trim();
-    var teamName = String(team.team_name || team.name || '').trim();
+    var teamId = String(getTeamColVal(row, 'id', ['team_id', 'teamId']) || team.id || '').trim();
+    var teamName = String(getTeamColVal(row, 'team_name', ['name', 'team', 'franchise_name']) || team.team_name || team.name || '').trim();
+    var ownerNameVal = String(getTeamColVal(row, 'owner_name', ['owner', 'ownerName']) || team.owner_name || '').trim();
+    var ownerEmailVal = String(getTeamColVal(row, 'owner_email', ['email', 'ownerEmail']) || team.owner_email || '').trim().toLowerCase();
+    var deptVal = String(getTeamColVal(row, 'department', ['dept', 'branch']) || team.department || '').trim();
+    var shortNameVal = String(getTeamColVal(row, 'short_name', ['short_code', 'shortName', 'code']) || team.short_name || '').trim();
 
     // Cross-reference owner from Franchise_Auth if empty in Teams row
     if (authMap[teamId]) {
-      if (!team.owner_name && authMap[teamId].owner_name) {
-        team.owner_name = authMap[teamId].owner_name;
+      if (!ownerNameVal && authMap[teamId].owner_name) {
+        ownerNameVal = authMap[teamId].owner_name;
       }
-      if (!team.owner_email && authMap[teamId].owner_email) {
-        team.owner_email = authMap[teamId].owner_email;
+      if (!ownerEmailVal && authMap[teamId].owner_email) {
+        ownerEmailVal = authMap[teamId].owner_email;
       }
     }
 
@@ -1365,19 +1427,40 @@ function apiGetTeams(params) {
       return sum + (Number(p.sold_price) || 0);
     }, 0);
 
-    var purse = Number(team.purse || team.total_budget || 1000);
+    var rawPurseVal = getTeamColVal(row, 'purse', ['total_budget', 'budget']);
+    var purse = Number(rawPurseVal || team.purse || team.total_budget || 1000);
     var remaining = Math.max(0, purse - spent);
+
+    // Dynamic resolution of logo fields
+    var rawLogoId = String(getTeamColVal(row, 'logo_file_id', ['logo_id', 'file_id', 'logoId']) || team.logo_file_id || '').trim();
+    var rawLogoUrl = String(getTeamColVal(row, 'logo_file_url', ['logo_url', 'logoUrl', 'file_url']) || team.logo_file_url || '').trim();
+    var rawLogo = String(getTeamColVal(row, 'logo', ['emoji']) || team.logo || '').trim();
+
+    // Extract Drive file ID if present in logo_file_id, logo_file_url, or logo
+    var driveId = extractDriveFileId(rawLogoId) || extractDriveFileId(rawLogoUrl) || extractDriveFileId(rawLogo);
+    var resolvedLogoId = driveId || rawLogoId;
+    var resolvedLogoUrl = '';
+
+    if (driveId) {
+      resolvedLogoUrl = 'https://lh3.googleusercontent.com/d/' + driveId;
+    } else if (rawLogoUrl && (rawLogoUrl.startsWith('http') || rawLogoUrl.startsWith('data:') || rawLogoUrl.startsWith('/'))) {
+      resolvedLogoUrl = rawLogoUrl;
+    } else if (rawLogo && (rawLogo.startsWith('http') || rawLogo.startsWith('data:') || rawLogo.startsWith('/'))) {
+      resolvedLogoUrl = rawLogo;
+    }
+
+    var resolvedLogoEmoji = (!resolvedLogoUrl && rawLogo && !rawLogo.startsWith('http')) ? rawLogo : '🏏';
 
     team.id = teamId;
     team.name = teamName;
     team.team_name = teamName;
-    team.short_name = String(team.short_name || teamName.substring(0, 4).toUpperCase()).trim();
-    team.department = String(team.department || team.short_name || '').trim();
-    team.logo_file_id = String(team.logo_file_id || '').trim();
-    team.logo_file_url = String(team.logo_file_url || (String(team.logo || '').startsWith('http') ? team.logo : '')).trim();
-    team.logo = team.logo_file_url || team.logo || '🏏';
-    team.owner_name = String(team.owner_name || '').trim();
-    team.owner_email = String(team.owner_email || '').trim().toLowerCase();
+    team.short_name = shortNameVal || teamName.substring(0, 4).toUpperCase();
+    team.department = deptVal || team.short_name || '';
+    team.logo_file_id = resolvedLogoId;
+    team.logo_file_url = resolvedLogoUrl;
+    team.logo = resolvedLogoUrl || resolvedLogoEmoji;
+    team.owner_name = ownerNameVal;
+    team.owner_email = ownerEmailVal;
     team.purse = purse;
     team.total_budget = purse;
     team.total_spent = spent;
@@ -1388,8 +1471,8 @@ function apiGetTeams(params) {
     team.player_count = squad.length;
     team.squad_count = squad.length;
     team.squad = squad;
-    team.status = String(team.status || 'Active').trim();
-    team.created_at = team.created_at || new Date().toISOString();
+    team.status = String(getTeamColVal(row, 'status') || team.status || 'Active').trim();
+    team.created_at = String(getTeamColVal(row, 'created_at') || team.created_at || new Date().toISOString()).trim();
 
     // Security: never return password or secret hashes
     delete team.password;
@@ -3031,6 +3114,9 @@ function apiLoginFranchise(payload) {
       email: email,
       team_name: teamName,
       teamName: teamName,
+      logo_file_id: finalTeam.logo_file_id || '',
+      logo_file_url: finalTeam.logo_file_url || '',
+      logo: finalTeam.logo || '',
       team: finalTeam
     },
     message: 'Authenticated successfully.'
