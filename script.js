@@ -1,13 +1,144 @@
-﻿// Box Cricket League - Interactive Script
+// Box Cricket League - Interactive Script
+
+// ==============================================================================
+// GLOBAL PUBLIC REGISTRATION CONTROL CONTROLLER (Sections 7, 8, 12, 13, 15, 16, 17)
+// ==============================================================================
+let currentRegistrationStatus = 'checking'; // 'checking' | 'open' | 'closed' | 'error'
+let activeAuthTab = 'login';
+let isCheckingRegistrationStatus = false;
+
+function renderSignupAreaState() {
+    if (activeAuthTab !== 'signup') return;
+
+    const signupForm = document.getElementById('signup-form');
+    const loadingState = document.getElementById('signup-loading-state');
+    const closedState = document.getElementById('registration-closed-state');
+    const errorState = document.getElementById('registration-error-state');
+    const submitBtn = document.getElementById('signup-submit-btn');
+
+    if (currentRegistrationStatus === 'checking') {
+        loadingState?.classList.remove('hidden');
+        loadingState?.classList.add('flex');
+        signupForm?.classList.add('hidden');
+        closedState?.classList.add('hidden');
+        errorState?.classList.add('hidden');
+        if (submitBtn) submitBtn.disabled = true;
+    } else if (currentRegistrationStatus === 'open') {
+        loadingState?.classList.add('hidden');
+        loadingState?.classList.remove('flex');
+        signupForm?.classList.remove('hidden');
+        closedState?.classList.add('hidden');
+        errorState?.classList.add('hidden');
+        if (submitBtn) submitBtn.disabled = false;
+    } else if (currentRegistrationStatus === 'closed') {
+        loadingState?.classList.add('hidden');
+        loadingState?.classList.remove('flex');
+        signupForm?.classList.add('hidden');
+        closedState?.classList.remove('hidden');
+        errorState?.classList.add('hidden');
+        if (submitBtn) submitBtn.disabled = true;
+    } else if (currentRegistrationStatus === 'error') {
+        loadingState?.classList.add('hidden');
+        loadingState?.classList.remove('flex');
+        signupForm?.classList.add('hidden');
+        closedState?.classList.add('hidden');
+        errorState?.classList.remove('hidden');
+        if (submitBtn) submitBtn.disabled = true;
+    }
+}
+
+function updatePublicRegistrationUI(isOpen) {
+    const boolOpen = Boolean(isOpen);
+
+    // Nav chip
+    const navChip = document.getElementById('nav-reg-status-chip');
+    const navDot = document.getElementById('nav-reg-status-dot');
+    const navText = document.getElementById('nav-reg-status-text');
+    if (navChip && navDot && navText) {
+        if (boolOpen) {
+            navChip.className = 'hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-400/20 text-[11px] font-bold text-emerald-400 uppercase tracking-wider';
+            navDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+            navText.textContent = 'Registration Open';
+        } else {
+            navChip.className = 'hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-400/20 text-[11px] font-bold text-rose-400 uppercase tracking-wider';
+            navDot.className = 'w-2 h-2 rounded-full bg-rose-400';
+            navText.textContent = 'Registration Closed';
+        }
+    }
+
+    // Hero button
+    const heroBtn = document.getElementById('hero-register-btn');
+    const heroBtnText = document.getElementById('hero-register-btn-text');
+    if (heroBtn && heroBtnText) {
+        if (boolOpen) {
+            heroBtnText.textContent = 'Register Now';
+            heroBtn.className = 'group btn-gold text-sm px-8 py-3.5 w-full sm:w-auto text-center cursor-pointer';
+        } else {
+            heroBtnText.textContent = 'Registration Closed';
+            heroBtn.className = 'group btn-secondary text-sm px-8 py-3.5 w-full sm:w-auto text-center cursor-pointer border-rose-500/40 text-rose-300 hover:text-white';
+        }
+    }
+}
+
+// Reusable function to enforce registration closed state (Section 16)
+function showRegistrationClosed() {
+    currentRegistrationStatus = 'closed';
+    updatePublicRegistrationUI(false);
+    renderSignupAreaState();
+}
+
+// Reusable function to restore registration open state
+function showRegistrationOpen() {
+    currentRegistrationStatus = 'open';
+    updatePublicRegistrationUI(true);
+    renderSignupAreaState();
+}
+
+async function checkPublicRegistrationStatus(isRetry = false) {
+    if (isCheckingRegistrationStatus) return;
+    isCheckingRegistrationStatus = true;
+
+    if (isRetry || currentRegistrationStatus === 'checking') {
+        currentRegistrationStatus = 'checking';
+        renderSignupAreaState();
+    }
+
+    try {
+        if (!window.GoogleTourneyApi || typeof window.GoogleTourneyApi.getRegistrationStatus !== 'function') {
+            throw new Error('API client not available.');
+        }
+
+        const res = await window.GoogleTourneyApi.getRegistrationStatus();
+        if (res && res.success && res.registration_open !== undefined) {
+            const isOpen = res.registration_open === true || res.registration_open === 'true';
+            if (isOpen) {
+                showRegistrationOpen();
+            } else {
+                showRegistrationClosed();
+            }
+        } else {
+            console.warn('[REGISTRATION CHECK] Could not verify status with backend:', res);
+            currentRegistrationStatus = 'error';
+            renderSignupAreaState();
+        }
+    } catch (err) {
+        console.warn('[REGISTRATION CHECK] Exception checking registration status:', err);
+        currentRegistrationStatus = 'error';
+        renderSignupAreaState();
+    } finally {
+        isCheckingRegistrationStatus = false;
+    }
+}
 
 // Tab Switching Functionality (Login / Sign Up)
 function switchAuthTab(tab) {
     const loginBtn = document.getElementById('login-tab-btn');
     const signupBtn = document.getElementById('signup-tab-btn');
     const loginForm = document.getElementById('login-form');
-    const signupForm = document.getElementById('signup-form');
 
-    if (!loginBtn || !signupBtn || !loginForm || !signupForm) return;
+    if (!loginBtn || !signupBtn || !loginForm) return;
+
+    activeAuthTab = tab;
 
     // Clear previous error messages
     document.getElementById('login-error-box')?.classList.add('hidden');
@@ -22,7 +153,12 @@ function switchAuthTab(tab) {
         signupBtn.classList.add('text-slate-400', 'hover:text-slate-200');
 
         loginForm.classList.remove('hidden');
-        signupForm.classList.add('hidden');
+
+        // Hide signup containers
+        document.getElementById('signup-form')?.classList.add('hidden');
+        document.getElementById('signup-loading-state')?.classList.add('hidden');
+        document.getElementById('registration-closed-state')?.classList.add('hidden');
+        document.getElementById('registration-error-state')?.classList.add('hidden');
     } else if (tab === 'signup') {
         // Activate Signup Tab
         signupBtn.classList.add('text-lime-400', 'bg-slate-900', 'shadow-sm');
@@ -31,13 +167,22 @@ function switchAuthTab(tab) {
         loginBtn.classList.remove('text-lime-400', 'bg-slate-900', 'shadow-sm');
         loginBtn.classList.add('text-slate-400', 'hover:text-slate-200');
 
-        signupForm.classList.remove('hidden');
         loginForm.classList.add('hidden');
+
+        // If status was not yet determined, verify now
+        if (currentRegistrationStatus === 'checking') {
+            checkPublicRegistrationStatus(false);
+        }
+        renderSignupAreaState();
     }
 }
 
-// Make switchAuthTab accessible globally for inline onclick handlers
+// Make functions accessible globally for inline onclick handlers
 window.switchAuthTab = switchAuthTab;
+window.showRegistrationClosed = showRegistrationClosed;
+window.showRegistrationOpen = showRegistrationOpen;
+window.checkPublicRegistrationStatus = checkPublicRegistrationStatus;
+
 
 // Modal Manager
 function openModal(modalId) {
@@ -891,9 +1036,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     timeoutPromise
                 ]);
                 if (dbResult.error || !dbResult.data) {
+                    const errStr = String(dbResult.error?.code || dbResult.error || dbResult.message || '');
+                    if (errStr.includes('REGISTRATION_CLOSED') || errStr.includes('closed')) {
+                        // Section 10: Race Condition Handler
+                        showRegistrationClosed();
+                        if (signupErrorBox && signupErrorText) {
+                            signupErrorText.textContent = "Registration has just been closed by the tournament administration.";
+                            signupErrorBox.classList.remove('hidden');
+                            signupErrorBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }
+                        return;
+                    }
+
                     const errMsg = (dbResult.error?.code === '23505' || dbResult.error?.message?.includes('unique') || dbResult.error?.message?.includes('duplicate key'))
                         ? 'An athlete with this email or enrollment number already exists.'
-                        : (dbResult.error?.message || 'Registration failed. Please check details and try again.');
+                        : (dbResult.error?.message || dbResult.error || 'Registration failed. Please check details and try again.');
                     
                     if (signupErrorBox && signupErrorText) {
                         signupErrorText.textContent = errMsg;
@@ -1524,6 +1681,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 `${failedTypes} upload failed (non-fatal). Registration is saved. Visit your dashboard to retry.`,
                 'warning'
             );
+        }
+    });
+
+    // Auto-check registration status immediately on load (Section 13 & 17)
+    checkPublicRegistrationStatus(false);
+
+    // Periodic 30s background sync on public page without page reload (Section 15)
+    setInterval(() => {
+        if (document.visibilityState === 'visible') {
+            checkPublicRegistrationStatus(false);
+        }
+    }, 30000);
+
+    // Visibility change check
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            checkPublicRegistrationStatus(false);
         }
     });
 

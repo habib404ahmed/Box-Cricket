@@ -123,6 +123,7 @@ const adminState = {
     teams: [],
     auction: {},
     settings: {},
+    registrationOpen: true,
     uiState: 'loading', // 'loading' | 'success' | 'empty' | 'error'
     errorMessage: '',
     loading: false,
@@ -326,6 +327,22 @@ async function initAdminDashboard() {
     }
 
     console.log('[ADMIN] Initial data fetch started');
+
+    // Asynchronously fetch global registration status from Google Sheets backend
+    (async () => {
+        try {
+            if (window.GoogleTourneyApi && typeof window.GoogleTourneyApi.getRegistrationStatus === 'function') {
+                const regRes = await window.GoogleTourneyApi.getRegistrationStatus();
+                if (regRes && regRes.success && regRes.registration_open !== undefined) {
+                    const serverRegOpen = regRes.registration_open === true || regRes.registration_open === 'true';
+                    adminState.registrationOpen = serverRegOpen;
+                    updateRegistrationControlUI(serverRegOpen);
+                }
+            }
+        } catch (regErr) {
+            console.warn('[ADMIN] Initial registration status check warning:', regErr);
+        }
+    })();
 
     // Sequential Initial Data Load: Google Apps Script Web App serializes concurrent requests
     // and can throttle/drop simultaneous calls from the same client.
@@ -691,6 +708,14 @@ async function refreshAdminData(forceRender = false) {
             const syncRes = await window.GoogleTourneyApi.getSyncState();
             if (syncRes && syncRes.success && syncRes.data) {
                 syncState = syncRes.data;
+                // Live sync registration status without full dataset download or page reload
+                if (syncState.registration_open !== undefined) {
+                    const serverRegOpen = syncState.registration_open === true || syncState.registration_open === 'true';
+                    if (adminState.registrationOpen !== serverRegOpen) {
+                        adminState.registrationOpen = serverRegOpen;
+                        updateRegistrationControlUI(serverRegOpen);
+                    }
+                }
             }
         }
 
@@ -4140,6 +4165,193 @@ async function handleConfirmApproveAll() {
     }
 }
 
+// ==============================================================================
+// GLOBAL REGISTRATION OPEN / CLOSED CONTROL (Requirement 1, 5, 6, 14, 20, 21, 22)
+// ==============================================================================
+let pendingRegistrationToggleTarget = null;
+let isUpdatingRegistrationStatus = false;
+
+function updateRegistrationControlUI(isOpen) {
+    const boolOpen = Boolean(isOpen);
+    adminState.registrationOpen = boolOpen;
+
+    // 1. Header live status pill
+    const headerPill = document.getElementById('header-reg-status-badge');
+    const headerDot = document.getElementById('header-reg-status-dot');
+    const headerText = document.getElementById('header-reg-status-text');
+    if (headerPill && headerDot && headerText) {
+        if (boolOpen) {
+            headerPill.className = 'hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#08111F] border border-emerald-500/30 text-[11px] font-bold text-emerald-400';
+            headerDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+            headerText.textContent = 'Reg: Open';
+        } else {
+            headerPill.className = 'hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#08111F] border border-rose-500/30 text-[11px] font-bold text-rose-400';
+            headerDot.className = 'w-2 h-2 rounded-full bg-rose-400';
+            headerText.textContent = 'Reg: Closed';
+        }
+    }
+
+    // 2. Tournament Control Card Elements
+    const statusPill = document.getElementById('reg-status-pill');
+    const pillDot = document.getElementById('reg-status-pill-dot');
+    const pillText = document.getElementById('reg-status-pill-text');
+    const iconBox = document.getElementById('reg-status-icon-box');
+    const statusLabel = document.getElementById('reg-status-label');
+    const toggleBtn = document.getElementById('btn-toggle-registration');
+    const toggleKnob = document.getElementById('reg-toggle-knob');
+
+    if (boolOpen) {
+        if (statusPill) {
+            statusPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5';
+        }
+        if (pillDot) pillDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse';
+        if (pillText) pillText.textContent = '🟢 REGISTRATION OPEN';
+
+        if (iconBox) {
+            iconBox.className = 'w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-2xl shrink-0 transition-colors shadow-inner';
+        }
+        if (statusLabel) {
+            statusLabel.className = 'text-xs sm:text-sm font-black text-emerald-400 uppercase tracking-wide';
+            statusLabel.textContent = '● OPEN';
+        }
+        if (toggleBtn) {
+            toggleBtn.className = 'relative inline-flex h-11 w-20 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-[#08111F] bg-emerald-500';
+            toggleBtn.setAttribute('aria-checked', 'true');
+        }
+        if (toggleKnob) {
+            toggleKnob.className = 'pointer-events-none translate-x-9 inline-block h-10 w-10 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[11px] font-black text-emerald-700';
+            toggleKnob.textContent = 'ON';
+        }
+    } else {
+        if (statusPill) {
+            statusPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1.5';
+        }
+        if (pillDot) pillDot.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        if (pillText) pillText.textContent = '🔴 REGISTRATION CLOSED';
+
+        if (iconBox) {
+            iconBox.className = 'w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-center text-2xl shrink-0 transition-colors shadow-inner';
+        }
+        if (statusLabel) {
+            statusLabel.className = 'text-xs sm:text-sm font-black text-rose-400 uppercase tracking-wide';
+            statusLabel.textContent = '● CLOSED';
+        }
+        if (toggleBtn) {
+            toggleBtn.className = 'relative inline-flex h-11 w-20 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 focus:ring-offset-[#08111F] bg-slate-700';
+            toggleBtn.setAttribute('aria-checked', 'false');
+        }
+        if (toggleKnob) {
+            toggleKnob.className = 'pointer-events-none translate-x-0 inline-block h-10 w-10 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[11px] font-black text-slate-700';
+            toggleKnob.textContent = 'OFF';
+        }
+    }
+}
+
+function promptRegistrationToggle() {
+    if (isUpdatingRegistrationStatus) return;
+
+    const currentOpen = Boolean(adminState.registrationOpen);
+    const targetOpen = !currentOpen;
+    pendingRegistrationToggleTarget = targetOpen;
+
+    const modal = document.getElementById('modal-registration-toggle');
+    const titleEl = document.getElementById('reg-modal-title');
+    const descEl = document.getElementById('reg-modal-desc');
+    const keyEl = document.getElementById('reg-modal-setting-key');
+    const iconContainer = document.getElementById('reg-modal-icon-container');
+    const confirmBtn = document.getElementById('btn-confirm-registration-toggle');
+    const confirmText = document.getElementById('btn-confirm-reg-text');
+
+    if (!modal) return;
+
+    if (targetOpen) {
+        // Closed -> Open (Section 6)
+        if (titleEl) titleEl.textContent = 'Open athlete registration?';
+        if (descEl) descEl.textContent = 'The public registration form will become accessible to athletes again.';
+        if (keyEl) keyEl.textContent = 'registration_open = true';
+        if (iconContainer) {
+            iconContainer.className = 'w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-2xl shrink-0';
+            iconContainer.innerHTML = '🟢';
+        }
+        if (confirmBtn) {
+            confirmBtn.className = 'text-xs font-black px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-900/30 flex items-center gap-2 cursor-pointer transition-all';
+        }
+        if (confirmText) confirmText.textContent = 'Open Registration';
+    } else {
+        // Open -> Closed (Section 5)
+        if (titleEl) titleEl.textContent = 'Close athlete registration?';
+        if (descEl) descEl.textContent = 'New athletes will no longer be able to access the registration form.';
+        if (keyEl) keyEl.textContent = 'registration_open = false';
+        if (iconContainer) {
+            iconContainer.className = 'w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-2xl shrink-0';
+            iconContainer.innerHTML = '🔒';
+        }
+        if (confirmBtn) {
+            confirmBtn.className = 'text-xs font-black px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white shadow-lg shadow-rose-900/30 flex items-center gap-2 cursor-pointer transition-all';
+        }
+        if (confirmText) confirmText.textContent = 'Close Registration';
+    }
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeRegistrationToggleModal() {
+    const modal = document.getElementById('modal-registration-toggle');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    pendingRegistrationToggleTarget = null;
+}
+
+async function executeRegistrationToggle() {
+    if (isUpdatingRegistrationStatus || pendingRegistrationToggleTarget === null) return;
+
+    const targetState = Boolean(pendingRegistrationToggleTarget);
+    isUpdatingRegistrationStatus = true;
+
+    const confirmBtn = document.getElementById('btn-confirm-registration-toggle');
+    const spinner = document.getElementById('reg-toggle-spinner');
+    const confirmText = document.getElementById('btn-confirm-reg-text');
+
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (spinner) spinner.classList.remove('hidden');
+
+    try {
+        if (!window.GoogleTourneyApi || typeof window.GoogleTourneyApi.setRegistrationStatus !== 'function') {
+            throw new Error('API client not available.');
+        }
+
+        const res = await window.GoogleTourneyApi.setRegistrationStatus(targetState);
+        if (!res || !res.success) {
+            throw new Error(res?.error || 'Server rejected registration status update.');
+        }
+
+        // Successfully updated Google Sheets source of truth!
+        adminState.registrationOpen = targetState;
+        updateRegistrationControlUI(targetState);
+        closeRegistrationToggleModal();
+
+        // Confirmation Toasts (Section 22)
+        if (targetState) {
+            showToast('Registration opened successfully.', 'success');
+        } else {
+            showToast('Registration closed successfully.', 'success');
+        }
+
+        // Fast sequential refresh without page reload
+        refreshAdminData(false);
+    } catch (err) {
+        console.error('[REGISTRATION CONTROL ERROR]', err);
+        showToast('Unable to update registration status.', 'error');
+    } finally {
+        isUpdatingRegistrationStatus = false;
+        if (confirmBtn) confirmBtn.disabled = false;
+        if (spinner) spinner.classList.add('hidden');
+    }
+}
+
 // Global Exports
 window.openAthleteModal = openAthleteModal;
 window.closeAthleteModal = closeAthleteModal;
@@ -4197,4 +4409,9 @@ window.startAutoRefresh = startAutoRefresh;
 window.stopAutoRefresh = stopAutoRefresh;
 window.adminState = adminState;
 window.initAdminDashboard = initAdminDashboard;
+window.updateRegistrationControlUI = updateRegistrationControlUI;
+window.promptRegistrationToggle = promptRegistrationToggle;
+window.closeRegistrationToggleModal = closeRegistrationToggleModal;
+window.executeRegistrationToggle = executeRegistrationToggle;
+
 

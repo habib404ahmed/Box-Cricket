@@ -119,6 +119,12 @@
                     <span id="db-status-text">Google Sheets Live</span>
                 </div>
 
+                <!-- Registration Status Header Pill -->
+                <div id="header-reg-status-badge" class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#08111F] border border-emerald-500/30 text-[11px] font-bold text-emerald-400">
+                    <span id="header-reg-status-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="header-reg-status-text">Reg: Open</span>
+                </div>
+
                 <!-- Refresh Button -->
                 <button id="refresh-btn" type="button" class="p-2 sm:p-2.5 rounded-xl border border-sky-900/60 bg-[#08111F] hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer" title="Refresh Live Data">
                     <svg id="refresh-icon" class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -205,6 +211,50 @@
                 <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-3">Competing Franchises</div>
                 <div class="progress-track">
                     <div class="h-full rounded-full bg-gradient-to-r from-blue-500 to-sky-400" style="width: 100%;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== TOURNAMENT CONTROLS / REGISTRATION ACCESS ===== -->
+        <section id="tournament-controls-section" class="glass-card-static p-5 sm:p-6 rounded-2xl border border-sky-950/80 bg-gradient-to-br from-[#08111F]/90 via-[#050C1B]/95 to-[#08111F]/90 shadow-xl relative overflow-hidden">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex items-start sm:items-center gap-3.5">
+                    <div id="reg-status-icon-box" class="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-2xl shrink-0 transition-colors shadow-inner">
+                        🏏
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2 mb-0.5">
+                            <span class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Tournament Control</span>
+                            <span id="reg-status-pill" class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                                <span id="reg-status-pill-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                <span id="reg-status-pill-text">🟢 REGISTRATION OPEN</span>
+                            </span>
+                        </div>
+                        <h2 class="text-lg sm:text-xl font-black text-white uppercase tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">
+                            Athlete Registration Control
+                        </h2>
+                        <p class="text-xs text-slate-400 max-w-xl">
+                            Control whether new athletes can register for SUNSTONE PREMIER LEAGUE 2026. Global server-side setting backed by Google Sheets.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Premium Toggle Switch & Touch Target (min 44px) -->
+                <div class="flex items-center gap-4 bg-[#050816]/80 border border-slate-800/80 p-3 rounded-2xl shrink-0 self-start sm:self-auto">
+                    <div class="text-right">
+                        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</div>
+                        <div id="reg-status-label" class="text-xs sm:text-sm font-black text-emerald-400 uppercase tracking-wide">
+                            ● OPEN
+                        </div>
+                    </div>
+                    
+                    <button id="btn-toggle-registration" type="button" onclick="promptRegistrationToggle()"
+                        class="relative inline-flex h-11 w-20 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-[#08111F] bg-emerald-500"
+                        role="switch" aria-checked="true" aria-label="Toggle athlete registration status">
+                        <span id="reg-toggle-knob" class="pointer-events-none translate-x-9 inline-block h-10 w-10 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[11px] font-black text-emerald-700">
+                            ON
+                        </span>
+                    </button>
                 </div>
             </div>
         </section>
@@ -1273,6 +1323,45 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== REGISTRATION TOGGLE CONFIRMATION MODAL ===== -->
+    <div id="modal-registration-toggle" tabindex="-1" aria-hidden="true" class="hidden fixed inset-0 z-50 justify-center items-center w-full h-full bg-[#050816]/90 backdrop-blur-xl p-4 overflow-y-auto">
+        <div class="relative w-full max-w-md my-auto">
+            <div class="modal-content p-6 sm:p-7 space-y-5 border border-sky-900/60 shadow-2xl rounded-2xl bg-[#08111F]">
+                <div class="flex items-start gap-4">
+                    <div id="reg-modal-icon-container" class="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-2xl shrink-0">
+                        🔒
+                    </div>
+                    <div class="space-y-1">
+                        <h3 id="reg-modal-title" class="text-lg font-black text-white uppercase tracking-tight" style="font-family: 'Space Grotesk', sans-serif;">
+                            Close athlete registration?
+                        </h3>
+                        <p id="reg-modal-desc" class="text-xs text-slate-300 leading-relaxed">
+                            New athletes will no longer be able to access the registration form.
+                        </p>
+                        <p class="text-[11px] text-slate-500 font-mono mt-1">
+                            Google Sheets Settings: <span id="reg-modal-setting-key" class="text-sky-400">registration_open = false</span>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-3 pt-2 border-t border-sky-950/80">
+                    <button type="button" onclick="closeRegistrationToggleModal()"
+                        class="text-xs font-bold text-slate-400 hover:text-white px-4 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800 cursor-pointer transition-all">
+                        Cancel
+                    </button>
+                    <button id="btn-confirm-registration-toggle" type="button" onclick="executeRegistrationToggle()"
+                        class="text-xs font-black px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white shadow-lg shadow-rose-900/30 flex items-center gap-2 cursor-pointer transition-all">
+                        <span id="btn-confirm-reg-text">Close Registration</span>
+                        <svg id="reg-toggle-spinner" class="hidden w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

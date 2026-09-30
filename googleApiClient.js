@@ -591,6 +591,62 @@
             return { success: true };
         },
 
+        // --- TOURNAMENT REGISTRATION CONTROL (GET / POST) ---
+        getRegistrationStatus: async () => {
+            if (!isConfigured()) {
+                return { success: true, registration_open: true, status: 'OPEN' };
+            }
+            try {
+                // Try fast GET endpoint with 8s timeout
+                const res = await getApi('getRegistrationStatus', {}, 8000, 1);
+                if (res && res.success !== false) {
+                    const isOpen = res.registration_open !== false && res.status !== 'CLOSED';
+                    return { success: true, registration_open: isOpen, status: isOpen ? 'OPEN' : 'CLOSED' };
+                }
+            } catch (err) {
+                console.warn('[API] getRegistrationStatus GET fallback:', err);
+            }
+
+            try {
+                // Fallback to POST
+                const postRes = await postApi('getRegistrationStatus', {}, 10000);
+                if (postRes && postRes.success !== false) {
+                    const isOpen = postRes.registration_open !== false && postRes.status !== 'CLOSED';
+                    return { success: true, registration_open: isOpen, status: isOpen ? 'OPEN' : 'CLOSED' };
+                }
+            } catch (postErr) {
+                console.error('[API] getRegistrationStatus failed:', postErr);
+            }
+
+            return { success: false, error: 'UNABLE_TO_VERIFY_STATUS' };
+        },
+
+        setRegistrationStatus: async (isOpen) => {
+            if (!isConfigured()) {
+                return { success: false, error: 'Database not configured.' };
+            }
+
+            let adminSession = null;
+            try {
+                const raw = sessionStorage.getItem('unibox_admin_session') || localStorage.getItem('unibox_admin_session');
+                if (raw) adminSession = JSON.parse(raw);
+            } catch (e) {}
+
+            const boolVal = Boolean(isOpen);
+            const payload = {
+                action: 'setRegistrationStatus',
+                registration_open: boolVal,
+                isOpen: boolVal,
+                role: 'ADMIN',
+                admin_token: (adminSession && adminSession.admin_token) || ADMIN_SECRET_KEY,
+                session_token: (adminSession && (adminSession.session_token || adminSession.admin_token)) || ADMIN_SECRET_KEY,
+                actor: (adminSession && (adminSession.username || adminSession.email)) || 'admin'
+            };
+
+            const res = await postApi('setRegistrationStatus', payload, 25000);
+            return res;
+        },
+
         // --- ATHLETE REGISTRATION (POST) ---
         registerPlayer: async (playerData) => {
             // Frontend validation: Branch restriction strictly BCA, B.Tech, BBA
@@ -800,6 +856,10 @@
             }
 
             return { success: true, data: normalized, error: null, source: 'google_sheets' };
+        },
+
+        savePlayer: async (playerData) => {
+            return await GoogleTourneyApi.registerPlayer(playerData);
         },
 
         // --- ATHLETE STATUS: APPROVE / REJECT ---

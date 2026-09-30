@@ -761,6 +761,11 @@ function doGet(e) {
         result = apiGetSettings(params);
         break;
 
+      case 'getRegistrationStatus':
+      case 'registrationStatus':
+        result = apiGetRegistrationStatus(params);
+        break;
+
       default:
         result = { success: false, error: 'Unknown GET action: ' + action };
         break;
@@ -827,7 +832,8 @@ function doPost(e) {
       'createTeam', 'createFranchise', 'registerFranchise', 'updateTeam', 'deleteTeam',
       'deleteAllPlayers', 'deletePlayer', 'deletePlayers', 'approvePlayer', 'approvePlayers', 'approveAllPlayers',
       'unapprovePlayer', 'unapprovePlayers',
-      'rejectPlayer', 'purchasePlayer', 'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse'
+      'rejectPlayer', 'purchasePlayer', 'assignPlayer', 'sellPlayer', 'removePlayerFromTeam', 'updatePurse',
+      'setRegistrationStatus', 'updateRegistrationStatus'
     ];
 
     if (STRICT_ADMIN_ACTIONS.indexOf(action) !== -1) {
@@ -965,6 +971,16 @@ function doPost(e) {
         result = apiUploadTeamLogo(payload);
         break;
 
+      case 'getRegistrationStatus':
+      case 'registrationStatus':
+        result = apiGetRegistrationStatus(payload);
+        break;
+
+      case 'setRegistrationStatus':
+      case 'updateRegistrationStatus':
+        result = apiSetRegistrationStatus(payload);
+        break;
+
       default:
         result = { success: false, error: 'Unknown POST action: ' + action };
         break;
@@ -1040,6 +1056,7 @@ function apiGetSyncState(params) {
 
   var playersCount = Math.max(0, playersLastRow - 1);
   var teamsCount = Math.max(0, teamsLastRow - 1);
+  var registrationOpen = getRegistrationOpenSetting();
 
   return {
     success: true,
@@ -1049,6 +1066,8 @@ function apiGetSyncState(params) {
       teamsCount: teamsCount,
       teamsLastRow: teamsLastRow,
       auctionLastRow: auctionLastRow,
+      registration_open: registrationOpen,
+      registrationOpen: registrationOpen,
       serverTime: new Date().toISOString()
     }
   };
@@ -1441,6 +1460,109 @@ function apiGetSettings(params) {
   return { success: true, data: settings };
 }
 
+/**
+ * ==============================================================================
+ * GLOBAL REGISTRATION STATUS HELPERS & APIS (Settings Sheet backed)
+ * ==============================================================================
+ */
+
+/**
+ * Get registration_open status from Settings sheet.
+ * If setting is missing, defaults to true (OPEN) and creates it in Settings sheet.
+ */
+function getRegistrationOpenSetting() {
+  try {
+    var ss = getSpreadsheet();
+    var sheet = getOrCreateSheet(CONFIG.SHEETS.SETTINGS, HEADERS.SETTINGS);
+    var lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      var vals = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+      for (var i = 0; i < vals.length; i++) {
+        var key = String(vals[i][0] || '').trim().toLowerCase();
+        if (key === 'registration_open') {
+          var val = String(vals[i][1]).trim().toLowerCase();
+          return val !== 'false' && val !== '0' && val !== 'closed';
+        }
+      }
+    }
+    // Default to true if not yet configured (Section 3)
+    sheet.appendRow(['registration_open', 'true']);
+    SpreadsheetApp.flush();
+    return true;
+  } catch (err) {
+    Logger.log('[SETTINGS] Error reading registration_open setting: ' + err);
+    return true;
+  }
+}
+
+/**
+ * Set registration_open status in Settings sheet.
+ */
+function setRegistrationOpenSetting(isOpen) {
+  var ss = getSpreadsheet();
+  var sheet = getOrCreateSheet(CONFIG.SHEETS.SETTINGS, HEADERS.SETTINGS);
+  var lastRow = sheet.getLastRow();
+  var boolStr = isOpen ? 'true' : 'false';
+  var updated = false;
+
+  if (lastRow > 1) {
+    var vals = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      var key = String(vals[i][0] || '').trim().toLowerCase();
+      if (key === 'registration_open') {
+        sheet.getRange(i + 2, 2).setValue(boolStr);
+        updated = true;
+        break;
+      }
+    }
+  }
+
+  if (!updated) {
+    sheet.appendRow(['registration_open', boolStr]);
+  }
+  SpreadsheetApp.flush();
+  Logger.log('[REGISTRATION SETTING] registration_open set to ' + boolStr);
+  return isOpen;
+}
+
+/**
+ * API Action: getRegistrationStatus
+ * Lightweight public check (does not load players/teams data).
+ */
+function apiGetRegistrationStatus(params) {
+  var isOpen = getRegistrationOpenSetting();
+  return {
+    success: true,
+    registration_open: isOpen,
+    status: isOpen ? 'OPEN' : 'CLOSED',
+    timestamp: new Date().toISOString()
+  };
+}
+
+/**
+ * API Action: setRegistrationStatus
+ * Admin protected endpoint to open or close athlete registration.
+ */
+function apiSetRegistrationStatus(payload) {
+  if (!isAdminAuthorized(payload)) {
+    Logger.log('[AUTH REJECTED] apiSetRegistrationStatus called without valid Admin credentials.');
+    return { success: false, error: 'Unauthorized: Admin access required' };
+  }
+
+  var rawVal = payload.registration_open !== undefined ? payload.registration_open : (payload.isOpen !== undefined ? payload.isOpen : payload.status);
+  var isOpen = rawVal === true || rawVal === 'true' || rawVal === 'OPEN' || rawVal === 1 || rawVal === '1';
+
+  setRegistrationOpenSetting(isOpen);
+
+  return {
+    success: true,
+    registration_open: isOpen,
+    status: isOpen ? 'OPEN' : 'CLOSED',
+    message: isOpen ? 'Registration opened successfully.' : 'Registration closed successfully.',
+    timestamp: new Date().toISOString()
+  };
+}
+
 // ==============================================================================
 // MUTATION ACTIONS (POST)
 // ==============================================================================
@@ -1709,6 +1831,16 @@ function apiUploadTeamLogo(payload) {
  * Server-side branch validation, mobile number preservation, Drive file storage
  */
 function apiRegisterPlayer(payload) {
+  // 0. GLOBAL REGISTRATION OPEN / CLOSED CHECK (Sections 9 & 10)
+  if (!getRegistrationOpenSetting()) {
+    Logger.log('[REGISTRATION BLOCKED] Registration is closed. Rejecting athlete submission.');
+    return {
+      success: false,
+      error: 'REGISTRATION_CLOSED',
+      message: 'Athlete registration is currently closed by the tournament administration.'
+    };
+  }
+
   // 1. Mandatory Field Validation
   var fullName = String(payload.full_name || payload.name || '').trim();
   var email = String(payload.email || '').trim().toLowerCase();
