@@ -2743,7 +2743,7 @@ function apiRegisterFranchise(payload) {
 
   var logo = String(payload.logo || '🏏').trim();
   var purse = Number(payload.purse || payload.budget || payload.total_budget || 1000);
-  var shortName = String(payload.short_name || teamName.substring(0, 4).toUpperCase()).trim();
+  var shortName = payload.short_name !== undefined && payload.short_name !== null ? String(payload.short_name).trim().toUpperCase() : '';
 
   if (!ownerName) return { success: false, error: 'Owner name is required.' };
   if (!ownerEmail || ownerEmail.indexOf('@') === -1) return { success: false, error: 'A valid email address is required.' };
@@ -2751,7 +2751,7 @@ function apiRegisterFranchise(payload) {
   if (!teamName) return { success: false, error: 'Franchise team name is required.' };
 
   var normTeamName = teamName.replace(/\s+/g, ' ').toLowerCase();
-  var normShortName = shortName.replace(/\s+/g, '').toUpperCase();
+  var normShortName = shortName ? shortName.replace(/\s+/g, '').toUpperCase() : '';
   var normOwnerEmail = ownerEmail.toLowerCase();
 
   var ss = getSpreadsheet();
@@ -2783,9 +2783,9 @@ function apiRegisterFranchise(payload) {
           return { success: false, error: 'A franchise with this name already exists in the tournament.' };
         }
       }
-      if (shortNameColIdx !== -1) {
+      if (shortNameColIdx !== -1 && normShortName) {
         var existingShort = String(row[shortNameColIdx]).trim().replace(/\s+/g, '').toUpperCase();
-        if (existingShort === normShortName) {
+        if (existingShort && existingShort === normShortName) {
           return { success: false, error: 'A franchise with this short code already exists in the tournament.' };
         }
       }
@@ -2836,7 +2836,7 @@ function apiRegisterFranchise(payload) {
     teamId = 'SPL-TEAM-' + ('0000' + nextNum).slice(-4);
   }
 
-  var shortName = String(payload.short_name || teamName.substring(0, 4).toUpperCase()).trim();
+  var finalShortName = shortName ? shortName.toUpperCase() : '';
   var now = new Date().toISOString();
   var computedPasswordHash = passwordHash || hashPassword(rawPassword);
 
@@ -2846,7 +2846,7 @@ function apiRegisterFranchise(payload) {
     var col = teamsHeaders[h];
     if (col === 'id') teamRow.push(teamId);
     else if (col === 'team_name') teamRow.push(teamName);
-    else if (col === 'short_name') teamRow.push(shortName);
+    else if (col === 'short_name') teamRow.push(finalShortName);
     else if (col === 'department') teamRow.push(department);
     else if (col === 'owner_name') teamRow.push(ownerName);
     else if (col === 'owner_email') teamRow.push(ownerEmail);
@@ -2888,7 +2888,7 @@ function apiRegisterFranchise(payload) {
     id: teamId,
     team_name: teamName,
     name: teamName,
-    short_name: shortName,
+    short_name: finalShortName,
     department: department,
     owner_name: ownerName,
     owner_email: ownerEmail,
@@ -3123,9 +3123,6 @@ function apiUpdateTeam(payload) {
   if (!newTeamName) {
     return { success: false, error: 'Franchise team name is required.' };
   }
-  if (!newShortName) {
-    return { success: false, error: 'Short code is required.' };
-  }
   if (!newOwnerName) {
     return { success: false, error: 'Owner name is required.' };
   }
@@ -3150,9 +3147,9 @@ function apiUpdateTeam(payload) {
         return { success: false, error: 'DUPLICATE_TEAM_NAME', message: 'Another franchise already has this name.' };
       }
     }
-    if (shortNameColIdx !== -1) {
+    if (shortNameColIdx !== -1 && normNewShort) {
       var otherShort = String(otherRow[shortNameColIdx] || '').trim().replace(/\s+/g, '').toUpperCase();
-      if (otherShort === normNewShort) {
+      if (otherShort && otherShort === normNewShort) {
         return { success: false, error: 'DUPLICATE_SHORT_CODE', message: 'Another franchise already has this short code.' };
       }
     }

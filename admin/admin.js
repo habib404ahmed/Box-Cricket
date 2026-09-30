@@ -3018,9 +3018,9 @@ async function handleCreateFranchiseSubmit(event) {
         return;
     }
 
-    // Section 2: Validate Short Code
-    if (!shortName) {
-        showAlert('Please enter a Short Code for the franchise (e.g. TIT).');
+    // Validate Short Code (Optional - only validate pattern if provided)
+    if (shortName && !/^[A-Za-z0-9_-]+$/.test(shortName)) {
+        showAlert('Invalid Short Code. Please use letters, numbers, hyphens, or underscores only.');
         return;
     }
 
@@ -3449,8 +3449,9 @@ async function handleEditFranchiseSubmit(event) {
         return;
     }
 
-    if (!shortName) {
-        showAlert('Please enter a Short Code for the franchise (e.g. TIT).');
+    // Validate Short Code (Optional - only validate pattern if provided)
+    if (shortName && !/^[A-Za-z0-9_-]+$/.test(shortName)) {
+        showAlert('Invalid Short Code. Please use letters, numbers, hyphens, or underscores only.');
         return;
     }
 
@@ -3472,7 +3473,7 @@ async function handleEditFranchiseSubmit(event) {
             return;
         }
         const otherShort = (other.short_name || '').trim().toUpperCase();
-        if (otherShort && otherShort === normShortName) {
+        if (otherShort && normShortName && otherShort === normShortName) {
             showAlert('Another franchise already has this short code.');
             return;
         }
