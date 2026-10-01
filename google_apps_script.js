@@ -1416,20 +1416,35 @@ function apiGetTeams(params) {
     var tIdLower = teamId.toLowerCase();
 
     // Find squad from Players sheet: only count active sold athletes (exclude Rejected, Pending, Unassigned)
-    var squad = allPlayers.filter(function(p) {
-      var soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
-      var isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
-      var isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
-      return isSold && isNotRejected && soldTeam && (soldTeam === tNameLower || soldTeam === tIdLower);
-    });
+    var squad = [];
+    var spent = 0;
+    var count = 0;
 
-    var spent = squad.reduce(function(sum, p) {
-      return sum + (Number(p.sold_price) || 0);
-    }, 0);
+    if (allPlayers && allPlayers.length > 0) {
+      squad = allPlayers.filter(function(p) {
+        var soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
+        var isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+        var isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+        return isSold && isNotRejected && soldTeam && (soldTeam === tNameLower || soldTeam === tIdLower);
+      });
+      spent = squad.reduce(function(sum, p) {
+        return sum + (Number(p.sold_price) || 0);
+      }, 0);
+      count = squad.length;
+    } else {
+      // If skipSquadCalc: true or no players passed, preserve total_spent and player_count from the Teams sheet!
+      var rawSpent = getTeamColVal(row, 'total_spent', ['spent', 'spent_points']);
+      spent = Number(rawSpent || team.total_spent || team.spent || 0);
+      var rawCount = getTeamColVal(row, 'player_count', ['squad_count', 'players']);
+      count = Number(rawCount || team.player_count || team.squad_count || 0);
+    }
 
     var rawPurseVal = getTeamColVal(row, 'purse', ['total_budget', 'budget']);
     var purse = Number(rawPurseVal || team.purse || team.total_budget || 1000);
-    var remaining = Math.max(0, purse - spent);
+    var rawRemaining = getTeamColVal(row, 'remaining_purse', ['leftover_balance', 'remaining', 'leftover']);
+    var remaining = (rawRemaining !== '' && rawRemaining !== null && !isNaN(Number(rawRemaining)) && (!allPlayers || allPlayers.length === 0))
+      ? Number(rawRemaining)
+      : Math.max(0, purse - spent);
 
     // Dynamic resolution of logo fields
     var rawLogoId = String(getTeamColVal(row, 'logo_file_id', ['logo_id', 'file_id', 'logoId']) || team.logo_file_id || '').trim();
@@ -1468,9 +1483,11 @@ function apiGetTeams(params) {
     team.spent_points = spent;
     team.remaining_purse = remaining;
     team.leftover_balance = remaining;
-    team.player_count = squad.length;
-    team.squad_count = squad.length;
-    team.squad = squad;
+    team.player_count = count;
+    team.squad_count = count;
+    if (allPlayers && allPlayers.length > 0) {
+      team.squad = squad;
+    }
     team.status = String(getTeamColVal(row, 'status') || team.status || 'Active').trim();
     team.created_at = String(getTeamColVal(row, 'created_at') || team.created_at || new Date().toISOString()).trim();
 
@@ -3493,25 +3510,64 @@ function apiPurchasePlayer(payload) {
     var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
     var auctionSheet = getOrCreateSheet(CONFIG.SHEETS.AUCTION, HEADERS.AUCTION);
 
-    // 1. Locate Team & Check Remaining Purse
-    var teamValues = teamsSheet.getRange(2, 1, Math.max(1, teamsSheet.getLastRow() - 1), HEADERS.TEAMS.length).getValues();
+    ensureTeamSheetHeaders(teamsSheet);
+
+    // Dynamic header resolution for Teams sheet
+    var tLastCol = teamsSheet.getLastColumn();
+    var tHeaders = teamsSheet.getRange(1, 1, 1, tLastCol).getValues()[0].map(function(h) { return String(h || '').trim(); });
+    var tColMap = {};
+    for (var th = 0; th < tHeaders.length; th++) {
+      var rh = tHeaders[th];
+      if (rh) {
+        tColMap[rh] = th;
+        tColMap[rh.toLowerCase()] = th;
+        tColMap[rh.toLowerCase().replace(/[\s_-]+/g, '_')] = th;
+      }
+    }
+    function getTCol(key, aliases) {
+      if (tColMap[key] !== undefined) return tColMap[key];
+      var nk = key.toLowerCase().replace(/[\s_-]+/g, '_');
+      if (tColMap[nk] !== undefined) return tColMap[nk];
+      if (aliases) {
+        for (var a = 0; a < aliases.length; a++) {
+          if (tColMap[aliases[a]] !== undefined) return tColMap[aliases[a]];
+          var na = aliases[a].toLowerCase().replace(/[\s_-]+/g, '_');
+          if (tColMap[na] !== undefined) return tColMap[na];
+        }
+      }
+      return -1;
+    }
+
+    var tIdCol = getTCol('id', ['team_id', 'teamId']);
+    var tNameCol = getTCol('team_name', ['name', 'team', 'franchise_name']);
+    var tPurseCol = getTCol('purse', ['total_budget', 'budget']);
+    var tSpentCol = getTCol('total_spent', ['spent', 'spent_points']);
+    var tRemCol = getTCol('remaining_purse', ['leftover_balance', 'remaining', 'leftover']);
+    var tCountCol = getTCol('player_count', ['squad_count', 'players']);
+
+    // 1. Locate Team
+    var teamValues = teamsSheet.getRange(2, 1, Math.max(1, teamsSheet.getLastRow() - 1), tLastCol).getValues();
     var teamRowIdx = -1;
     var targetTeam = null;
 
     for (var t = 0; t < teamValues.length; t++) {
       var tRow = teamValues[t];
-      var tId = String(tRow[HEADERS.TEAMS.indexOf('id')]).trim().toLowerCase();
-      var tName = String(tRow[HEADERS.TEAMS.indexOf('team_name')]).trim().toLowerCase();
-      var query = teamIdOrName.trim().toLowerCase();
+      var tId = tIdCol !== -1 ? String(tRow[tIdCol] || '').trim().toLowerCase() : '';
+      var tName = tNameCol !== -1 ? String(tRow[tNameCol] || '').trim().toLowerCase() : '';
+      var query = String(teamIdOrName).trim().toLowerCase();
 
-      if (tId === query || tName === query) {
+      if ((tId && tId === query) || (tName && tName === query)) {
         teamRowIdx = t + 2;
+        var rawPurse = tPurseCol !== -1 ? Number(tRow[tPurseCol]) : 1000;
+        var rawSpent = tSpentCol !== -1 ? Number(tRow[tSpentCol]) : 0;
+        var rawCount = tCountCol !== -1 ? Number(tRow[tCountCol]) : 0;
+
         targetTeam = {
-          id: tRow[HEADERS.TEAMS.indexOf('id')],
-          team_name: tRow[HEADERS.TEAMS.indexOf('team_name')],
-          purse: Number(tRow[HEADERS.TEAMS.indexOf('purse')]) || 1000,
-          total_spent: Number(tRow[HEADERS.TEAMS.indexOf('total_spent')]) || 0,
-          player_count: Number(tRow[HEADERS.TEAMS.indexOf('player_count')]) || 0
+          id: tIdCol !== -1 ? tRow[tIdCol] : teamIdOrName,
+          team_name: tNameCol !== -1 ? tRow[tNameCol] : teamIdOrName,
+          purse: (isNaN(rawPurse) || rawPurse <= 0) ? 1000 : rawPurse,
+          total_spent: isNaN(rawSpent) ? 0 : rawSpent,
+          player_count: isNaN(rawCount) ? 0 : rawCount
         };
         break;
       }
@@ -3521,30 +3577,67 @@ function apiPurchasePlayer(payload) {
       return { success: false, error: 'Purchasing franchise team not found.' };
     }
 
-    // 2. Locate Player & Count Current Active Squad Members for Target Team
-    var pValues = playersSheet.getRange(2, 1, Math.max(1, playersSheet.getLastRow() - 1), HEADERS.PLAYERS.length).getValues();
+    // Dynamic header resolution for Players sheet
+    var pLastCol = playersSheet.getLastColumn();
+    var pHeaders = playersSheet.getRange(1, 1, 1, pLastCol).getValues()[0].map(function(h) { return String(h || '').trim(); });
+    var pColMap = {};
+    for (var ph = 0; ph < pHeaders.length; ph++) {
+      var prh = pHeaders[ph];
+      if (prh) {
+        pColMap[prh] = ph;
+        pColMap[prh.toLowerCase()] = ph;
+        pColMap[prh.toLowerCase().replace(/[\s_-]+/g, '_')] = ph;
+      }
+    }
+    function getPCol(key, aliases) {
+      if (pColMap[key] !== undefined) return pColMap[key];
+      var nk = key.toLowerCase().replace(/[\s_-]+/g, '_');
+      if (pColMap[nk] !== undefined) return pColMap[nk];
+      if (aliases) {
+        for (var a = 0; a < aliases.length; a++) {
+          if (pColMap[aliases[a]] !== undefined) return pColMap[aliases[a]];
+          var na = aliases[a].toLowerCase().replace(/[\s_-]+/g, '_');
+          if (pColMap[na] !== undefined) return pColMap[na];
+        }
+      }
+      return -1;
+    }
+
+    var pIdCol = getPCol('id', ['player_id']);
+    var pEmailCol = getPCol('email', ['player_email']);
+    var pStatusCol = getPCol('status', ['approval_status']);
+    var pAuctionStatusCol = getPCol('auction_status', ['auctionStatus']);
+    var pSoldTeamCol = getPCol('sold_to_team', ['soldTeam', 'team']);
+    var pSoldPriceCol = getPCol('sold_price', ['soldPrice', 'price']);
+    var pNameCol = getPCol('full_name', ['name', 'player_name']);
+
+    // 2. Locate Player & compute current active squad spent directly from Players sheet
+    var pValues = playersSheet.getRange(2, 1, Math.max(1, playersSheet.getLastRow() - 1), pLastCol).getValues();
     var pRowIdx = -1;
     var playerName = '';
     var activeSquadCount = 0;
+    var currentSquadSpent = 0;
     var targetTeamIdLower = String(targetTeam.id).trim().toLowerCase();
     var targetTeamNameLower = String(targetTeam.team_name).trim().toLowerCase();
 
     for (var p = 0; p < pValues.length; p++) {
       var row = pValues[p];
-      var rowId = String(row[HEADERS.PLAYERS.indexOf('id')]).trim();
-      var rowEmail = String(row[HEADERS.PLAYERS.indexOf('email')]).trim().toLowerCase();
-      var rowSoldTeam = String(row[HEADERS.PLAYERS.indexOf('sold_to_team')] || '').trim().toLowerCase();
-      var rowStatus = String(row[HEADERS.PLAYERS.indexOf('status')] || '').trim().toLowerCase();
-      var rowAuctionStatus = String(row[HEADERS.PLAYERS.indexOf('auction_status')] || '').trim().toLowerCase();
+      var rowId = pIdCol !== -1 ? String(row[pIdCol] || '').trim() : '';
+      var rowEmail = pEmailCol !== -1 ? String(row[pEmailCol] || '').trim().toLowerCase() : '';
+      var rowSoldTeam = pSoldTeamCol !== -1 ? String(row[pSoldTeamCol] || '').trim().toLowerCase() : '';
+      var rowStatus = pStatusCol !== -1 ? String(row[pStatusCol] || '').trim().toLowerCase() : '';
+      var rowAuctionStatus = pAuctionStatusCol !== -1 ? String(row[pAuctionStatusCol] || '').trim().toLowerCase() : '';
+      var rowPrice = pSoldPriceCol !== -1 ? (Number(row[pSoldPriceCol]) || 0) : 0;
 
-      if (rowId === playerId || rowEmail === playerId.toLowerCase()) {
+      if ((playerId && rowId === playerId) || (playerId && rowEmail === String(playerId).trim().toLowerCase())) {
         pRowIdx = p + 2;
-        playerName = row[HEADERS.PLAYERS.indexOf('full_name')];
+        playerName = pNameCol !== -1 ? row[pNameCol] : '';
       }
 
-      // Count only active assigned players for this franchise (exclude Rejected, Pending, Unassigned, Deleted)
+      // Count and sum only active sold players for this franchise (exclude Rejected, Pending, Unassigned)
       if (rowAuctionStatus === 'sold' && rowStatus !== 'rejected' && (rowSoldTeam === targetTeamIdLower || rowSoldTeam === targetTeamNameLower)) {
         activeSquadCount++;
+        currentSquadSpent += rowPrice;
       }
     }
 
@@ -3563,28 +3656,29 @@ function apiPurchasePlayer(payload) {
     }
 
     // 4. Validate Sufficient Purse Balance
-    var remaining = targetTeam.purse - targetTeam.total_spent;
-    if (soldPrice > remaining) {
+    var baseSpent = currentSquadSpent > 0 ? currentSquadSpent : targetTeam.total_spent;
+    var currentRemaining = Math.max(0, targetTeam.purse - baseSpent);
+    if (soldPrice > currentRemaining) {
       return {
         success: false,
-        error: 'Insufficient purse balance! ' + targetTeam.team_name + ' has only ' + remaining + ' Points remaining.'
+        error: 'Insufficient purse balance! ' + targetTeam.team_name + ' has only ' + currentRemaining + ' Points remaining.'
       };
     }
 
-    // 5. Update Players sheet: status = Approved, auction_status = Sold, sold_to_team = team ID (Requirement 10)
-    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('status') + 1).setValue('Approved');
-    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('auction_status') + 1).setValue('Sold');
-    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_to_team') + 1).setValue(targetTeam.id);
-    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_price') + 1).setValue(soldPrice);
+    // 5. Update Players sheet: status = Approved, auction_status = Sold, sold_to_team = team ID, sold_price = soldPrice
+    if (pStatusCol !== -1) playersSheet.getRange(pRowIdx, pStatusCol + 1).setValue('Approved');
+    if (pAuctionStatusCol !== -1) playersSheet.getRange(pRowIdx, pAuctionStatusCol + 1).setValue('Sold');
+    if (pSoldTeamCol !== -1) playersSheet.getRange(pRowIdx, pSoldTeamCol + 1).setValue(targetTeam.id);
+    if (pSoldPriceCol !== -1) playersSheet.getRange(pRowIdx, pSoldPriceCol + 1).setValue(soldPrice);
 
     // 6. Update Teams sheet: total_spent, remaining_purse, player_count
-    var newSpent = targetTeam.total_spent + soldPrice;
+    var newSpent = baseSpent + soldPrice;
     var newRemaining = Math.max(0, targetTeam.purse - newSpent);
     var newCount = activeSquadCount + 1;
 
-    teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('total_spent') + 1).setValue(newSpent);
-    teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('remaining_purse') + 1).setValue(newRemaining);
-    teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('player_count') + 1).setValue(newCount);
+    if (tSpentCol !== -1) teamsSheet.getRange(teamRowIdx, tSpentCol + 1).setValue(newSpent);
+    if (tRemCol !== -1) teamsSheet.getRange(teamRowIdx, tRemCol + 1).setValue(newRemaining);
+    if (tCountCol !== -1) teamsSheet.getRange(teamRowIdx, tCountCol + 1).setValue(newCount);
 
     // 7. Record in Auction sheet
     auctionSheet.appendRow([
@@ -3600,12 +3694,27 @@ function apiPurchasePlayer(payload) {
       new Date().toISOString()
     ]);
 
-    Logger.log('[AUCTION] Athlete ' + playerId + ' sold to ' + targetTeam.team_name + ' (' + targetTeam.id + ') for ' + soldPrice + '. Squad count: ' + newCount + '/' + maxSquad);
+    SpreadsheetApp.flush();
+
+    Logger.log('[AUCTION] Athlete ' + playerId + ' sold to ' + targetTeam.team_name + ' (' + targetTeam.id + ') for ' + soldPrice + '. Squad count: ' + newCount + '/' + maxSquad + '. Spent: ' + newSpent + ', Remaining: ' + newRemaining);
 
     return {
       success: true,
       player: { id: playerId, sold_to_team: targetTeam.id, sold_price: soldPrice, auction_status: 'Sold' },
-      team: { id: targetTeam.id, team_name: targetTeam.team_name, spent: newSpent, leftover_balance: newRemaining, player_count: newCount, squad_count: newCount },
+      team: {
+        id: targetTeam.id,
+        team_name: targetTeam.team_name,
+        name: targetTeam.team_name,
+        purse: targetTeam.purse,
+        total_budget: targetTeam.purse,
+        spent: newSpent,
+        total_spent: newSpent,
+        spent_points: newSpent,
+        remaining_purse: newRemaining,
+        leftover_balance: newRemaining,
+        player_count: newCount,
+        squad_count: newCount
+      },
       message: 'Player successfully purchased by ' + targetTeam.team_name + ' for ' + soldPrice + ' Points.'
     };
   } finally {
@@ -3629,20 +3738,53 @@ function apiRevokePlayerPurchase(payload) {
     var playersSheet = getOrCreateSheet(CONFIG.SHEETS.PLAYERS, HEADERS.PLAYERS);
     var teamsSheet = getOrCreateSheet(CONFIG.SHEETS.TEAMS, HEADERS.TEAMS);
 
-    var pValues = playersSheet.getRange(2, 1, Math.max(1, playersSheet.getLastRow() - 1), HEADERS.PLAYERS.length).getValues();
+    ensureTeamSheetHeaders(teamsSheet);
+
+    var pLastCol = playersSheet.getLastColumn();
+    var pHeaders = playersSheet.getRange(1, 1, 1, pLastCol).getValues()[0].map(function(h) { return String(h || '').trim(); });
+    var pColMap = {};
+    for (var ph = 0; ph < pHeaders.length; ph++) {
+      var prh = pHeaders[ph];
+      if (prh) {
+        pColMap[prh] = ph;
+        pColMap[prh.toLowerCase()] = ph;
+        pColMap[prh.toLowerCase().replace(/[\s_-]+/g, '_')] = ph;
+      }
+    }
+    function getPCol(key, aliases) {
+      if (pColMap[key] !== undefined) return pColMap[key];
+      var nk = key.toLowerCase().replace(/[\s_-]+/g, '_');
+      if (pColMap[nk] !== undefined) return pColMap[nk];
+      if (aliases) {
+        for (var a = 0; a < aliases.length; a++) {
+          if (pColMap[aliases[a]] !== undefined) return pColMap[aliases[a]];
+          var na = aliases[a].toLowerCase().replace(/[\s_-]+/g, '_');
+          if (pColMap[na] !== undefined) return pColMap[na];
+        }
+      }
+      return -1;
+    }
+
+    var pIdCol = getPCol('id', ['player_id']);
+    var pEmailCol = getPCol('email', ['player_email']);
+    var pAuctionStatusCol = getPCol('auction_status', ['auctionStatus']);
+    var pSoldTeamCol = getPCol('sold_to_team', ['soldTeam', 'team']);
+    var pSoldPriceCol = getPCol('sold_price', ['soldPrice', 'price']);
+
+    var pValues = playersSheet.getRange(2, 1, Math.max(1, playersSheet.getLastRow() - 1), pLastCol).getValues();
     var pRowIdx = -1;
     var soldTeamName = '';
     var soldPrice = 0;
 
     for (var p = 0; p < pValues.length; p++) {
       var row = pValues[p];
-      var rowId = String(row[HEADERS.PLAYERS.indexOf('id')]).trim();
-      var rowEmail = String(row[HEADERS.PLAYERS.indexOf('email')]).trim().toLowerCase();
+      var rowId = pIdCol !== -1 ? String(row[pIdCol] || '').trim() : '';
+      var rowEmail = pEmailCol !== -1 ? String(row[pEmailCol] || '').trim().toLowerCase() : '';
 
-      if (rowId === playerId || rowEmail === playerId.toLowerCase()) {
+      if ((playerId && rowId === playerId) || (playerId && rowEmail === String(playerId).trim().toLowerCase())) {
         pRowIdx = p + 2;
-        soldTeamName = String(row[HEADERS.PLAYERS.indexOf('sold_to_team')] || '').trim();
-        soldPrice = Number(row[HEADERS.PLAYERS.indexOf('sold_price')]) || 0;
+        soldTeamName = pSoldTeamCol !== -1 ? String(row[pSoldTeamCol] || '').trim() : '';
+        soldPrice = pSoldPriceCol !== -1 ? (Number(row[pSoldPriceCol]) || 0) : 0;
         break;
       }
     }
@@ -3650,37 +3792,70 @@ function apiRevokePlayerPurchase(payload) {
     if (pRowIdx === -1) return { success: false, error: 'Player record not found.' };
 
     // Reset player in Players sheet
-    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('auction_status') + 1).setValue('Upcoming');
-    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_to_team') + 1).setValue('');
-    playersSheet.getRange(pRowIdx, HEADERS.PLAYERS.indexOf('sold_price') + 1).setValue('');
+    if (pAuctionStatusCol !== -1) playersSheet.getRange(pRowIdx, pAuctionStatusCol + 1).setValue('Upcoming');
+    if (pSoldTeamCol !== -1) playersSheet.getRange(pRowIdx, pSoldTeamCol + 1).setValue('');
+    if (pSoldPriceCol !== -1) playersSheet.getRange(pRowIdx, pSoldPriceCol + 1).setValue('');
 
-    // Refund team if applicable
-    if (soldTeamName && soldPrice > 0) {
-      var teamValues = teamsSheet.getRange(2, 1, Math.max(1, teamsSheet.getLastRow() - 1), HEADERS.TEAMS.length).getValues();
+    // Refund team in Teams sheet
+    if (soldTeamName) {
+      var tLastCol = teamsSheet.getLastColumn();
+      var tHeaders = teamsSheet.getRange(1, 1, 1, tLastCol).getValues()[0].map(function(h) { return String(h || '').trim(); });
+      var tColMap = {};
+      for (var th = 0; th < tHeaders.length; th++) {
+        var rh = tHeaders[th];
+        if (rh) {
+          tColMap[rh] = th;
+          tColMap[rh.toLowerCase()] = th;
+          tColMap[rh.toLowerCase().replace(/[\s_-]+/g, '_')] = th;
+        }
+      }
+      function getTCol(key, aliases) {
+        if (tColMap[key] !== undefined) return tColMap[key];
+        var nk = key.toLowerCase().replace(/[\s_-]+/g, '_');
+        if (tColMap[nk] !== undefined) return tColMap[nk];
+        if (aliases) {
+          for (var a = 0; a < aliases.length; a++) {
+            if (tColMap[aliases[a]] !== undefined) return tColMap[aliases[a]];
+            var na = aliases[a].toLowerCase().replace(/[\s_-]+/g, '_');
+            if (tColMap[na] !== undefined) return tColMap[na];
+          }
+        }
+        return -1;
+      }
+
+      var tIdCol = getTCol('id', ['team_id', 'teamId']);
+      var tNameCol = getTCol('team_name', ['name', 'team', 'franchise_name']);
+      var tPurseCol = getTCol('purse', ['total_budget', 'budget']);
+      var tSpentCol = getTCol('total_spent', ['spent', 'spent_points']);
+      var tRemCol = getTCol('remaining_purse', ['leftover_balance', 'remaining', 'leftover']);
+      var tCountCol = getTCol('player_count', ['squad_count', 'players']);
+
+      var teamValues = teamsSheet.getRange(2, 1, Math.max(1, teamsSheet.getLastRow() - 1), tLastCol).getValues();
       for (var t = 0; t < teamValues.length; t++) {
         var tRow = teamValues[t];
-        var tId = String(tRow[HEADERS.TEAMS.indexOf('id')]).trim().toLowerCase();
-        var tName = String(tRow[HEADERS.TEAMS.indexOf('team_name')]).trim().toLowerCase();
+        var tId = tIdCol !== -1 ? String(tRow[tIdCol] || '').trim().toLowerCase() : '';
+        var tName = tNameCol !== -1 ? String(tRow[tNameCol] || '').trim().toLowerCase() : '';
         var q = soldTeamName.toLowerCase();
 
         if (tId === q || tName === q) {
           var teamRowIdx = t + 2;
-          var currentSpent = Number(tRow[HEADERS.TEAMS.indexOf('total_spent')]) || 0;
-          var purse = Number(tRow[HEADERS.TEAMS.indexOf('purse')]) || 1000;
-          var currentCount = Number(tRow[HEADERS.TEAMS.indexOf('player_count')]) || 0;
+          var currentSpent = tSpentCol !== -1 ? (Number(tRow[tSpentCol]) || 0) : 0;
+          var purse = tPurseCol !== -1 ? (Number(tRow[tPurseCol]) || 1000) : 1000;
+          var currentCount = tCountCol !== -1 ? (Number(tRow[tCountCol]) || 0) : 0;
 
           var newSpent = Math.max(0, currentSpent - soldPrice);
           var newRemaining = Math.max(0, purse - newSpent);
           var newCount = Math.max(0, currentCount - 1);
 
-          teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('total_spent') + 1).setValue(newSpent);
-          teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('remaining_purse') + 1).setValue(newRemaining);
-          teamsSheet.getRange(teamRowIdx, HEADERS.TEAMS.indexOf('player_count') + 1).setValue(newCount);
+          if (tSpentCol !== -1) teamsSheet.getRange(teamRowIdx, tSpentCol + 1).setValue(newSpent);
+          if (tRemCol !== -1) teamsSheet.getRange(teamRowIdx, tRemCol + 1).setValue(newRemaining);
+          if (tCountCol !== -1) teamsSheet.getRange(teamRowIdx, tCountCol + 1).setValue(newCount);
           break;
         }
       }
     }
 
+    SpreadsheetApp.flush();
     Logger.log('[AUCTION] Athlete ' + playerId + ' purchase revoked.');
     return {
       success: true,

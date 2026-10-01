@@ -21,6 +21,21 @@ let activeSquadTeamId = null;
  */
 function getTeamActiveSquad(team) {
     if (!team) return [];
+    const tIdLower = String(team.id || '').trim().toLowerCase();
+    const tNameLower = String(team.name || team.team_name || '').trim().toLowerCase();
+
+    // Check allPlayers first as live comprehensive roster
+    if (typeof allPlayers !== 'undefined' && Array.isArray(allPlayers) && allPlayers.length > 0) {
+        const fromAll = allPlayers.filter(p => {
+            const soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
+            const soldTeamId = String(p.sold_to_team_id || '').trim().toLowerCase();
+            const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+            const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+            return isSold && isNotRejected && (soldTeam === tIdLower || soldTeam === tNameLower || soldTeamId === tIdLower || soldTeamId === tNameLower);
+        });
+        if (fromAll.length > 0) return fromAll;
+    }
+
     if (Array.isArray(team.squad) && team.squad.length > 0) {
         return team.squad.filter(p => {
             const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
@@ -28,19 +43,22 @@ function getTeamActiveSquad(team) {
             return isSold && isNotRejected;
         });
     }
-    const tIdLower = String(team.id || '').trim().toLowerCase();
-    const tNameLower = String(team.name || team.team_name || '').trim().toLowerCase();
-    return (allPlayers || []).filter(p => {
-        const soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
-        const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
-        const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
-        return isSold && isNotRejected && (soldTeam === tIdLower || soldTeam === tNameLower);
-    });
+
+    return [];
 }
 
 function getTeamActiveSquadCount(team) {
     if (!team) return 0;
     return getTeamActiveSquad(team).length;
+}
+
+function getTeamSpentPoints(team) {
+    if (!team) return 0;
+    const squad = getTeamActiveSquad(team);
+    if (squad.length > 0) {
+        return squad.reduce((sum, p) => sum + (Number(p.sold_price) || 0), 0);
+    }
+    return Number(team.spent ?? team.total_spent ?? team.spent_points ?? 0);
 }
 
 // Default role base prices fallback
@@ -945,7 +963,7 @@ function renderTeamBalanceHUD() {
 
     teamsHudContainer.innerHTML = allTeams.map(team => {
         const total = Number(team.purse ?? team.total_budget ?? 1000);
-        const spent = Number(team.spent ?? team.total_spent ?? 0);
+        const spent = getTeamSpentPoints(team);
         const leftover = Math.max(0, total - spent);
         const spentPct = total > 0 ? Math.min(100, (spent / total) * 100) : 0;
         const squadCount = getTeamActiveSquadCount(team);
@@ -2021,8 +2039,8 @@ async function handleExecutePurchase(e) {
     }
 
     const total = Number(targetTeam.purse ?? targetTeam.total_budget ?? 1000);
-    const currentSpent = Number(targetTeam.spent ?? targetTeam.total_spent ?? 0);
-    const leftover = total - currentSpent;
+    const currentSpent = getTeamSpentPoints(targetTeam);
+    const leftover = Math.max(0, total - currentSpent);
 
     // Strict Squad Capacity Check (Section 3 & 6: MAX 10 PLAYERS)
     const activeSquadCount = getTeamActiveSquadCount(targetTeam);
@@ -2048,13 +2066,25 @@ async function handleExecutePurchase(e) {
     activePurchasePlayer.sold_price = soldPrice;
     activePurchasePlayer.status = 'Approved';
 
+    // Also update in allPlayers array
+    const inAll = allPlayers.find(p => (p.id === playerId || p.email === playerId));
+    if (inAll) {
+        inAll.auction_status = 'Sold';
+        inAll.sold_to_team = targetTeamName;
+        inAll.sold_to_team_id = targetTeam.id;
+        inAll.sold_price = soldPrice;
+        inAll.status = 'Approved';
+    }
+
     // 3. Immediately update local team state & purse
     targetTeam.total_spent = currentSpent + soldPrice;
     targetTeam.spent = targetTeam.total_spent;
+    targetTeam.spent_points = targetTeam.total_spent;
     targetTeam.remaining_purse = Math.max(0, total - targetTeam.total_spent);
     targetTeam.leftover_balance = targetTeam.remaining_purse;
     targetTeam.squad_count = activeSquadCount + 1;
     if (!targetTeam.squad) targetTeam.squad = [];
+    targetTeam.squad = targetTeam.squad.filter(p => p.id !== playerId && p.email !== playerId);
     targetTeam.squad.push({ ...activePurchasePlayer });
 
     // 4. Close modal and update UI immediately
@@ -2067,14 +2097,21 @@ async function handleExecutePurchase(e) {
 
     // 5. Background synchronization with backend
     try {
-        await window.UniBoxDb.purchasePlayer({
+        const res = await window.UniBoxDb.purchasePlayer({
             playerIdOrEmail: playerId,
             teamId: teamId,
             soldPrice: soldPrice
         });
+        if (res && res.team) {
+            Object.assign(targetTeam, res.team);
+        }
+        renderTeamBalanceHUD();
+        renderRosterTable();
+        updateMetrics();
     } catch (err) {
         console.error('Purchase failed on backend, rolling back:', err);
         Object.assign(activePurchasePlayer, playerBackup);
+        if (inAll) Object.assign(inAll, playerBackup);
         Object.assign(targetTeam, teamBackup);
         renderTeamBalanceHUD();
         renderRosterTable();
@@ -2111,6 +2148,7 @@ async function handleRevokePurchase(playerId) {
         const total = Number(targetTeam.purse ?? targetTeam.total_budget ?? 1000);
         targetTeam.total_spent = Math.max(0, (Number(targetTeam.total_spent ?? targetTeam.spent ?? 0)) - price);
         targetTeam.spent = targetTeam.total_spent;
+        targetTeam.spent_points = targetTeam.total_spent;
         targetTeam.remaining_purse = Math.min(total, (Number(targetTeam.remaining_purse ?? targetTeam.leftover_balance ?? 0)) + price);
         targetTeam.leftover_balance = targetTeam.remaining_purse;
         if (targetTeam.squad) {
@@ -2129,6 +2167,9 @@ async function handleRevokePurchase(playerId) {
         if (window.UniBoxDb) {
             await window.UniBoxDb.revokePlayerPurchase(playerId);
         }
+        renderTeamBalanceHUD();
+        renderRosterTable();
+        updateMetrics();
     } catch (err) {
         console.error('Revoke failed on backend, rolling back:', err);
         Object.assign(player, playerBackup);
@@ -2167,9 +2208,13 @@ function openTeamSquadModal(teamId) {
     const ownerMeta = team.owner_name ? ` • 👑 Owner: ${team.owner_name}` : '';
     document.getElementById('team-squad-meta').textContent = `${team.department || 'SPL'} Franchise • Squad: ${squadCount} / ${MAX_SQUAD_SIZE} Players • Available Slots: ${availableSlots}${isFull ? ' (SQUAD FULL)' : ''}${ownerMeta}`;
 
-    document.getElementById('team-stat-purse').textContent = `${team.total_budget.toFixed(1)} Pts`;
-    document.getElementById('team-stat-spent').textContent = `${team.spent.toFixed(1)} Pts`;
-    document.getElementById('team-stat-balance').textContent = `${team.leftover_balance.toFixed(1)} Pts`;
+    const totalPurse = Number(team.total_budget ?? team.purse ?? 1000);
+    const actualSpent = getTeamSpentPoints(team);
+    const actualBalance = Math.max(0, totalPurse - actualSpent);
+
+    document.getElementById('team-stat-purse').textContent = `${totalPurse.toFixed(1)} Pts`;
+    document.getElementById('team-stat-spent').textContent = `${actualSpent.toFixed(1)} Pts`;
+    document.getElementById('team-stat-balance').textContent = `${actualBalance.toFixed(1)} Pts`;
 
     const squadStatEl = document.getElementById('team-stat-squad');
     if (squadStatEl) squadStatEl.textContent = `${squadCount} / ${MAX_SQUAD_SIZE}`;

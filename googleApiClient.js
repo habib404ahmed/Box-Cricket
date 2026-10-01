@@ -200,19 +200,35 @@
         // Find active squad from players list (exclude Rejected, Pending, Unassigned, Deleted athletes)
         const tNameLower = resolvedName.toLowerCase();
         const tIdLower = resolvedId.toLowerCase();
-        const rawSquad = Array.isArray(t.squad) ? t.squad : (allPlayers || []).filter(p => {
-            const soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
-            return soldTeam && (soldTeam === tNameLower || soldTeam === tIdLower);
-        });
-        const squad = rawSquad.filter(p => {
-            const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
-            const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
-            return isSold && isNotRejected;
-        });
 
-        const spent = Number(t.spent ?? t.total_spent ?? (squad.reduce((sum, p) => sum + (Number(p.sold_price) || 0), 0)));
+        let squad = [];
+        if (allPlayers && Array.isArray(allPlayers) && allPlayers.length > 0) {
+            squad = allPlayers.filter(p => {
+                const soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
+                const soldTeamId = String(p.sold_to_team_id || '').trim().toLowerCase();
+                const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+                const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+                return isSold && isNotRejected && (soldTeam === tNameLower || soldTeam === tIdLower || soldTeamId === tIdLower || soldTeamId === tNameLower);
+            });
+        } else if (Array.isArray(t.squad) && t.squad.length > 0) {
+            squad = t.squad.filter(p => {
+                const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+                const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+                return isSold && isNotRejected;
+            });
+        }
+
+        // Calculate spent: if active squad members exist, always compute directly from squad sold_price!
+        // Otherwise fallback to team's recorded total_spent/spent
+        let spent = 0;
+        if (squad.length > 0) {
+            spent = squad.reduce((sum, p) => sum + (Number(p.sold_price) || 0), 0);
+        } else {
+            spent = Number(t.total_spent ?? t.spent ?? t.spent_points ?? 0);
+        }
+
         const remaining = Math.max(0, purse - spent);
-        const count = squad.length;
+        const count = squad.length > 0 ? squad.length : Number(t.player_count ?? t.squad_count ?? 0);
 
         return {
             id: resolvedId,
@@ -1623,6 +1639,29 @@
                 }
             }
 
+            // Immediately update in-memory _cachedPlayers and localStorage
+            if (!_cachedPlayers || !_cachedPlayers.length) {
+                try {
+                    _cachedPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                } catch (e) {
+                    _cachedPlayers = [];
+                }
+            }
+            if (_cachedPlayers && _cachedPlayers.length) {
+                const p = _cachedPlayers.find(p => (p.id === playerId || p.email === playerId));
+                if (p) {
+                    p.auction_status = 'Sold';
+                    p.sold_to_team = teamId;
+                    p.sold_to_team_id = teamId;
+                    p.sold_price = soldPrice;
+                    p.status = 'Approved';
+                }
+                try {
+                    localStorage.setItem('unibox_players', JSON.stringify(_cachedPlayers));
+                } catch (e) {}
+            }
+
+            let backendTeam = null;
             if (isConfigured()) {
                 const res = await postApi('purchasePlayer', {
                     player_id: playerId,
@@ -1633,26 +1672,50 @@
                 if (!res.success) {
                     throw new Error(res.error || 'Failed to complete player purchase in Google Sheets.');
                 }
+                if (res.team) {
+                    backendTeam = res.team;
+                }
             }
 
-            // Sync local cache
-            const { data: teams } = await GoogleTourneyApi.getTeams();
-            const targetTeam = teams.find(t => t.id === teamId || t.name === teamId);
+            // Sync local teams cache with updated players passed in for live squad calculation
+            const { data: teams } = await GoogleTourneyApi.getTeams(_cachedPlayers);
+            const targetTeam = (teams || []).find(t => t.id === teamId || t.name === teamId || t.team_name === teamId) || backendTeam;
 
             return {
                 success: true,
                 team: targetTeam,
-                player: { id: playerId, sold_to_team: targetTeam ? targetTeam.name : teamId, sold_price: soldPrice, auction_status: 'Sold' }
+                player: { id: playerId, sold_to_team: targetTeam ? (targetTeam.name || targetTeam.team_name) : teamId, sold_price: soldPrice, auction_status: 'Sold' }
             };
         },
 
         revokePlayerPurchase: async (playerId) => {
+            if (!_cachedPlayers || !_cachedPlayers.length) {
+                try {
+                    _cachedPlayers = JSON.parse(localStorage.getItem('unibox_players') || '[]');
+                } catch (e) {
+                    _cachedPlayers = [];
+                }
+            }
+            if (_cachedPlayers && _cachedPlayers.length) {
+                const p = _cachedPlayers.find(p => (p.id === playerId || p.email === playerId));
+                if (p) {
+                    p.auction_status = 'Upcoming';
+                    p.sold_to_team = '';
+                    p.sold_to_team_id = '';
+                    p.sold_price = 0;
+                }
+                try {
+                    localStorage.setItem('unibox_players', JSON.stringify(_cachedPlayers));
+                } catch (e) {}
+            }
+
             if (isConfigured()) {
                 const res = await postApi('revokePlayerPurchase', { player_id: playerId });
                 if (!res.success) {
                     throw new Error(res.error || 'Failed to revoke purchase in Google Sheets.');
                 }
             }
+            await GoogleTourneyApi.getTeams(_cachedPlayers);
             return { success: true };
         },
 

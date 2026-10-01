@@ -293,22 +293,55 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } catch (e) {}
             }
 
-            teamState.currentTeam = team;
-            teamState.currentSquad = team.squad || [];
-            currentTeam = team;
-            currentSquad = team.squad || [];
-
             teamState.allTournamentPlayers = (playersResult && playersResult.data) || [];
             allTournamentPlayers = teamState.allTournamentPlayers;
+
+            const tNameLower = String(team.name || team.team_name || '').trim().toLowerCase();
+            const tIdLower = String(team.id || '').trim().toLowerCase();
+
+            // Reconcile squad from tournament players or team.squad
+            let reconciledSquad = [];
+            if (allTournamentPlayers && allTournamentPlayers.length > 0) {
+                reconciledSquad = allTournamentPlayers.filter(p => {
+                    const soldTeam = String(p.sold_to_team || '').trim().toLowerCase();
+                    const soldTeamId = String(p.sold_to_team_id || '').trim().toLowerCase();
+                    const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+                    const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+                    return isSold && isNotRejected && (soldTeam === tNameLower || soldTeam === tIdLower || soldTeamId === tIdLower || soldTeamId === tNameLower);
+                });
+            } else if (Array.isArray(team.squad) && team.squad.length > 0) {
+                reconciledSquad = team.squad.filter(p => {
+                    const isSold = String(p.auction_status || '').trim().toLowerCase() === 'sold';
+                    const isNotRejected = String(p.status || '').trim().toLowerCase() !== 'rejected';
+                    return isSold && isNotRejected;
+                });
+            }
+
+            team.squad = reconciledSquad;
+            teamState.currentTeam = team;
+            teamState.currentSquad = reconciledSquad;
+            currentTeam = team;
+            currentSquad = reconciledSquad;
+
+            const totalPurse = Number(team.total_budget ?? team.purse ?? 1000);
+            const squadSpent = reconciledSquad.reduce((sum, p) => sum + (Number(p.sold_price) || 0), 0);
+            const liveSpent = reconciledSquad.length > 0 ? squadSpent : Number(team.spent ?? team.total_spent ?? 0);
+            const liveLeftover = Math.max(0, totalPurse - liveSpent);
+
+            team.spent = liveSpent;
+            team.total_spent = liveSpent;
+            team.spent_points = liveSpent;
+            team.remaining_purse = liveLeftover;
+            team.leftover_balance = liveLeftover;
 
             const currentSig = JSON.stringify({
                 id: team.id,
                 name: team.team_name || team.name,
-                purse: team.purse,
-                spent: team.total_spent,
-                leftover: team.remaining_purse,
-                squadCount: (team.squad || []).length,
-                squad: (team.squad || []).map(p => ({ id: p.id, sold_price: p.sold_price })),
+                purse: totalPurse,
+                spent: liveSpent,
+                leftover: liveLeftover,
+                squadCount: reconciledSquad.length,
+                squad: reconciledSquad.map(p => ({ id: p.id, sold_price: p.sold_price })),
                 poolCount: teamState.allTournamentPlayers.length
             });
 
@@ -354,9 +387,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderHUD() {
         if (!currentTeam) return;
 
-        const leftover = Number(currentTeam.leftover_balance ?? currentTeam.remaining_purse ?? 1000);
         const total = Number(currentTeam.total_budget ?? currentTeam.purse ?? 1000);
-        const spent = Number(currentTeam.spent ?? currentTeam.total_spent ?? 0);
+        const squadSpent = currentSquad.reduce((sum, p) => sum + (Number(p.sold_price) || 0), 0);
+        const spent = currentSquad.length > 0 ? squadSpent : Number(currentTeam.spent ?? currentTeam.total_spent ?? 0);
+        const leftover = Math.max(0, total - spent);
         const squadCount = currentSquad.length;
 
         if (hudLeftover) hudLeftover.textContent = `${leftover.toFixed(1)} Pts`;
